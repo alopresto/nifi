@@ -135,26 +135,6 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
                 } else {
                     logger.warn("No message integrity check");
                 }
-
-                // Legacy code
-//            try {
-//                InputStream clearData = encryptedData.getDataStream(password, provider);
-//                PGPObjectFactory clearFactory = new PGPObjectFactory(clearData);
-//
-//                obj = clearFactory.nextObject();
-//                if (obj instanceof PGPCompressedData) {
-//                    PGPCompressedData compData = (PGPCompressedData) obj;
-//                    clearFactory = new PGPObjectFactory(compData.getDataStream());
-//                    obj = clearFactory.nextObject();
-//                }
-//                PGPLiteralData literal = (PGPLiteralData) obj;
-//
-//                InputStream lis = literal.getInputStream();
-//                final byte[] buffer = new byte[4096];
-//                int len;
-//                while ((len = lis.read(buffer)) >= 0) {
-//                    out.write(buffer, 0, len);
-//                }
             } catch (Exception e) {
                 throw new ProcessException(e.getMessage());
             }
@@ -185,11 +165,13 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
                 }
 
                 try {
+                    // TODO: Refactor internal symmetric encryption algorithm to be customizable
                     PGPEncryptedDataGenerator encryptedDataGenerator = new PGPEncryptedDataGenerator(
                             new JcePGPDataEncryptorBuilder(PGPEncryptedData.AES_128).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider(provider));
 
                     encryptedDataGenerator.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider(provider));
 
+                    // TODO: Refactor shared encryption code to utility
                     try (OutputStream encryptedOut = encryptedDataGenerator.open(output, new byte[BUFFER_SIZE])) {
                         PGPCompressedDataGenerator compressedDataGenerator = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
                         try (OutputStream compressedOut = compressedDataGenerator.open(encryptedOut, new byte[BUFFER_SIZE])) {
@@ -204,27 +186,6 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
                             }
                         }
                     }
-
-                    // Legacy code
-//                    PGPEncryptedDataGenerator encGenerator = new PGPEncryptedDataGenerator(PGPEncryptedData.CAST5, false, secureRandom, provider);
-//                    encGenerator.addMethod(publicKey);
-//                    try (OutputStream encOut = encGenerator.open(output, new byte[65536])) {
-//
-//                        PGPCompressedDataGenerator compData = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
-//                        try (OutputStream compOut = compData.open(encOut, new byte[65536])) {
-//
-//                            PGPLiteralDataGenerator literal = new PGPLiteralDataGenerator();
-//                            try (OutputStream literalOut = literal.open(compOut, PGPLiteralData.BINARY, filename, new Date(), new byte[65536])) {
-//
-//                                final byte[] buffer = new byte[4096];
-//                                int len;
-//                                while ((len = in.read(buffer)) >= 0) {
-//                                    literalOut.write(buffer, 0, len);
-//                                }
-//
-//                            }
-//                        }
-//                    }
                 } finally {
                     if (isArmored) {
                         output.close();

@@ -114,20 +114,6 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
             // If this point is reached, no private key could be extracted with the given passphrase
             return false;
         }
-
-        // Legacy code
-//        try (InputStream fin = Files.newInputStream(Paths.get(secretKeyringFile)); InputStream pin = PGPUtil.getDecoderStream(fin)) {
-//            PGPSecretKeyRingCollection pgpsec = new PGPSecretKeyRingCollection(pin);
-//            Iterator ringit = pgpsec.getKeyRings();
-//            while (ringit.hasNext()) {
-//                PGPSecretKeyRing secretkeyring = (PGPSecretKeyRing) ringit.next();
-//                PGPSecretKey secretkey = secretkeyring.getSecretKey();
-//                secretkey.extractPrivateKey(passphrase, provider);
-//                return true;
-//            }
-//            return false;
-//        }
-
     }
 
     private static PGPPrivateKey getDecryptedPrivateKey(String provider, String secretKeyringFile, char[] passphrase) throws IOException, PGPException {
@@ -219,38 +205,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
         }
 
         // If this point is reached, no public key could be extracted with the given userId
-//        return null;
         throw new PGPException("Could not find a public key with the given userId");
-
-        // Legacy code
-//        PGPPublicKey pubkey = null;
-//        try (InputStream fin = Files.newInputStream(Paths.get(publicKeyring)); InputStream pin = PGPUtil.getDecoderStream(fin)) {
-//            PGPPublicKeyRingCollection pgppub = new PGPPublicKeyRingCollection(pin);
-//
-//            Iterator ringit = pgppub.getKeyRings();
-//            while (ringit.hasNext()) {
-//                PGPPublicKeyRing kring = (PGPPublicKeyRing) ringit.next();
-//
-//                Iterator keyit = kring.getPublicKeys();
-//                while (keyit.hasNext()) {
-//                    pubkey = (PGPPublicKey) keyit.next();
-//                    boolean userIdMatch = false;
-//
-//                    Iterator userit = pubkey.getUserIDs();
-//                    while (userit.hasNext()) {
-//                        String id = userit.next().toString();
-//                        if (id.contains(userId)) {
-//                            userIdMatch = true;
-//                            break;
-//                        }
-//                    }
-//                    if (pubkey.isEncryptionKey() && userIdMatch) {
-//                        return pubkey;
-//                    }
-//                }
-//            }
-//        }
-//        return null;
     }
 
     private static class OpenPGPDecryptCallback implements StreamCallback {
@@ -326,7 +281,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                             PGPLiteralData literalData = (PGPLiteralData) message;
 
                             try (InputStream lis = literalData.getInputStream()) {
-                                final byte[] buffer = new byte[4096];
+                                final byte[] buffer = new byte[BLOCK_SIZE];
                                 int len;
                                 while ((len = lis.read(buffer)) >= 0) {
                                     out.write(buffer, 0, len);
@@ -338,7 +293,6 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                             throw new PGPException("message is not a simple encrypted file - type unknown.");
                         }
 
-                        // TODO: May remove if unnecessary
                         if (encData.isIntegrityProtected()) {
                             if (!encData.verify()) {
                                 throw new PGPException("Failed message integrity check");
@@ -389,11 +343,13 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                 }
 
                 try {
+                    // TODO: Refactor internal symmetric encryption algorithm to be customizable
                     PGPEncryptedDataGenerator encryptedDataGenerator = new PGPEncryptedDataGenerator(
-                            new JcePGPDataEncryptorBuilder(PGPEncryptedData.AES_128).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider("BC"));
+                            new JcePGPDataEncryptorBuilder(PGPEncryptedData.AES_128).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider(provider));
 
                     encryptedDataGenerator.addMethod(new JcePublicKeyKeyEncryptionMethodGenerator(publicKey).setProvider(provider));
 
+                    // TODO: Refactor shared encryption code to utility
                     try (OutputStream encryptedOut = encryptedDataGenerator.open(output, new byte[BUFFER_SIZE])) {
                         PGPCompressedDataGenerator compressedDataGenerator = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
                         try (OutputStream compressedOut = compressedDataGenerator.open(encryptedOut, new byte[BUFFER_SIZE])) {
@@ -408,27 +364,6 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                             }
                         }
                     }
-
-                    // Legacy code
-//                    PGPEncryptedDataGenerator encGenerator = new PGPEncryptedDataGenerator(PGPEncryptedData.CAST5, false, secureRandom, provider);
-//                    encGenerator.addMethod(publicKey);
-//                    try (OutputStream encOut = encGenerator.open(output, new byte[65536])) {
-//
-//                        PGPCompressedDataGenerator compData = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
-//                        try (OutputStream compOut = compData.open(encOut, new byte[65536])) {
-//
-//                            PGPLiteralDataGenerator literal = new PGPLiteralDataGenerator();
-//                            try (OutputStream literalOut = literal.open(compOut, PGPLiteralData.BINARY, filename, new Date(), new byte[65536])) {
-//
-//                                final byte[] buffer = new byte[4096];
-//                                int len;
-//                                while ((len = in.read(buffer)) >= 0) {
-//                                    literalOut.write(buffer, 0, len);
-//                                }
-//
-//                            }
-//                        }
-//                    }
                 } finally {
                     if (isArmored) {
                         output.close();
