@@ -18,41 +18,31 @@ package org.apache.nifi.processors.standard.util;
 
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
-import org.apache.nifi.processors.standard.EncryptContent;
 import org.apache.nifi.processors.standard.EncryptContent.Encryptor;
-import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.openpgp.PGPCompressedData;
-import org.bouncycastle.openpgp.PGPCompressedDataGenerator;
 import org.bouncycastle.openpgp.PGPEncryptedData;
-import org.bouncycastle.openpgp.PGPEncryptedDataGenerator;
 import org.bouncycastle.openpgp.PGPEncryptedDataList;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPLiteralData;
-import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
 import org.bouncycastle.openpgp.PGPPBEEncryptedData;
-import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PGPDigestCalculatorProvider;
+import org.bouncycastle.openpgp.operator.PGPKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPDigestCalculatorProviderBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBEDataDecryptorFactoryBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBEKeyEncryptionMethodGenerator;
-import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.security.SecureRandom;
-import java.util.Date;
-import java.util.zip.Deflater;
+
+import static org.bouncycastle.openpgp.PGPUtil.getDecoderStream;
 
 public class OpenPGPPasswordBasedEncryptor implements Encryptor {
     private static final Logger logger = LoggerFactory.getLogger(OpenPGPPasswordBasedEncryptor.class);
-
-    private static final int BUFFER_SIZE = 65536;
-    private static final int BLOCK_SIZE = 4096;
 
     private String algorithm;
     private String provider;
@@ -88,7 +78,7 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
 
         @Override
         public void process(InputStream in, OutputStream out) throws IOException {
-            InputStream pgpin = PGPUtil.getDecoderStream(in);
+            InputStream pgpin = getDecoderStream(in);
             JcaPGPObjectFactory pgpFactory = new JcaPGPObjectFactory(pgpin);
 
             Object obj = pgpFactory.nextObject();
@@ -122,7 +112,7 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
 
                 PGPLiteralData literalData = (PGPLiteralData) obj;
                 InputStream plainIn = literalData.getInputStream();
-                final byte[] buffer = new byte[BLOCK_SIZE];
+                final byte[] buffer = new byte[org.apache.nifi.processors.standard.util.PGPUtil.BLOCK_SIZE];
                 int len;
                 while ((len = plainIn.read(buffer)) >= 0) {
                     out.write(buffer, 0, len);
@@ -157,51 +147,11 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
 
         @Override
         public void process(InputStream in, OutputStream out) throws IOException {
-            try{
-                encrypt(in, out, PGPEncryptedData.AES_128);
+            try {
+                PGPKeyEncryptionMethodGenerator encryptionMethodGenerator = new JcePBEKeyEncryptionMethodGenerator(password).setProvider(provider);
+                org.apache.nifi.processors.standard.util.PGPUtil.encrypt(in, out, algorithm, provider, PGPEncryptedData.AES_128, filename, encryptionMethodGenerator);
             } catch (Exception e) {
                 throw new ProcessException(e.getMessage());
-            }
-        }
-
-        private void encrypt(InputStream in, OutputStream out, int cipher) throws IOException, PGPException {
-            final boolean isArmored = EncryptContent.isPGPArmoredAlgorithm(algorithm);
-            OutputStream output = out;
-            if (isArmored) {
-                output = new ArmoredOutputStream(out);
-            }
-
-            // Default value, do not allow null encryption
-            if (cipher == PGPEncryptedData.NULL) {
-                logger.warn("Null encryption not allowed; defaulting to AES-128");
-                cipher = PGPEncryptedData.AES_128;
-            }
-
-            try {
-                PGPEncryptedDataGenerator encryptedDataGenerator = new PGPEncryptedDataGenerator(
-                        new JcePGPDataEncryptorBuilder(cipher).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider(provider));
-
-                encryptedDataGenerator.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider(provider));
-
-                // TODO: Refactor shared encryption code to utility
-                try (OutputStream encryptedOut = encryptedDataGenerator.open(output, new byte[BUFFER_SIZE])) {
-                    PGPCompressedDataGenerator compressedDataGenerator = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
-                    try (OutputStream compressedOut = compressedDataGenerator.open(encryptedOut, new byte[BUFFER_SIZE])) {
-                        PGPLiteralDataGenerator literalDataGenerator = new PGPLiteralDataGenerator();
-                        try (OutputStream literalOut = literalDataGenerator.open(compressedOut, PGPLiteralData.BINARY, filename, new Date(), new byte[BUFFER_SIZE])) {
-
-                            final byte[] buffer = new byte[BLOCK_SIZE];
-                            int len;
-                            while ((len = in.read(buffer)) >= 0) {
-                                literalOut.write(buffer, 0, len);
-                            }
-                        }
-                    }
-                }
-            } finally {
-                if (isArmored) {
-                    output.close();
-                }
             }
         }
     }

@@ -98,10 +98,6 @@ public class OpenPGPPasswordBasedEncryptorTest {
     @Test
     public void testShouldDecryptExternalFile() throws Exception {
         // Arrange
-        // This process will remove trailing empty lines, so the comparison does not match
-//        List<String> plaintextLines = Files.readAllLines(Paths.get(plainFile.getPath()));
-//        final String PLAINTEXT = StringUtils.join(plaintextLines, "\n");
-
         byte[] plainBytes = Files.readAllBytes(Paths.get(plainFile.getPath()));
         final String PLAINTEXT = new String(plainBytes, "UTF-8");
 
