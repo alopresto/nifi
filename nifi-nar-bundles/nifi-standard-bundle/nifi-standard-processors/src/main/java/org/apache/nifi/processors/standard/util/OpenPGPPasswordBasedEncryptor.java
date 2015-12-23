@@ -157,42 +157,51 @@ public class OpenPGPPasswordBasedEncryptor implements Encryptor {
 
         @Override
         public void process(InputStream in, OutputStream out) throws IOException {
+            try{
+                encrypt(in, out, PGPEncryptedData.AES_128);
+            } catch (Exception e) {
+                throw new ProcessException(e.getMessage());
+            }
+        }
+
+        private void encrypt(InputStream in, OutputStream out, int cipher) throws IOException, PGPException {
             final boolean isArmored = EncryptContent.isPGPArmoredAlgorithm(algorithm);
+            OutputStream output = out;
+            if (isArmored) {
+                output = new ArmoredOutputStream(out);
+            }
+
+            // Default value, do not allow null encryption
+            if (cipher == PGPEncryptedData.NULL) {
+                logger.warn("Null encryption not allowed; defaulting to AES-128");
+                cipher = PGPEncryptedData.AES_128;
+            }
+
             try {
-                OutputStream output = out;
-                if (isArmored) {
-                    output = new ArmoredOutputStream(out);
-                }
+                PGPEncryptedDataGenerator encryptedDataGenerator = new PGPEncryptedDataGenerator(
+                        new JcePGPDataEncryptorBuilder(cipher).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider(provider));
 
-                try {
-                    // TODO: Refactor internal symmetric encryption algorithm to be customizable
-                    PGPEncryptedDataGenerator encryptedDataGenerator = new PGPEncryptedDataGenerator(
-                            new JcePGPDataEncryptorBuilder(PGPEncryptedData.AES_128).setWithIntegrityPacket(true).setSecureRandom(new SecureRandom()).setProvider(provider));
+                encryptedDataGenerator.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider(provider));
 
-                    encryptedDataGenerator.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider(provider));
+                // TODO: Refactor shared encryption code to utility
+                try (OutputStream encryptedOut = encryptedDataGenerator.open(output, new byte[BUFFER_SIZE])) {
+                    PGPCompressedDataGenerator compressedDataGenerator = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
+                    try (OutputStream compressedOut = compressedDataGenerator.open(encryptedOut, new byte[BUFFER_SIZE])) {
+                        PGPLiteralDataGenerator literalDataGenerator = new PGPLiteralDataGenerator();
+                        try (OutputStream literalOut = literalDataGenerator.open(compressedOut, PGPLiteralData.BINARY, filename, new Date(), new byte[BUFFER_SIZE])) {
 
-                    // TODO: Refactor shared encryption code to utility
-                    try (OutputStream encryptedOut = encryptedDataGenerator.open(output, new byte[BUFFER_SIZE])) {
-                        PGPCompressedDataGenerator compressedDataGenerator = new PGPCompressedDataGenerator(PGPCompressedData.ZIP, Deflater.BEST_SPEED);
-                        try (OutputStream compressedOut = compressedDataGenerator.open(encryptedOut, new byte[BUFFER_SIZE])) {
-                            PGPLiteralDataGenerator literalDataGenerator = new PGPLiteralDataGenerator();
-                            try (OutputStream literalOut = literalDataGenerator.open(compressedOut, PGPLiteralData.BINARY, filename, new Date(), new byte[BUFFER_SIZE])) {
-
-                                final byte[] buffer = new byte[BLOCK_SIZE];
-                                int len;
-                                while ((len = in.read(buffer)) >= 0) {
-                                    literalOut.write(buffer, 0, len);
-                                }
+                            final byte[] buffer = new byte[BLOCK_SIZE];
+                            int len;
+                            while ((len = in.read(buffer)) >= 0) {
+                                literalOut.write(buffer, 0, len);
                             }
                         }
                     }
-                } finally {
-                    if (isArmored) {
-                        output.close();
-                    }
                 }
-            } catch (Exception e) {
-                throw new ProcessException(e.getMessage());
+            } finally {
+                if (isArmored) {
+                    output.close();
+                }
             }
         }
     }
