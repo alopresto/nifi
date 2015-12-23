@@ -61,14 +61,15 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.zip.Deflater;
 
+import static org.apache.nifi.processors.standard.util.PGPUtil.BLOCK_SIZE;
+import static org.apache.nifi.processors.standard.util.PGPUtil.BUFFER_SIZE;
+
 public class OpenPGPKeyBasedEncryptor implements Encryptor {
     private static final Logger logger = LoggerFactory.getLogger(OpenPGPPasswordBasedEncryptor.class);
 
-    private static final int BUFFER_SIZE = 65536;
-    private static final int BLOCK_SIZE = 4096;
-
     private String algorithm;
     private String provider;
+    // TODO: This can hold either the secret or public keyring path
     private String keyring;
     private String userId;
     private char[] passphrase;
@@ -175,7 +176,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
     public static PGPPublicKey getPublicKey(String userId, String publicKeyringFile) throws IOException, PGPException {
         // TODO: Reevaluate the mechanism for executing this task as performance can suffer here and only a specific key needs to be validated
 
-        // Read in from the secret keyring file
+        // Read in from the public keyring file
         try (FileInputStream keyInputStream = new FileInputStream(publicKeyringFile)) {
 
             // Form the PublicKeyRing collection (1.53 way with fingerprint calculator)
@@ -288,6 +289,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                                 }
                             }
                         } else if (message instanceof PGPOnePassSignatureList) {
+                            // TODO: This is legacy code but should verify signature list here
                             throw new PGPException("encrypted message contains a signed message - not literal data.");
                         } else {
                             throw new PGPException("message is not a simple encrypted file - type unknown.");
