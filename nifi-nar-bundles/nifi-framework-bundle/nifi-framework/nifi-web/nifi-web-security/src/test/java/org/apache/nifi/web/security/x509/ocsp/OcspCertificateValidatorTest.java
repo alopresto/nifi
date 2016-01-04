@@ -1,7 +1,6 @@
 package org.apache.nifi.web.security.x509.ocsp;
 
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.asn1.x509.KeyUsage;
@@ -14,10 +13,10 @@ import org.bouncycastle.cert.ocsp.OCSPReq;
 import org.bouncycastle.cert.ocsp.OCSPResp;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
-import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -117,12 +116,7 @@ public class OcspCertificateValidatorTest {
     private static X509Certificate generateCertificate(String dn, KeyPair keyPair) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         PrivateKey privateKey = keyPair.getPrivate();
         ContentSigner sigGen = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(PROVIDER).build(privateKey);
-
-        // This way is WRONG and will result in a null public key in the certificate
-//        AlgorithmIdentifier algorithmIdentifier = new DefaultSignatureAlgorithmIdentifierFinder().find(SIGNATURE_ALGORITHM);
-//        SubjectPublicKeyInfo subPubKeyInfo = new SubjectPublicKeyInfo(algorithmIdentifier, keyPair.getPublic().getEncoded());
         SubjectPublicKeyInfo subPubKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic().getEncoded());
-
         Date startDate = new Date(YESTERDAY);
         Date endDate = new Date(ONE_YEAR_FROM_NOW);
 
@@ -139,19 +133,15 @@ public class OcspCertificateValidatorTest {
                 new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment | KeyUsage.dataEncipherment | KeyUsage.keyAgreement));
 
         // (2) extendedKeyUsage extension
-        Vector<KeyPurposeId> ekUsages = new Vector<KeyPurposeId>();
+        Vector<KeyPurposeId> ekUsages = new Vector<>();
         ekUsages.add(KeyPurposeId.id_kp_clientAuth);
         ekUsages.add(KeyPurposeId.id_kp_serverAuth);
         certBuilder.addExtension(X509Extension.extendedKeyUsage, false, new ExtendedKeyUsage(ekUsages));
 
         // Sign the certificate
         X509CertificateHolder certificateHolder = certBuilder.build(sigGen);
-        logger.info("SPKI from certificate holder: {}", certificateHolder.getSubjectPublicKeyInfo().parsePublicKey());
-
-        X509Certificate certificate = new JcaX509CertificateConverter().setProvider(PROVIDER)
+        return new JcaX509CertificateConverter().setProvider(PROVIDER)
                 .getCertificate(certificateHolder);
-        logger.info("Public key from certificate: {}", certificate.getPublicKey());
-        return certificate;
     }
 
     /**
@@ -192,11 +182,7 @@ public class OcspCertificateValidatorTest {
      */
     private static X509Certificate generateIssuedCertificate(String dn, PublicKey publicKey, String issuerDn, PrivateKey issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         ContentSigner sigGen = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(PROVIDER).build(issuerKey);
-
-        AlgorithmIdentifier algorithmIdentifier = new DefaultSignatureAlgorithmIdentifierFinder().find(SIGNATURE_ALGORITHM);
-
-        SubjectPublicKeyInfo subPubKeyInfo = new SubjectPublicKeyInfo(algorithmIdentifier, publicKey.getEncoded());
-
+        SubjectPublicKeyInfo subPubKeyInfo = SubjectPublicKeyInfo.getInstance(publicKey.getEncoded());
         Date startDate = new Date(YESTERDAY);
         Date endDate = new Date(ONE_YEAR_FROM_NOW);
 
@@ -208,9 +194,8 @@ public class OcspCertificateValidatorTest {
                 subPubKeyInfo);
 
         X509CertificateHolder certificateHolder = v3CertGen.build(sigGen);
-        X509Certificate certificate = new JcaX509CertificateConverter().setProvider(PROVIDER)
+        return new JcaX509CertificateConverter().setProvider(PROVIDER)
                 .getCertificate(certificateHolder);
-        return certificate;
     }
 
     private static OCSPResp generateFailedOCSPResponse(OCSPReq request) {
@@ -309,6 +294,14 @@ public class OcspCertificateValidatorTest {
         assert certificate.getSubjectX500Principal().getName().equals(testDn);
         assert certificate.getIssuerX500Principal().getName().equals(issuerDn);
         certificate.verify(issuerCertificate.getPublicKey());
+
+        try {
+            certificate.verify(certificate.getPublicKey());
+            Assert.fail("Should have thrown exception");
+        } catch (Exception e) {
+            assert e instanceof SignatureException;
+            assert e.getMessage().contains("certificate does not verify with supplied key");
+        }
     }
 
     @Test
