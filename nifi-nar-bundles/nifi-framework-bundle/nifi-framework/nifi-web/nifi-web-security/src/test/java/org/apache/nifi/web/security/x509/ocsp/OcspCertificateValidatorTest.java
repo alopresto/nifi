@@ -19,6 +19,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -304,26 +305,31 @@ public class OcspCertificateValidatorTest {
         }
     }
 
+    @Ignore("To be implemented with Groovy test")
     @Test
     public void testShouldValidateCertificate() throws Exception {
 
     }
 
+    @Ignore("To be implemented with Groovy test")
     @Test
     public void testShouldNotValidateEmptyCertificate() throws Exception {
 
     }
 
+    @Ignore("To be implemented with Groovy test")
     @Test
     public void testShouldNotValidateInvalidCertificate() throws Exception {
 
     }
 
+    @Ignore("To be implemented with Groovy test")
     @Test
     public void testValidateShouldHandleUnsignedResponse() throws Exception {
 
     }
 
+    @Ignore("To be implemented with Groovy test")
     @Test
     public void testValidateShouldHandleResponseWithIncorrectNonce() throws Exception {
 
