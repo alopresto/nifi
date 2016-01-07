@@ -307,8 +307,7 @@ public class OcspCertificateValidator {
             final OCSPReq ocspRequest = requestGenerator.build();
 
             // perform the request
-            final WebResource resource = client.resource(validationAuthorityURI);
-            final ClientResponse response = resource.header(CONTENT_TYPE_HEADER, OCSP_REQUEST_CONTENT_TYPE).post(ClientResponse.class, ocspRequest.getEncoded());
+            final ClientResponse response = getClientResponse(ocspRequest);
 
             // ensure the request was completed successfully
             if (ClientResponse.Status.OK.getStatusCode() != response.getStatusInfo().getStatusCode()) {
@@ -406,6 +405,11 @@ public class OcspCertificateValidator {
         }
 
         return ocspStatus;
+    }
+
+    private ClientResponse getClientResponse(OCSPReq ocspRequest) throws IOException {
+        final WebResource resource = client.resource(validationAuthorityURI);
+        return resource.header(CONTENT_TYPE_HEADER, OCSP_REQUEST_CONTENT_TYPE).post(ClientResponse.class, ocspRequest.getEncoded());
     }
 
     /**

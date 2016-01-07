@@ -1,11 +1,13 @@
 package org.apache.nifi.web.security.x509.ocsp
+import com.sun.jersey.api.client.ClientResponse
+import com.sun.jersey.spi.MessageBodyWorkers
+import org.apache.nifi.util.NiFiProperties
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.*
 import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.ocsp.OCSPReq
-import org.bouncycastle.cert.ocsp.OCSPResp
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.ContentSigner
 import org.bouncycastle.operator.OperatorCreationException
@@ -18,6 +20,7 @@ import java.security.*
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 
+import static groovy.test.GroovyAssert.shouldFail
 import static org.junit.Assert.fail
 
 public class OcspCertificateValidatorGroovyTest {
@@ -30,24 +33,27 @@ public class OcspCertificateValidatorGroovyTest {
     private static final String SIGNATURE_ALGORITHM = "SHA256withRSA";
     private static final String PROVIDER = "BC";
 
+    private static final String SUBJECT_DN = "CN=NiFi Test Server,OU=Security,O=Apache,ST=CA,C=US";
     private static final String ISSUER_DN = "CN=NiFi Test CA,OU=Security,O=Apache,ST=CA,C=US";
 
-    private static X509Certificate ISSUER_CERTIFICATE;
+    private NiFiProperties mockProperties
+
+    // System under test
+    OcspCertificateValidator certificateValidator
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
         Security.addProvider(new BouncyCastleProvider());
-
-//        ISSUER_CERTIFICATE = generateCertificate(ISSUER_DN);
     }
 
     @Before
     public void setUp() throws Exception {
+        mockProperties = [getProperty: { String propertyName -> return "value_for_${propertyName}" }] as NiFiProperties
     }
 
     @After
     public void tearDown() throws Exception {
-
+        certificateValidator?.metaClass = null
     }
 
     /**
@@ -75,7 +81,8 @@ public class OcspCertificateValidatorGroovyTest {
      * @throws InvalidKeyException
      * @throws OperatorCreationException
      */
-    private static X509Certificate generateCertificate(String dn) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
+    private
+    static X509Certificate generateCertificate(String dn) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         KeyPair keyPair = generateKeyPair();
         return generateCertificate(dn, keyPair);
     }
@@ -83,7 +90,7 @@ public class OcspCertificateValidatorGroovyTest {
     /**
      * Generates a signed certificate with a specific keypair.
      *
-     * @param dn      the DN
+     * @param dn the DN
      * @param keyPair the public key will be included in the certificate and the the private key is used to sign the certificate
      * @return the certificate
      * @throws IOException
@@ -94,7 +101,8 @@ public class OcspCertificateValidatorGroovyTest {
      * @throws InvalidKeyException
      * @throws OperatorCreationException
      */
-    private static X509Certificate generateCertificate(String dn, KeyPair keyPair) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
+    private
+    static X509Certificate generateCertificate(String dn, KeyPair keyPair) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         PrivateKey privateKey = keyPair.getPrivate();
         ContentSigner sigGen = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(PROVIDER).build(privateKey);
         SubjectPublicKeyInfo subPubKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic().getEncoded());
@@ -128,8 +136,8 @@ public class OcspCertificateValidatorGroovyTest {
     /**
      * Generates a certificate signed by the issuer key.
      *
-     * @param dn        the subject DN
-     * @param issuerDn  the issuer DN
+     * @param dn the subject DN
+     * @param issuerDn the issuer DN
      * @param issuerKey the issuer private key
      * @return the certificate
      * @throws IOException
@@ -140,7 +148,8 @@ public class OcspCertificateValidatorGroovyTest {
      * @throws InvalidKeyException
      * @throws OperatorCreationException
      */
-    private static X509Certificate generateIssuedCertificate(String dn, String issuerDn, PrivateKey issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
+    private
+    static X509Certificate generateIssuedCertificate(String dn, String issuerDn, PrivateKey issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         KeyPair keyPair = generateKeyPair();
         return generateIssuedCertificate(dn, keyPair.getPublic(), issuerDn, issuerKey);
     }
@@ -148,9 +157,9 @@ public class OcspCertificateValidatorGroovyTest {
     /**
      * Generates a certificate with a specific public key signed by the issuer key.
      *
-     * @param dn        the subject DN
+     * @param dn the subject DN
      * @param publicKey the subject public key
-     * @param issuerDn  the issuer DN
+     * @param issuerDn the issuer DN
      * @param issuerKey the issuer private key
      * @return the certificate
      * @throws IOException
@@ -161,7 +170,8 @@ public class OcspCertificateValidatorGroovyTest {
      * @throws InvalidKeyException
      * @throws OperatorCreationException
      */
-    private static X509Certificate generateIssuedCertificate(String dn, PublicKey publicKey, String issuerDn, PrivateKey issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
+    private
+    static X509Certificate generateIssuedCertificate(String dn, PublicKey publicKey, String issuerDn, PrivateKey issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
         ContentSigner sigGen = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(PROVIDER).build(issuerKey);
         SubjectPublicKeyInfo subPubKeyInfo = SubjectPublicKeyInfo.getInstance(publicKey.getEncoded());
         Date startDate = new Date(YESTERDAY);
@@ -179,49 +189,14 @@ public class OcspCertificateValidatorGroovyTest {
                 .getCertificate(certificateHolder);
     }
 
-    private static OCSPResp generateFailedOCSPResponse(OCSPReq request) {
-        return null;
-    }
+    private static X509Certificate[] generateCertificateChain(String dn = SUBJECT_DN, String issuerDn = ISSUER_DN) {
+        final KeyPair issuerKeyPair = generateKeyPair();
+        final PrivateKey issuerPrivateKey = issuerKeyPair.getPrivate();
 
-//    private static OCSPResp generateSuccessfulOCSPResponse(OCSPReq request) {
-//
-//        int response = OCSPRespBuilder.INTERNAL_ERROR; // by default response as ERROR
-//
-//        SubjectPublicKeyInfo keyinfo = SubjectPublicKeyInfo.getInstance(caCert.getPublicKey().getEncoded());
-//        BasicOCSPRespBuilder respGen;
-//        try {
-//            respGen = new BasicOCSPRespBuilder(keyinfo, new JcaDigestCalculatorProviderBuilder().setProvider("BC").build().get(CertificateID.HASH_SHA1)); //Create builder
-//        } catch (Exception e) {
-//            return null;
-//        }
-//
-//        Extension ext = request.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nonce);
-//        if (ext != null) {
-//            respGen.setResponseExtensions(new Extensions(new Extension[]{ext})); // Put the nonce back in the response
-//        }
-//        Req[] requests = request.getRequestList();
-//
-//        for (int i = 0; i != requests.length; i++) { //For all the Req in the Request
-//
-//            CertificateID certID = requests[i].getCertID();
-//            BigInteger serial = certID.getSerialNumber();
-//
-//            if (CRLManager.serialNotInCRL(crl, serial)) { // If the certificate is not in the CRL
-//                respGen.addResponse(certID, CertificateStatus.GOOD); // Set the status to good
-//            } else {
-//                respGen.addResponse(certID, new RevokedStatus(new Date(), CRLReason.privilegeWithdrawn)); //Set status privilegeWithdrawn for the given ID
-//            }
-//        }
-//
-//        try {
-//            ContentSigner contentSigner = new JcaContentSignerBuilder("SHA1withRSA").setProvider("BC").build(privKey);
-//            BasicOCSPResp basicResp = respGen.build(contentSigner, new X509CertificateHolder[]{new X509CertificateHolder(caCert.getEncoded())}, new Date());
-//            response = OCSPRespBuilder.SUCCESSFUL; //Set response as successful
-//            return new OCSPRespBuilder().build(response, basicResp); // build the response
-//        } catch (Exception e) {
-//            return null;
-//        }
-//    }
+        final X509Certificate issuerCertificate = generateCertificate(issuerDn, issuerKeyPair);
+        final X509Certificate certificate = generateIssuedCertificate(dn, issuerDn, issuerPrivateKey);
+        [certificate, issuerCertificate] as X509Certificate[]
+    }
 
     @Test
     public void testShouldGenerateCertificate() throws Exception {
@@ -287,7 +262,51 @@ public class OcspCertificateValidatorGroovyTest {
 
     @Test
     public void testShouldValidateCertificate() throws Exception {
-        fail("Not yet implemented")
+        // Arrange
+        KeyPair ocspResponderKeyPair = generateKeyPair();
+
+        X509Certificate[] certificateChain = generateCertificateChain();
+        X509CertificateHolder[] certificateHolderChain = certificateChain.collect {
+            new X509CertificateHolder(it.encoded)
+        }
+
+        // Prepare the successful OCSP response
+        // TODO: May not be necessary if the OCSPResp object can just be mangled
+
+//        AlgorithmIdentifier sigAlgId = new DefaultSignatureAlgorithmIdentifierFinder().find(SIGNATURE_ALGORITHM);
+//        AlgorithmIdentifier digAlgId = new DefaultDigestAlgorithmIdentifierFinder().find(sigAlgId);
+//
+//        ContentSigner contentSigner = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).build(ocspResponderKeyPair.private)
+//
+//        DigestCalculator digestCalculator = new JcaDigestCalculatorProviderBuilder().build().get(AlgorithmIdentifier.getInstance(digAlgId))
+//        CertificateID certId = new CertificateID(digestCalculator, certificateHolderChain[1], certificateChain[0].serialNumber)
+//        BasicOCSPResp response = new BasicOCSPRespBuilder(new RespID(new X500Name("CN=OCSP Responder"))).addResponse(certId, CertificateStatus.GOOD).build(contentSigner, certificateHolderChain, new Date());
+//        final OCSPResp SUCCESSFUL_RESPONSE = new OCSPResp(response.encoded)
+
+
+        certificateValidator = new OcspCertificateValidator(mockProperties)
+
+        // Override the validator client with a mock implementation
+//        WebResource mockResource = [
+//                header: { String name, Object value -> new WebResource().header(name, value) },
+//                post  : { Class responseClass, byte[] encoded -> responseClass.newInstance() }
+//        ] as MockWebResource
+//        Client mockClient = [resource: { URI uri -> mockResource }] as Client
+//        certificateValidator.client = mockClient
+
+        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
+            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream("Success".bytes), [:] as MessageBodyWorkers)
+        }
+
+//        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
+//            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream(SUCCESSFUL_RESPONSE.encoded), [:] as MessageBodyWorkers)
+//        }
+
+        // Act
+        certificateValidator.validate(certificateChain)
+
+        // Assert
+        assert true
     }
 
     @Ignore("To be implemented with Groovy test")
@@ -296,10 +315,27 @@ public class OcspCertificateValidatorGroovyTest {
 
     }
 
-    @Ignore("To be implemented with Groovy test")
     @Test
-    public void testShouldNotValidateInvalidCertificate() throws Exception {
+    public void testShouldNotValidateRevokedCertificate() throws Exception {
+        // Arrange
+        X509Certificate[] certificateChain = generateCertificateChain();
+        X509CertificateHolder[] certificateHolderChain = certificateChain.collect {
+            new X509CertificateHolder(it.encoded)
+        }
 
+        certificateValidator = new OcspCertificateValidator(mockProperties)
+
+        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
+            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream("Failure".bytes), [:] as MessageBodyWorkers)
+        }
+
+        // Act
+        def msg = shouldFail(CertificateStatusException) {
+            certificateValidator.validate(certificateChain)
+        }
+
+        // Assert
+        assert msg =~ "is revoked according to the certificate authority"
     }
 
     @Ignore("To be implemented with Groovy test")
