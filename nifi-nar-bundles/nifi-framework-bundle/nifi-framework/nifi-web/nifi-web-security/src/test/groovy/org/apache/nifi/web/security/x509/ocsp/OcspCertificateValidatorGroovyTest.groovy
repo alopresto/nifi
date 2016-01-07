@@ -1,13 +1,14 @@
 package org.apache.nifi.web.security.x509.ocsp
-import com.sun.jersey.api.client.ClientResponse
-import com.sun.jersey.spi.MessageBodyWorkers
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
+import com.google.common.cache.LoadingCache
+import com.sun.jersey.api.client.Client
 import org.apache.nifi.util.NiFiProperties
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.*
 import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
-import org.bouncycastle.cert.ocsp.OCSPReq
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.ContentSigner
 import org.bouncycastle.operator.OperatorCreationException
@@ -263,44 +264,21 @@ public class OcspCertificateValidatorGroovyTest {
     @Test
     public void testShouldValidateCertificate() throws Exception {
         // Arrange
-        KeyPair ocspResponderKeyPair = generateKeyPair();
-
         X509Certificate[] certificateChain = generateCertificateChain();
-        X509CertificateHolder[] certificateHolderChain = certificateChain.collect {
-            new X509CertificateHolder(it.encoded)
-        }
-
-        // Prepare the successful OCSP response
-        // TODO: May not be necessary if the OCSPResp object can just be mangled
-
-//        AlgorithmIdentifier sigAlgId = new DefaultSignatureAlgorithmIdentifierFinder().find(SIGNATURE_ALGORITHM);
-//        AlgorithmIdentifier digAlgId = new DefaultDigestAlgorithmIdentifierFinder().find(sigAlgId);
-//
-//        ContentSigner contentSigner = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).build(ocspResponderKeyPair.private)
-//
-//        DigestCalculator digestCalculator = new JcaDigestCalculatorProviderBuilder().build().get(AlgorithmIdentifier.getInstance(digAlgId))
-//        CertificateID certId = new CertificateID(digestCalculator, certificateHolderChain[1], certificateChain[0].serialNumber)
-//        BasicOCSPResp response = new BasicOCSPRespBuilder(new RespID(new X500Name("CN=OCSP Responder"))).addResponse(certId, CertificateStatus.GOOD).build(contentSigner, certificateHolderChain, new Date());
-//        final OCSPResp SUCCESSFUL_RESPONSE = new OCSPResp(response.encoded)
-
 
         certificateValidator = new OcspCertificateValidator(mockProperties)
 
-        // Override the validator client with a mock implementation
-//        WebResource mockResource = [
-//                header: { String name, Object value -> new WebResource().header(name, value) },
-//                post  : { Class responseClass, byte[] encoded -> responseClass.newInstance() }
-//        ] as MockWebResource
-//        Client mockClient = [resource: { URI uri -> mockResource }] as Client
-//        certificateValidator.client = mockClient
+        // Must populate the client even though it is not used in this check
+        certificateValidator.client = new Client()
 
-        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
-            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream("Success".bytes), [:] as MessageBodyWorkers)
-        }
-
-//        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
-//            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream(SUCCESSFUL_RESPONSE.encoded), [:] as MessageBodyWorkers)
-//        }
+        // Form a map of the request to a good status and load it into the cache
+        OcspRequest revokedRequest = new OcspRequest(certificateChain.first(), certificateChain.last())
+        OcspStatus revokedStatus = new OcspStatus()
+        revokedStatus.responseStatus = OcspStatus.ResponseStatus.Successful
+        revokedStatus.validationStatus = OcspStatus.ValidationStatus.Good
+        revokedStatus.verificationStatus = OcspStatus.VerificationStatus.Verified
+        LoadingCache<OcspRequest, OcspStatus> cacheWithRevokedCertificate = buildCacheWithContents([(revokedRequest): revokedStatus])
+        certificateValidator.ocspCache = cacheWithRevokedCertificate
 
         // Act
         certificateValidator.validate(certificateChain)
@@ -319,15 +297,20 @@ public class OcspCertificateValidatorGroovyTest {
     public void testShouldNotValidateRevokedCertificate() throws Exception {
         // Arrange
         X509Certificate[] certificateChain = generateCertificateChain();
-        X509CertificateHolder[] certificateHolderChain = certificateChain.collect {
-            new X509CertificateHolder(it.encoded)
-        }
 
         certificateValidator = new OcspCertificateValidator(mockProperties)
 
-        certificateValidator.metaClass.getClientResponse = { OCSPReq request ->
-            new ClientResponse(ClientResponse.Status.OK, null, new ByteArrayInputStream("Failure".bytes), [:] as MessageBodyWorkers)
-        }
+        // Must populate the client even though it is not used in this check
+        certificateValidator.client = new Client()
+
+        // Form a map of the request to a revoked status and load it into the cache
+        OcspRequest revokedRequest = new OcspRequest(certificateChain.first(), certificateChain.last())
+        OcspStatus revokedStatus = new OcspStatus()
+        revokedStatus.responseStatus = OcspStatus.ResponseStatus.Successful
+        revokedStatus.validationStatus = OcspStatus.ValidationStatus.Revoked
+        revokedStatus.verificationStatus = OcspStatus.VerificationStatus.Verified
+        LoadingCache<OcspRequest, OcspStatus> cacheWithRevokedCertificate = buildCacheWithContents([(revokedRequest): revokedStatus])
+        certificateValidator.ocspCache = cacheWithRevokedCertificate
 
         // Act
         def msg = shouldFail(CertificateStatusException) {
@@ -336,6 +319,16 @@ public class OcspCertificateValidatorGroovyTest {
 
         // Assert
         assert msg =~ "is revoked according to the certificate authority"
+    }
+
+    LoadingCache<OcspRequest, OcspStatus> buildCacheWithContents(Map map) {
+        CacheBuilder.newBuilder().build(new CacheLoader<OcspRequest, OcspStatus>() {
+            @Override
+            public OcspStatus load(OcspRequest ocspRequest) throws Exception {
+                logger.info("Mock cache implementation load(${ocspRequest}) returns ${map.get(ocspRequest)}")
+                return map.get(ocspRequest) as OcspStatus
+            }
+        });
     }
 
     @Ignore("To be implemented with Groovy test")
