@@ -94,23 +94,6 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
     }
 
     private static NiFiProperties mockProperties(Map props) {
-//        def stubbedProperties = new StubFor(NiFiProperties)
-//        stubbedProperties.demand.with {
-//            getProperty { String propName ->
-//                if (props.containsKey(propName)) {
-//                    return props.get(propName)
-//                } else {
-//                    return ""
-//                }
-//            }
-//            methodMissing { String method, def args ->
-//                    logger.methodMissing("Tried to call missing NiFiProperties.${method}(${args})")
-//                    return null
-//            }
-//        }
-//
-//        return stubbedProperties
-
         NiFiProperties nfp = new NiFiProperties(props)
         nfp.getMetaClass().getProperty = { String propName ->
             if (props.containsKey(propName)) {
@@ -147,7 +130,6 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
             delegate.dump()
         }
 
-//        MockNiFiProperties nfp = [getProperty: { String propName -> "${propName}_value"}] as MockNiFiProperties
         nfp
     }
 
@@ -199,14 +181,3 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
     }
 }
-
-//public class MockNiFiProperties extends NiFiProperties {
-//    public MockNiFiProperties(Map props) {
-//        super(props)
-//    }
-//
-//    @Override
-//    public String toString() {
-//        dump()
-//    }
-//}
