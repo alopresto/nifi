@@ -16,9 +16,6 @@
  */
 package org.apache.nifi.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -36,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class NiFiProperties extends Properties {
 
@@ -506,6 +505,7 @@ public class NiFiProperties extends Properties {
     /**
      * @return the user authorities file
      */
+    // TODO: Fix typo
     public File getAuthorityProviderConfiguraitonFile() {
         final String value = getProperty(AUTHORITY_PROVIDER_CONFIGURATION_FILE);
         if (StringUtils.isBlank(value)) {
@@ -518,6 +518,7 @@ public class NiFiProperties extends Properties {
     /**
      * @return the user authorities file
      */
+    // TODO: Fix typo
     public File getLoginIdentityProviderConfiguraitonFile() {
         final String value = getProperty(LOGIN_IDENTITY_PROVIDER_CONFIGURATION_FILE);
         if (StringUtils.isBlank(value)) {

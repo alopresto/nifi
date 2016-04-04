@@ -57,6 +57,7 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
     private static final String MOZILLA_CURRENT_TLS_URL = "https://statics.tls.security.mozilla.org/server-side-tls-conf.json"
 
+    private static Map propertiesMap
     private static NiFiProperties DEFAULT_PROPS
     private static NiFiProperties MUTUAL_AUTH_PROPS
 
@@ -65,8 +66,8 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
     private SslContextFactory sslContextFactory
     private static final Map LEGACY_NIFI_060_CONFIGURATION = [
-            tls_versions: ["SSLv2Hello", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"],
-            ciphersuites: legacyNiFi060CipherSuites(),
+            tls_versions    : ["SSLv2Hello", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"],
+            ciphersuites    : legacyNiFi060CipherSuites(),
             ciphersuiteorder: false
     ]
 
@@ -172,7 +173,7 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
         final File keystoreFile = new File(SslContextFactoryTest.class.getResource("/localhost-ks.jks").toURI());
         final File truststoreFile = new File(SslContextFactoryTest.class.getResource("/localhost-ts.jks").toURI());
 
-        def propertiesMap = [
+        propertiesMap = [
                 (SECURITY_KEYSTORE)        : keystoreFile.getAbsolutePath(),
                 (SECURITY_KEYSTORE_TYPE)   : KeystoreType.JKS as String,
                 (SECURITY_KEYSTORE_PASSWD) : KEYSTORE_PASSWORD,
@@ -202,7 +203,7 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
     private static def retrieveTLSConfigurationsFromMozilla() {
         def mozillaTlsJson = MOZILLA_CURRENT_TLS_URL.toURL().text
-        logger.info("Retrieved from Mozilla: ${mozillaTlsJson}")
+        logger.debug("Retrieved from Mozilla: ${mozillaTlsJson}")
         JsonSlurper slurper = new JsonSlurper()
         slurper.parseText(mozillaTlsJson)
     }
@@ -286,5 +287,55 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
         // Assert
         assert sslContextMeetsConfiguration(sslContext, MOZILLA_CONFIGURATIONS.intermediate)
+    }
+
+    /**
+     * Regression test to ensure proper validation still occurs
+     */
+    @Test
+    void testCreateSslContextShouldRequireKeystoreProperties() {
+        // Arrange
+        sslContextFactory = new SslContextFactory()
+
+        NiFiProperties emptyProperties = mockProperties([:])
+
+        // Act
+
+        /* The default method provides "false" as the strict parameter. If strict mode is false, properties missing the keystore properties result in a null return value */
+        def emptyContext = sslContextFactory.createSslContext(emptyProperties)
+        logger.info("Empty context: ${emptyContext}")
+        def emptyContextExplicit = sslContextFactory.createSslContext(emptyProperties, false)
+        logger.info("Empty context (explicit): ${emptyContextExplicit}")
+
+        // If strict mode is true, missing keystore properties throw an exception
+        def msg = shouldFail(SslContextCreationException) {
+            def sslContext = sslContextFactory.createSslContext(emptyProperties, true)
+        }
+        logger.expected(msg)
+
+        // Assert
+        assert emptyContext == null
+        assert emptyContextExplicit == null
+        assert msg =~ "SSL context cannot be created because keystore properties have not been configured."
+    }
+
+    /**
+     * Regression test to ensure proper validation still occurs
+     */
+    @Test
+    void testCreateSslContextWithClientAuthShouldRequireTruststoreProperties() {
+        // Arrange
+        sslContextFactory = new SslContextFactory()
+
+        NiFiProperties emptyTruststoreProperties = mockProperties(propertiesMap + [(SECURITY_NEED_CLIENT_AUTH):"true"])
+
+        // Act
+        def msg = shouldFail(SslContextCreationException) {
+            def sslContext = sslContextFactory.createSslContext(emptyTruststoreProperties)
+        }
+        logger.expected(msg)
+
+        // Assert
+        assert msg =~ "Need client auth is set to 'true', but no truststore properties are configured."
     }
 }

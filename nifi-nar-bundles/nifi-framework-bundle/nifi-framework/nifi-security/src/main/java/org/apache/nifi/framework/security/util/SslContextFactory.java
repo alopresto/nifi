@@ -94,6 +94,7 @@ public final class SslContextFactory {
             }
 
             // initialize the ssl context
+            // TODO: Make configurable NIFI-1478, NIFI-1480, NIFI-1688
             final SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init(keyManagerFactory.getKeyManagers(),
                     trustManagerFactory.getTrustManagers(), null);
