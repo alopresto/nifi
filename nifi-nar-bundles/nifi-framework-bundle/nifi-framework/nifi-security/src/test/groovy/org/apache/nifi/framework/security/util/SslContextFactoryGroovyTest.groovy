@@ -263,7 +263,7 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
     }
 
     @Test
-    void testDefaultCreateSslContextCipherSuitesShouldMeetLegacyNiFiConfiguration() {
+    void testDefaultCreateSslContextShouldMeetLegacyNiFiConfiguration() {
         // Arrange
         sslContextFactory = new SslContextFactory()
 
@@ -277,12 +277,26 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
 
     @Ignore("Default NiFi does not yet meet Mozilla intermediate")
     @Test
-    void testDefaultCreateSslContextCipherSuitesShouldMeetMozillaIntermediateConfiguration() {
+    void testDefaultCreateSslContextShouldMeetMozillaIntermediateConfiguration() {
         // Arrange
         sslContextFactory = new SslContextFactory()
 
         // Act
         def sslContext = sslContextFactory.createSslContext(DEFAULT_PROPS)
+        logger.info("SSL Context: ${sslContext?.dump()?.split(/, /)?.join("\n")}")
+
+        // Assert
+        assert sslContextMeetsConfiguration(sslContext, MOZILLA_CONFIGURATIONS.intermediate)
+    }
+
+    @Ignore("Not yet implemented")
+    @Test
+    void testCreateIntermediateSslContextShouldMeetMozillaIntermediateConfiguration() {
+        // Arrange
+        sslContextFactory = new SslContextFactory()
+
+        // Act
+        def sslContext = sslContextFactory.createSslContext(SslContextFactory.TLSConfiguration.INTERMEDIATE, DEFAULT_PROPS)
         logger.info("SSL Context: ${sslContext?.dump()?.split(/, /)?.join("\n")}")
 
         // Assert
