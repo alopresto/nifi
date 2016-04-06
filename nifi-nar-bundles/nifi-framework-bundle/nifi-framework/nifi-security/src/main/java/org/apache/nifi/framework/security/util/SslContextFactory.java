@@ -25,6 +25,8 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
+import java.util.List;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -59,6 +61,14 @@ public final class SslContextFactory {
 
         public String toString() {
             return "Mozilla TLS Configuration: " + this.mozillaConfigName;
+        }
+
+        public static String valuesAsString() {
+            List<String> values = new ArrayList<>();
+            for (TLSConfiguration t : values()) {
+                values.add(t.mozillaConfigName);
+            }
+           return "[" + StringUtils.join(values, ", ") + "]";
         }
     }
 
@@ -151,11 +161,18 @@ public final class SslContextFactory {
                                              TrustManager[] trustManagers) throws NoSuchAlgorithmException, KeyManagementException {
         // Initialize the ssl context
         // TODO: Make configurable NIFI-1478, NIFI-1480, NIFI-1688
-        final SSLContext sslContext = SSLContext.getInstance("TLS");
+        final SSLContext sslContext = getSslContextForTlsConfiguration(tlsConfiguration);
         sslContext.init(keyManagers,
                 trustManagers, null);
         sslContext.getDefaultSSLParameters().setNeedClientAuth(needClientAuth);
         return sslContext;
+    }
+
+    private static SSLContext getSslContextForTlsConfiguration(TLSConfiguration tlsConfiguration) throws NoSuchAlgorithmException {
+        if (tlsConfiguration == null) {
+            throw new IllegalArgumentException("The TLS configuration must be specified. Select from " + TLSConfiguration.valuesAsString());
+        }
+        return SSLContext.getInstance("TLS");
     }
 
     private static boolean hasKeystoreProperties(final NiFiProperties props) {

@@ -352,4 +352,19 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
         // Assert
         assert msg =~ "Need client auth is set to 'true', but no truststore properties are configured."
     }
+
+    @Test
+    void testGetSslContextForTlsConfigurationShouldRequireConfiguration() {
+        // Arrange
+        sslContextFactory = new SslContextFactory()
+
+        // Act
+        def msg = shouldFail(IllegalArgumentException) {
+            def sslContext = sslContextFactory.getSslContextForTlsConfiguration(null)
+        }
+        logger.expected(msg)
+
+        // Assert
+        assert msg =~ "The TLS configuration must be specified. Select from \\[Modern, Intermediate, Old, Custom\\]"
+    }
 }
