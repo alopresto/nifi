@@ -156,7 +156,7 @@ public final class SslContextFactory {
 
     private static SSLContext initSSLContext(TLSConfiguration tlsConfiguration, boolean needClientAuth, KeyManager[] keyManagers,
                                              TrustManager[] trustManagers) throws NoSuchAlgorithmException, KeyManagementException {
-        // initialize the ssl context
+        // Initialize the ssl context
         // TODO: Make configurable NIFI-1478, NIFI-1480, NIFI-1688
         final SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(keyManagers,
