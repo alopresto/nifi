@@ -51,7 +51,8 @@ public final class SslContextFactory {
         MODERN("Modern"),
         INTERMEDIATE("Intermediate"),
         OLD("Old"),
-        CUSTOM("Custom");
+        CUSTOM("Custom"),
+        LEGACY("Legacy");
 
         private String mozillaConfigName;
 
@@ -68,7 +69,7 @@ public final class SslContextFactory {
             for (TLSConfiguration t : values()) {
                 values.add(t.mozillaConfigName);
             }
-           return "[" + StringUtils.join(values, ", ") + "]";
+            return "[" + StringUtils.join(values, ", ") + "]";
         }
     }
 
@@ -172,7 +173,12 @@ public final class SslContextFactory {
         if (tlsConfiguration == null) {
             throw new IllegalArgumentException("The TLS configuration must be specified. Select from " + TLSConfiguration.valuesAsString());
         }
-        return SSLContext.getInstance("TLS");
+        switch (tlsConfiguration) {
+            case CUSTOM:
+            case LEGACY:
+            default:
+                return SSLContext.getInstance("TLS");
+        }
     }
 
     private static boolean hasKeystoreProperties(final NiFiProperties props) {
