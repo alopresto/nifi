@@ -365,6 +365,6 @@ class SslContextFactoryGroovyTest extends GroovyTestCase {
         logger.expected(msg)
 
         // Assert
-        assert msg =~ "The TLS configuration must be specified. Select from \\[${SslContextFactory.TLSConfiguration.values()*.mozillaConfigName.join(", ")}\\]"
+        assert msg =~ "The TLS configuration must be specified. Select from \\[${SslContextFactory.TLSConfiguration.values()*.configName.join(", ")}\\]"
     }
 }

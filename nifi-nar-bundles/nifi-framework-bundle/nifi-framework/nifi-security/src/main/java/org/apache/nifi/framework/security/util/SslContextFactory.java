@@ -48,26 +48,26 @@ public final class SslContextFactory {
     }
 
     public enum TLSConfiguration {
-        MODERN("Modern"),
-        INTERMEDIATE("Intermediate"),
-        OLD("Old"),
+        MZ_MODERN("Mozilla Modern"),
+        MZ_INTERMEDIATE("Mozilla Intermediate"),
+        MZ_OLD("Mozilla Old"),
         CUSTOM("Custom"),
-        LEGACY("Legacy");
+        NF_LEGACY("NiFi Legacy");
 
-        private String mozillaConfigName;
+        private String configName;
 
         TLSConfiguration(String mozillaName) {
-            this.mozillaConfigName = mozillaName;
+            this.configName = mozillaName;
         }
 
         public String toString() {
-            return "Mozilla TLS Configuration: " + this.mozillaConfigName;
+            return "TLS Configuration: " + this.configName;
         }
 
         public static String valuesAsString() {
             List<String> values = new ArrayList<>();
             for (TLSConfiguration t : values()) {
-                values.add(t.mozillaConfigName);
+                values.add(t.configName);
             }
             return "[" + StringUtils.join(values, ", ") + "]";
         }
@@ -175,7 +175,7 @@ public final class SslContextFactory {
         }
         switch (tlsConfiguration) {
             case CUSTOM:
-            case LEGACY:
+            case NF_LEGACY:
             default:
                 return SSLContext.getInstance("TLS");
         }
