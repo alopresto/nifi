@@ -99,23 +99,16 @@ public final class SslContextFactory {
         }
 
         try {
-            final TrustManagerFactory trustManagerFactory = initTrustManagerFactory(properties);
-            final KeyManagerFactory keyManagerFactory = initKeyManagerFactory(properties);
+            KeyManager[] keyManagers = getKeyManagers(properties);
+            TrustManager[] trustManagers = getTrustManagers(properties);
 
-            KeyManager[] keyManagers = keyManagerFactory.getKeyManagers();
-            TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
-
-            final SSLContext sslContext = initSSLContext(tlsConfiguration, properties.getNeedClientAuth(), keyManagers, trustManagers);
-
-
-            return sslContext;
-
+            return initSSLContext(tlsConfiguration, properties.getNeedClientAuth(), keyManagers, trustManagers);
         } catch (final KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | UnrecoverableKeyException | KeyManagementException e) {
             throw new SslContextCreationException(e);
         }
     }
 
-    private static KeyManagerFactory initKeyManagerFactory(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableKeyException {
+    private static KeyManager[] getKeyManagers(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableKeyException {
         if (properties == null) {
             throw new IOException("NiFi properties cannot be null");
         }
@@ -132,10 +125,10 @@ public final class SslContextFactory {
         } else {
             keyManagerFactory.init(keyStore, properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
         }
-        return keyManagerFactory;
+        return keyManagerFactory.getKeyManagers();
     }
 
-    private static TrustManagerFactory initTrustManagerFactory(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
+    private static TrustManager[] getTrustManagers(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
         if (properties == null) {
             throw new IOException("NiFi properties cannot be null");
         }
@@ -151,7 +144,7 @@ public final class SslContextFactory {
         }
         final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         trustManagerFactory.init(trustStore);
-        return trustManagerFactory;
+        return trustManagerFactory.getTrustManagers();
     }
 
     private static SSLContext initSSLContext(TLSConfiguration tlsConfiguration, boolean needClientAuth, KeyManager[] keyManagers,
@@ -176,5 +169,4 @@ public final class SslContextFactory {
                 && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD))
                 && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE)));
     }
-
 }
