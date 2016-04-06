@@ -30,8 +30,8 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
-import org.apache.nifi.util.NiFiProperties;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.util.NiFiProperties;
 
 /**
  * A factory for creating SSL contexts using the application's security
@@ -99,38 +99,13 @@ public final class SslContextFactory {
         }
 
         try {
-
-            // prepare the trust store
-            final KeyStore trustStore;
-            if (hasTruststoreProperties(properties)) {
-                trustStore = KeyStore.getInstance(properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE));
-                try (final InputStream trustStoreStream = new FileInputStream(properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))) {
-                    trustStore.load(trustStoreStream, properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD).toCharArray());
-                }
-            } else {
-                trustStore = null;
-            }
-            final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init(trustStore);
-
-            // prepare the key store
-            final KeyStore keyStore = KeyStore.getInstance(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE));
-            try (final InputStream keyStoreStream = new FileInputStream(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE))) {
-                keyStore.load(keyStoreStream, properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
-            }
-            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-
-            // if the key password is provided, try to use that - otherwise default to the keystore password
-            if (StringUtils.isNotBlank(properties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD))) {
-                keyManagerFactory.init(keyStore, properties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD).toCharArray());
-            } else {
-                keyManagerFactory.init(keyStore, properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
-            }
+            final TrustManagerFactory trustManagerFactory = initTrustManagerFactory(properties);
+            final KeyManagerFactory keyManagerFactory = initKeyManagerFactory(properties);
 
             KeyManager[] keyManagers = keyManagerFactory.getKeyManagers();
             TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
 
-            final SSLContext sslContext = instantiateSSLContext(properties.getNeedClientAuth(), keyManagers, trustManagers);
+            final SSLContext sslContext = initSSLContext(tlsConfiguration, properties.getNeedClientAuth(), keyManagers, trustManagers);
 
 
             return sslContext;
@@ -140,8 +115,47 @@ public final class SslContextFactory {
         }
     }
 
-    private static SSLContext instantiateSSLContext(boolean needClientAuth, KeyManager[] keyManagers,
-                                                    TrustManager[] trustManagers) throws NoSuchAlgorithmException, KeyManagementException {
+    private static KeyManagerFactory initKeyManagerFactory(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableKeyException {
+        if (properties == null) {
+            throw new IOException("NiFi properties cannot be null");
+        }
+
+        final KeyStore keyStore = KeyStore.getInstance(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE));
+        try (final InputStream keyStoreStream = new FileInputStream(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE))) {
+            keyStore.load(keyStoreStream, properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
+        }
+        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+
+        // If the key password is provided, try to use that; otherwise default to the keystore password
+        if (StringUtils.isNotBlank(properties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD))) {
+            keyManagerFactory.init(keyStore, properties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD).toCharArray());
+        } else {
+            keyManagerFactory.init(keyStore, properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
+        }
+        return keyManagerFactory;
+    }
+
+    private static TrustManagerFactory initTrustManagerFactory(NiFiProperties properties) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
+        if (properties == null) {
+            throw new IOException("NiFi properties cannot be null");
+        }
+
+        final KeyStore trustStore;
+        if (hasTruststoreProperties(properties)) {
+            trustStore = KeyStore.getInstance(properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE));
+            try (final InputStream trustStoreStream = new FileInputStream(properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))) {
+                trustStore.load(trustStoreStream, properties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD).toCharArray());
+            }
+        } else {
+            trustStore = null;
+        }
+        final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        trustManagerFactory.init(trustStore);
+        return trustManagerFactory;
+    }
+
+    private static SSLContext initSSLContext(TLSConfiguration tlsConfiguration, boolean needClientAuth, KeyManager[] keyManagers,
+                                             TrustManager[] trustManagers) throws NoSuchAlgorithmException, KeyManagementException {
         // initialize the ssl context
         // TODO: Make configurable NIFI-1478, NIFI-1480, NIFI-1688
         final SSLContext sslContext = SSLContext.getInstance("TLS");
