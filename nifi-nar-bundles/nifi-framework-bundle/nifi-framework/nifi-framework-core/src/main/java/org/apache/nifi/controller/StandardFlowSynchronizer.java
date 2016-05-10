@@ -277,6 +277,11 @@ public class StandardFlowSynchronizer implements FlowSynchronizer {
                         }
                     }
 
+                    if (encodingVersion == null || encodingVersion.getMajorVersion() < 1) {
+                        // Calculate new Positions if the encoding version of the flow is older than 1.0.
+                        PositionScaler.scale(rootGroup, 1.5, 1.34);
+                    }
+
                     final Element reportingTasksElement = DomUtils.getChild(rootElement, "reportingTasks");
                     if (reportingTasksElement != null) {
                         final List<Element> taskElements = DomUtils.getChildElementsByTagName(reportingTasksElement, "reportingTask");

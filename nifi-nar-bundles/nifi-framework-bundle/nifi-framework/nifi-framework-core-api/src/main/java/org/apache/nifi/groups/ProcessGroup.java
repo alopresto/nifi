@@ -16,16 +16,12 @@
  */
 package org.apache.nifi.groups;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-
 import org.apache.nifi.authorization.resource.Authorizable;
 import org.apache.nifi.connectable.Connectable;
 import org.apache.nifi.connectable.Connection;
 import org.apache.nifi.connectable.Funnel;
 import org.apache.nifi.connectable.Port;
-import org.apache.nifi.connectable.Position;
+import org.apache.nifi.connectable.Positionable;
 import org.apache.nifi.controller.ProcessorNode;
 import org.apache.nifi.controller.Snippet;
 import org.apache.nifi.controller.Template;
@@ -33,6 +29,10 @@ import org.apache.nifi.controller.label.Label;
 import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.Processor;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
 /**
  * <p>
@@ -43,7 +43,7 @@ import org.apache.nifi.processor.Processor;
  * <p>
  * MUST BE THREAD-SAFE</p>
  */
-public interface ProcessGroup extends Authorizable {
+public interface ProcessGroup extends Authorizable, Positionable {
 
     /**
      * @return a reference to this ProcessGroup's parent. This will be
@@ -74,17 +74,6 @@ public interface ProcessGroup extends Authorizable {
      * @param name new name
      */
     void setName(String name);
-
-    /**
-     * Updates the position of where this ProcessGroup is located in the graph
-     * @param position new position
-     */
-    void setPosition(Position position);
-
-    /**
-     * @return the position of where this ProcessGroup is located in the graph
-     */
-    Position getPosition();
 
     /**
      * @return the user-set comments about this ProcessGroup, or
@@ -716,6 +705,12 @@ public interface ProcessGroup extends Authorizable {
      * input ports, output ports, funnels, processors, and remote process groups
      */
     Connectable findConnectable(String identifier);
+
+    /**
+     * @return a Set of all {@link org.apache.nifi.connectable.Positionable}s contained within this
+     * {@link ProcessGroup} and any child {@link ProcessGroup}s
+     */
+    Set<Positionable> findAllPositionables();
 
     /**
      * Moves all of the components whose ID's are specified within the given
