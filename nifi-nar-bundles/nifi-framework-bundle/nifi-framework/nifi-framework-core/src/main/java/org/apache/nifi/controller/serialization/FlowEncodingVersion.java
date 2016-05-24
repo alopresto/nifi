@@ -19,7 +19,6 @@ package org.apache.nifi.controller.serialization;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import org.w3c.dom.Element;
 
 /**
@@ -53,10 +52,9 @@ public class FlowEncodingVersion {
      *
      * @param xmlElement the XML Element that contains an 'encoding-version' attribute
      * @return a FlowEncodingVersion that has the major and minor versions specified in the String, or <code>null</code> if the input is null or the input
-     *         does not have an 'encoding-version' attribute
-     *
+     * does not have an 'encoding-version' attribute
      * @throws IllegalArgumentException if the value is not in the format &lt;major version&gt;.&lt;minor version&gt;, if either major version or minor
-     *             version is not an integer, or if either the major or minor version is less than 0.
+     *                                  version is not an integer, or if either the major or minor version is less than 0.
      */
     public static FlowEncodingVersion parse(final Element xmlElement) {
         if (xmlElement == null) {
@@ -76,9 +74,8 @@ public class FlowEncodingVersion {
      *
      * @param version the String representation of the encoding version
      * @return a FlowEncodingVersion that has the major and minor versions specified in the String, or <code>null</code> if the input is null
-     *
      * @throws IllegalArgumentException if the value is not in the format &lt;major version&gt;.&lt;minor version&gt;, if either major version or minor
-     *             version is not an integer, or if either the major or minor version is less than 0.
+     *                                  version is not an integer, or if either the major or minor version is less than 0.
      */
     public static FlowEncodingVersion parse(final String version) {
         if (version == null || version.trim().isEmpty()) {
@@ -101,5 +98,13 @@ public class FlowEncodingVersion {
 
     public int getMinorVersion() {
         return minorVersion;
+    }
+
+    // TODO: Add #toString()
+
+    @Override
+    public String toString() {
+        return "FlowEncodingVersion " + majorVersion +
+                "." + minorVersion;
     }
 }
