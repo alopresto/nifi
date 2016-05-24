@@ -17,7 +17,12 @@
 package org.apache.nifi.controller
 
 import org.apache.nifi.cluster.protocol.DataFlow
-import org.apache.nifi.connectable.*
+import org.apache.nifi.connectable.Connectable
+import org.apache.nifi.connectable.Connection
+import org.apache.nifi.connectable.Funnel
+import org.apache.nifi.connectable.Port
+import org.apache.nifi.connectable.Position
+import org.apache.nifi.connectable.Positionable
 import org.apache.nifi.controller.label.Label
 import org.apache.nifi.controller.queue.FlowFileQueue
 import org.apache.nifi.groups.ProcessGroup
@@ -27,6 +32,14 @@ import org.apache.nifi.reporting.BulletinRepository
 import spock.lang.Specification
 
 class StandardFlowSynchronizerSpec extends Specification {
+
+    def setupSpec() {
+        System.setProperty("nifi.properties.file.path", "src/test/resources/nifi.properties")
+    }
+
+    def cleanupSpec() {
+        System.clearProperty("nifi.properties.file.path")
+    }
 
     def "test scaling positions based on flow encoding version"() {
         given: "three flows, one with no version, one with a version less than 1, and one with a version equal to 1"
@@ -84,6 +97,7 @@ class StandardFlowSynchronizerSpec extends Specification {
             _ * processGroup.findAllPositionables() >> {
                 positionableMocksById.values().forEach { Positionable p ->
                 }
+                // TODO: Filter by ownership in process group
                 positionableMocksById.values().toSet()
             }
             _ * processGroup.findAllConnections() >> {
