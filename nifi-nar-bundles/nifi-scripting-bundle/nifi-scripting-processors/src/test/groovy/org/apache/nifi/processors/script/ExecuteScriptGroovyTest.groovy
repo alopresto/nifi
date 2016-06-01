@@ -206,7 +206,7 @@ class ExecuteScriptGroovyTest extends BaseScriptTest {
     public void testExecuteScriptShouldInvokeOtherProcessor() throws Exception {
         // Arrange
         String directoryPath = "${TEST_RESOURCE_LOCATION}/groovy"
-        String fileFilter = "*.groovy"
+        String fileFilter = ".*\\.groovy\$" // Must end with .groovy
         def EXPECTED_FILENAMES = new File(directoryPath).list().findAll { it =~ /\.groovy$/ }
 
         runner.setValidateExpressionUsage(false)
