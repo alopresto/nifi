@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.processors.script
 
+import org.apache.nifi.flowfile.FlowFile
 import org.apache.nifi.util.MockFlowFile
 import org.apache.nifi.util.StopWatch
 import org.apache.nifi.util.TestRunners
@@ -29,6 +30,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 import static org.junit.Assert.assertNotNull
@@ -198,5 +200,39 @@ class ExecuteScriptGroovyTest extends BaseScriptTest {
         }
 
         assert serialExecutionTime > parallelExecutionTime
+    }
+
+    @Test
+    public void testExecuteScriptShouldInvokeOtherProcessor() throws Exception {
+        // Arrange
+        String directoryPath = "${TEST_RESOURCE_LOCATION}/groovy"
+        String fileFilter = "*.groovy"
+        def EXPECTED_FILENAMES = new File(directoryPath).list().findAll { it =~ /\.groovy$/ }
+
+        runner.setValidateExpressionUsage(false)
+        runner.setProperty(ExecuteScript.SCRIPT_ENGINE, "Groovy")
+        runner.setProperty(ExecuteScript.SCRIPT_FILE, TEST_RESOURCE_LOCATION + "groovy/testInvokeListFileProcessor.groovy")
+
+        final String NIFI_LIB_DIR = "/Users/alopresto/Workspace/nifi/nifi-nar-bundles/nifi-standard-bundle/nifi-standard-processors/target/"
+        def moduleDir = "${TEST_RESOURCE_LOCATION}/groovy, ${NIFI_LIB_DIR}"
+        runner.setProperty(ExecuteScript.MODULES, moduleDir)
+        runner.enqueue(directoryPath, [fileFilter: fileFilter])
+        runner.assertValid()
+
+        // Act
+        runner.run()
+
+        // Assert
+        runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1)
+        final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS)
+        logger.info("Resulting flowfile: ${result.dump()}")
+
+        FlowFile flowFile = result.first()
+
+        assert flowFile.getAttribute('directoryPath') == directoryPath
+        assert flowFile.getAttribute('fileFilter') == fileFilter
+
+        def content = new String(flowFile.toByteArray(), StandardCharsets.UTF_8)
+        assert content == EXPECTED_FILENAMES.join("\n")
     }
 }
