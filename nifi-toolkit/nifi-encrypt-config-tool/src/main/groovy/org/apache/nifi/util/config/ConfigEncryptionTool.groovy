@@ -1,0 +1,469 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.nifi.util.config
+
+import groovy.io.GroovyPrintWriter
+import org.apache.commons.cli.CommandLine
+import org.apache.commons.cli.CommandLineParser
+import org.apache.commons.cli.DefaultParser
+import org.apache.commons.cli.HelpFormatter
+import org.apache.commons.cli.Options
+import org.apache.commons.cli.ParseException
+import org.apache.commons.codec.binary.Hex
+import org.apache.nifi.properties.AESSensitivePropertyProvider
+import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
+import org.apache.nifi.toolkit.tls.commandLine.ExitCode
+import org.apache.nifi.util.NiFiProperties
+import org.apache.nifi.util.console.TextDevice
+import org.apache.nifi.util.console.TextDevices
+import org.bouncycastle.crypto.generators.SCrypt
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
+import javax.crypto.Cipher
+import java.nio.charset.StandardCharsets
+import java.security.KeyException
+
+class ConfigEncryptionTool {
+    private static final Logger logger = LoggerFactory.getLogger(ConfigEncryptionTool.class)
+
+    public String bootstrapConfPath
+    public String niFiPropertiesPath
+    public String outputNiFiPropertiesPath
+    public String loginIdentityProvidersPath
+
+    private String keyHex
+    private NiFiProperties niFiProperties
+
+    private static final String HELP_ARG = "help"
+    private static final String BOOTSTRAP_CONF_ARG = "bootstrapConf"
+    private static final String NIFI_PROPERTIES_ARG = "niFiProperties"
+    private static final String OUTPUT_NIFI_PROPERTIES_ARG = "outputNiFiProperties"
+    private static final String KEY_ARG = "key"
+    private static final String PASSWORD_ARG = "password"
+
+    private static final int MIN_PASSWORD_LENGTH = 12
+
+    // Strong parameters as of 12 Aug 2016
+    private static final int SCRYPT_N = 2**16
+    private static final int SCRYPT_R = 8
+    private static final int SCRYPT_P = 1
+
+    private static
+    final String BOOTSTRAP_KEY_COMMENT = "# Master key in hexadecimal format for encrypted sensitive configuration values"
+    private static final String BOOTSTRAP_KEY_PREFIX = "nifi.bootstrap.sensitive.key="
+    private static final String JAVA_HOME = "JAVA_HOME"
+    private static final String NIFI_TOOLKIT_HOME = "NIFI_TOOLKIT_HOME"
+    private static final String SEP = System.lineSeparator()
+
+    private static final String FOOTER = buildFooter()
+
+    private static
+    final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new nifi.properties file if specified)."
+
+    private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
+        "${SEP}${description}${SEP * 2}"
+    }
+
+    private static String buildFooter() {
+        "${SEP}Java home: ${System.getenv(JAVA_HOME)}${SEP}NiFi Toolkit home: ${System.getenv(NIFI_TOOLKIT_HOME)}"
+    }
+
+    private final Options options;
+    private final String header;
+
+
+    public ConfigEncryptionTool() {
+        this(DEFAULT_DESCRIPTION)
+    }
+
+    public ConfigEncryptionTool(String description) {
+        this.header = buildHeader(description)
+        this.options = new Options()
+        options.addOption("h", HELP_ARG, false, "Prints this usage message")
+        options.addOption("n", NIFI_PROPERTIES_ARG, true, "The nifi.properties file containing unprotected config values (will be overwritten)")
+        options.addOption("b", BOOTSTRAP_CONF_ARG, true, "The bootstrap.conf file to persist master key")
+        options.addOption("o", OUTPUT_NIFI_PROPERTIES_ARG, true, "The destination nifi.properties file containing protected config values (will not modify input nifi.properties)")
+        options.addOption("k", KEY_ARG, true, "The raw hexadecimal key to use to encrypt the sensitive properties")
+        options.addOption("p", PASSWORD_ARG, true, "The password from which to derive the key to use to encrypt the sensitive properties")
+    }
+
+    public void printUsage(String errorMessage) {
+        if (errorMessage) {
+            System.out.println(errorMessage)
+            System.out.println()
+        }
+        HelpFormatter helpFormatter = new HelpFormatter()
+        helpFormatter.setWidth(160)
+        helpFormatter.printHelp(ConfigEncryptionTool.class.getCanonicalName(), header, options, FOOTER, true)
+    }
+
+    protected void printUsageAndThrow(String errorMessage, ExitCode exitCode) throws CommandLineParseException {
+        printUsage(errorMessage);
+        throw new CommandLineParseException(errorMessage, exitCode.ordinal());
+    }
+
+    protected CommandLine parse(String[] args) throws CommandLineParseException {
+        CommandLineParser parser = new DefaultParser()
+        CommandLine commandLine
+        try {
+            commandLine = parser.parse(options, args)
+            if (commandLine.hasOption(HELP_ARG)) {
+                printUsageAndThrow(null, ExitCode.HELP)
+            }
+
+            bootstrapConfPath = commandLine.getOptionValue(BOOTSTRAP_CONF_ARG, determineDefaultBootstrapConfPath())
+            niFiPropertiesPath = commandLine.getOptionValue(NIFI_PROPERTIES_ARG, determineDefaultNiFiPropertiesPath())
+            outputNiFiPropertiesPath = commandLine.getOptionValue(OUTPUT_NIFI_PROPERTIES_ARG, determineDefaultNiFiPropertiesPath())
+
+            if (niFiPropertiesPath == outputNiFiPropertiesPath) {
+                logger.warn("The source nifi.properties and destination nifi.properties are identical [${outputNiFiPropertiesPath}] so the original will be overwritten")
+            }
+
+            if (commandLine.hasOption(PASSWORD_ARG)) {
+                if (commandLine.hasOption(KEY_ARG)) {
+                    printUsageAndThrow("Only one of ${PASSWORD_ARG} and ${KEY_ARG} can be used", ExitCode.INVALID_ARGS)
+                } else {
+                    keyHex = deriveKeyFromPassword(commandLine.getOptionValue(PASSWORD_ARG))
+                }
+            } else {
+                keyHex = commandLine.getOptionValue(KEY_ARG)
+            }
+
+        } catch (ParseException e) {
+            printUsageAndThrow("Error parsing command line. (" + e.getMessage() + ")", ExitCode.ERROR_PARSING_COMMAND_LINE)
+        }
+        return commandLine
+    }
+
+    private static String readKeyFromConsole(TextDevice textDevice) {
+        textDevice.printf("Enter the master key in hexadecimal format (spaces acceptable): ")
+        new String(textDevice.readPassword())
+    }
+
+    /**
+     * Returns the key in uppercase hexadecimal format with delimiters (spaces, '-', etc.) removed. All non-hex chars are removed. If the result is not a valid length (32, 48, 64 chars depending on the JCE), an exception is thrown.
+     *
+     * @param rawKey the unprocessed key input
+     * @return the formatted hex string in uppercase
+     * @throws KeyException if the key is not a valid length after parsing
+     */
+    private static String parseKey(String rawKey) throws KeyException {
+        String hexKey = rawKey.replaceAll("[^0-9a-fA-F]", "")
+        def validKeyLengths = getValidKeyLengths()
+        if (!validKeyLengths.contains(hexKey.size() * 4)) {
+            throw new KeyException("The key (${hexKey.size()} hex chars) must be of length ${validKeyLengths} bits (${validKeyLengths.collect { it / 4 }} hex characters)")
+        }
+        hexKey.toUpperCase()
+    }
+
+    /**
+     * Returns the list of acceptable key lengths in bits based on the current JCE policies.
+     *
+     * @return 128 , [192, 256]
+     */
+    public static List<Integer> getValidKeyLengths() {
+        Cipher.getMaxAllowedKeyLength("AES") > 128 ? [128, 192, 256] : [128]
+    }
+
+    /**
+     * Loads the {@link NiFiProperties} instance from the provided file path (restoring the original value of the System property {@code nifi.properties.file.path} after loading this instance).
+     *
+     * @return the NiFiProperties instance
+     * @throw IOException if the nifi.properties file cannot be read
+     */
+    private NiFiProperties loadNiFiProperties() throws IOException {
+        File niFiPropertiesFile
+        if (niFiPropertiesPath && (niFiPropertiesFile = new File(niFiPropertiesPath)).exists()) {
+            String oldNiFiPropertiesPath = System.getProperty(NiFiProperties.PROPERTIES_FILE_PATH)
+            logger.debug("Saving existing NiFiProperties file path ${oldNiFiPropertiesPath}")
+
+            System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, niFiPropertiesFile.absolutePath)
+            logger.debug("Temporarily set NiFiProperties file path to ${niFiPropertiesFile.absolutePath}")
+
+            NiFiProperties properties
+            try {
+                properties = NiFiProperties.getInstance()
+                logger.info("Loaded NiFiProperties instance with ${properties.size()} properties")
+                return properties
+            } catch (RuntimeException e) {
+                throw new IOException("Cannot load NiFiProperties from [${niFiPropertiesPath}]", e)
+            } finally {
+                // Can't set a system property to null
+                if (oldNiFiPropertiesPath) {
+                    System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, oldNiFiPropertiesPath)
+                } else {
+                    System.clearProperty(NiFiProperties.PROPERTIES_FILE_PATH)
+                }
+                logger.debug("Restored system variable ${NiFiProperties.PROPERTIES_FILE_PATH} to ${oldNiFiPropertiesPath}")
+            }
+        } else {
+            printUsageAndThrow("Cannot load NiFiProperties from [${niFiPropertiesPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+        }
+    }
+
+    /**
+     * Accepts a {@link NiFiProperties} instance, iterates over all non-empty sensitive properties which are not already marked as protected, encrypts them using the master key, and updates the property with the protected value. Additionally, adds a new sibling property {@code x.y.z.protected=aes/gcm/{128,256}} for each indicating the encryption scheme used.
+     *
+     * @param rawProperties the NiFiProperties instance containing the raw values
+     * @return the NiFiProperties containing protected values
+     */
+    private NiFiProperties encryptSensitiveProperties(NiFiProperties rawProperties) {
+        if (!rawProperties) {
+            throw new IllegalArgumentException("Cannot encrypt empty NiFiProperties")
+        }
+
+        List<String> sensitivePropertyKeys = rawProperties.getSensitivePropertyKeys()
+        if (sensitivePropertyKeys.isEmpty()) {
+            logger.info("No sensitive properties to encrypt")
+            return rawProperties
+        }
+
+        // TODO: This is an override of the access controls
+        rawProperties.@protectionKey = keyHex
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(keyHex)
+        // Iterate over each -- if it is already encrypted, skip
+        sensitivePropertyKeys.each { String key ->
+            if (rawProperties.isPropertyProtected(key)) {
+                // TODO: In the future, try to decrypt in order to re-encrypt with new key?
+                logger.debug("Skipping encryption of ${key} because it is already protected")
+            } else if (!rawProperties.getProperty(key)) {
+                logger.debug("Skipping encryption of ${key} because it is empty")
+            } else {
+                String protectedValue = spp.protect(rawProperties.getProperty(key))
+
+                // Update the sensitive value with the encrypted value
+                rawProperties.setProperty(key, protectedValue)
+                logger.info("Protected ${key} with ${spp.getIdentifierKey()} -> \t${protectedValue}")
+
+                // Update/add the protection key ("x.y.z.protected" -> "aes/gcm/{128,256}")
+                def protectionKey = rawProperties.getProtectionKey(key)
+                rawProperties.setProperty(protectionKey, spp.getIdentifierKey())
+                logger.info("Updated protection key ${protectionKey}")
+            }
+        }
+
+        rawProperties
+    }
+
+    /**
+     * Reads the existing {@code bootstrap.conf} file, updates it to contain the master key, and persists it back to the same location.
+     *
+     * @throw IOException if there is a problem reading or writing the bootstrap.conf file
+     */
+    private void writeKeyToBootstrapConf() throws IOException {
+        File bootstrapConfFile
+        if (bootstrapConfPath && (bootstrapConfFile = new File(bootstrapConfPath)).exists() && bootstrapConfFile.canRead() && bootstrapConfFile.canWrite()) {
+            try {
+                List<String> lines = bootstrapConfFile.readLines()
+
+                updateBootstrapContentsWithKey(lines)
+
+                // Write the updated values back to the file
+                bootstrapConfFile.text = lines.join("\n")
+            } catch (IOException e) {
+                def msg = "Encountered an exception updating the bootstrap.conf file with the master key"
+                logger.error(msg, e)
+                throw e
+            }
+        } else {
+            throw new IOException("The bootstrap.conf file at ${bootstrapConfPath} must exist and be readable and writable by the user running this tool")
+        }
+    }
+
+    /**
+     * Accepts the lines of the {@code bootstrap.conf} file as a {@code List <String>} and updates or adds the key property (and associated comment).
+     *
+     * @param lines the lines of the bootstrap file
+     * @return the updated lines
+     */
+    private List<String> updateBootstrapContentsWithKey(List<String> lines) {
+        String keyLine = "${BOOTSTRAP_KEY_PREFIX}${keyHex}"
+        // Try to locate the key property line
+        int keyLineIndex = lines.findIndexOf { it.startsWith(BOOTSTRAP_KEY_PREFIX) }
+
+        // If it was found, update inline
+        if (keyLineIndex != -1) {
+            logger.debug("The key property was detected in bootstrap.conf")
+            lines[keyLineIndex] = keyLine
+            logger.debug("The bootstrap key value was updated")
+
+            // Ensure the comment explaining the property immediately precedes it (check for edge case where key is first line)
+            int keyCommentLineIndex = keyLineIndex > 0 ? keyLineIndex - 1 : 0
+            if (lines[keyCommentLineIndex] != BOOTSTRAP_KEY_COMMENT) {
+                lines.add(keyCommentLineIndex, BOOTSTRAP_KEY_COMMENT)
+                logger.debug("A comment explaining the bootstrap key property was added")
+            }
+        } else {
+            // If it wasn't present originally, add the comment and key property
+            lines.addAll(["\n", BOOTSTRAP_KEY_COMMENT, keyLine])
+            logger.debug("The key property was not detected in bootstrap.conf so it was added along with a comment explaining it")
+        }
+
+        lines
+    }
+
+    /**
+     * Writes the contents of the {@link NiFiProperties} instance with encrypted values to the output {@code nifi.properties} file.
+     *
+     * @throw IOException if there is a problem reading or writing the nifi.properties file
+     */
+    private void writeNiFiProperties() throws IOException {
+        if (!outputNiFiPropertiesPath) {
+            throw new IllegalArgumentException("Cannot write encrypted properties to empty nifi.properties path")
+        }
+
+        File outputNiFiPropertiesFile = new File(outputNiFiPropertiesPath)
+
+        if (isSafeToWrite(outputNiFiPropertiesFile)) {
+            try {
+                List<String> linesToPersist
+                File niFiPropertiesFile = new File(niFiPropertiesPath)
+                if (niFiPropertiesFile.exists() && niFiPropertiesFile.canRead()) {
+                    // Instead of just writing the NiFiProperties instance to a properties file, this method attempts to maintain the structure of the original file and preserves comments
+                    linesToPersist = serializeNiFiPropertiesAndPreserveFormat(niFiProperties, niFiPropertiesFile)
+                } else {
+                    linesToPersist = serializeNiFiProperties(niFiProperties)
+                }
+
+                // Write the updated values back to the file
+                outputNiFiPropertiesFile.text = linesToPersist.join("\n")
+            } catch (IOException e) {
+                def msg = "Encountered an exception updating the nifi.properties file with the encrypted values"
+                logger.error(msg, e)
+                throw e
+            }
+        } else {
+            throw new IOException("The nifi.properties file at ${outputNiFiPropertiesPath} must be writable by the user running this tool")
+        }
+    }
+
+    private
+    static List<String> serializeNiFiPropertiesAndPreserveFormat(NiFiProperties properties, File originalPropertiesFile) {
+        List<String> lines = originalPropertiesFile.readLines()
+
+        // Only need to replace the keys that have been protected
+        Map<String, String> protectedKeys = properties.getProtectedPropertyKeys()
+
+        protectedKeys.each { String key, String protectionScheme ->
+            int l = lines.findIndexOf { it.startsWith(key) }
+            if (l != -1) {
+                // TODO: Make public method?
+                lines[l] = "${key}=${properties.getRawProperty(key)}"
+            }
+            // Get the index of the following line (or cap at max)
+            int p = l + 1 > lines.size() ? lines.size() : l + 1
+            String protectionLine = "${properties.getProtectionKey(key)}=${protectionScheme}"
+            lines.add(p, protectionLine)
+        }
+
+        lines
+    }
+
+    private static List<String> serializeNiFiProperties(NiFiProperties properties) {
+        OutputStream out = new ByteArrayOutputStream()
+        Writer writer = new GroovyPrintWriter(out)
+        properties.store(writer, null)
+        writer.flush()
+        out.toString().split("\n")
+    }
+
+    /**
+     * Helper method which returns true if it is "safe" to write to the provided file.
+     *
+     * Conditions:
+     *  file does not exist and the parent directory is writable
+     *  -OR-
+     *  file exists and is writable
+     *
+     * @param fileToWrite the proposed file to be written to
+     * @return true if the caller can "safely" write to this file location
+     */
+    private static boolean isSafeToWrite(File fileToWrite) {
+        fileToWrite && ((!fileToWrite.exists() && fileToWrite.absoluteFile.parentFile.canWrite()) || (fileToWrite.exists() && fileToWrite.canWrite()))
+    }
+
+    private static String determineDefaultBootstrapConfPath() {
+        String niFiToolkitPath = System.getenv(NIFI_TOOLKIT_HOME) ?: ""
+        "${niFiToolkitPath ? niFiToolkitPath + "/" : ""}conf/bootstrap.conf"
+    }
+
+    private static String determineDefaultNiFiPropertiesPath() {
+        String niFiToolkitPath = System.getenv(NIFI_TOOLKIT_HOME) ?: ""
+        "${niFiToolkitPath ? niFiToolkitPath + "/" : ""}conf/nifi.properties"
+    }
+
+    private static String deriveKeyFromPassword(String password) {
+        password = password?.trim()
+        if (!password || password.length() < MIN_PASSWORD_LENGTH) {
+            throw new KeyException("Cannot derive key from empty/short password -- password must be at least ${MIN_PASSWORD_LENGTH} characters")
+        }
+
+        // Generate a 128 bit salt
+        byte[] salt = generateScryptSalt()
+        int keyLengthInBytes = getValidKeyLengths().max() / 8
+        byte[] derivedKeyBytes = SCrypt.generate(password.getBytes(StandardCharsets.UTF_8), salt, SCRYPT_N, SCRYPT_R, SCRYPT_P, keyLengthInBytes)
+        Hex.encodeHexString(derivedKeyBytes).toUpperCase()
+    }
+
+    private static byte[] generateScryptSalt() {
+//        byte[] salt = new byte[16]
+//        new SecureRandom().nextBytes(salt)
+//        salt
+        /* It is not ideal to use a static salt, but the KDF operation must be deterministic
+        for a given password, and storing and retrieving the salt in bootstrap.conf causes
+        compatibility concerns
+        */
+        "NIFI_SCRYPT_SALT".getBytes(StandardCharsets.UTF_8)
+    }
+
+    public static void main(String[] args) {
+        List arguments = args as List
+        logger.info("Invoked ConfigEncryptionTool with args [${arguments.join(',')}]")
+
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        try {
+            tool.parse(args)
+
+            if (!tool.keyHex) {
+                tool.keyHex = readKeyFromConsole(TextDevices.defaultTextDevice())
+            }
+
+            if (!tool.keyHex) {
+                tool.printUsageAndThrow("Hex key must be provided", ExitCode.INVALID_ARGS)
+            }
+
+            // Validate the length and format
+            tool.keyHex = parseKey(tool.keyHex)
+        } catch (KeyException e) {
+            tool.printUsageAndThrow(e.getMessage(), ExitCode.INVALID_ARGS)
+        }
+
+        tool.niFiProperties = tool.loadNiFiProperties()
+        tool.encryptSensitiveProperties(tool.niFiProperties)
+        try {
+            // Do this as part of a transaction?
+            synchronized (this) {
+                tool.writeKeyToBootstrapConf()
+                tool.writeNiFiProperties()
+            }
+        } catch (Exception e) {
+            tool.printUsageAndThrow("Encountered an error writing the master key to the bootstrap.conf file and the encrypted properties to nifi.properties", ExitCode.ERROR_GENERATING_CONFIG)
+        }
+    }
+}
