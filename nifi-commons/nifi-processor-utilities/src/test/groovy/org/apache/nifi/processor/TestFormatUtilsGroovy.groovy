@@ -69,6 +69,25 @@ class TestFormatUtilsGroovy extends GroovyTestCase {
     }
 
     /**
+     * New feature test
+     */
+    @Test
+    void testShouldConvertToWeeks() {
+        // Arrange
+        final List INPUTS = ["7 days", "${7 * 24} hours", "${7 * 24 * 60} mins", "${7 * 24 * 60 * 60} seconds", "${7 * 24 * 3600 * 1000} ms"]
+        final long EXPECTED_WEEKS = 1L
+
+        // Act
+        List weeks = INPUTS.collect { String input ->
+            FormatUtils.getTimeDuration(input, TimeUnit.WEEKS)
+        }
+        logger.converted(weeks)
+
+        // Assert
+        assert weeks.every { it == EXPECTED_WEEKS }
+    }
+
+    /**
      * Regression test
      */
     @Test
