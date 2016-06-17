@@ -87,6 +87,41 @@ class TestFormatUtilsGroovy extends GroovyTestCase {
         assert weeks.every { it == EXPECTED_WEEKS }
     }
 
+    @Test
+    void testShouldHandleNegativeWeeks() {
+        // Arrange
+        final List WEEKS = ["-1 week", "-1 wk", "-1 w", "-1 weeks", "- 1 week"]
+
+        // Act
+        List msgs = WEEKS.collect { String week ->
+            shouldFail(IllegalArgumentException) {
+                FormatUtils.getTimeDuration(week, TimeUnit.DAYS)
+            }
+        }
+
+        // Assert
+        assert msgs.every { it =~ /Value '.*' is not a valid Time Duration/ }
+    }
+
+    /**
+     * New feature test
+     */
+    @Test
+    void testShouldHandleNegativeToWeeks() {
+        // Arrange
+        final List INPUTS = ["-7 days", "${-7 * 24} hours", "${-7 * 24 * 60} mins", "${-7 * 24 * 60 * 60} seconds", "${-7 * 24 * 3600 * 1000} ms"]
+
+        // Act
+        List msgs = INPUTS.collect { String input ->
+            shouldFail(IllegalArgumentException) {
+                FormatUtils.getTimeDuration(input, TimeUnit.WEEKS)
+            }
+        }
+
+        // Assert
+        assert msgs.every { it =~ /Value '.*' is not a valid Time Duration/ }
+    }
+
     /**
      * Regression test
      */
