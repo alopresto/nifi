@@ -30,7 +30,9 @@ plaintext = "password123" # Chosen as example -- not ideal
 puts "Password to be encrypted: #{plaintext}"
 
 # Cipher text from Jasypt
-cipher_text = "0123456789ABCDEFFEDCBA9876543210532EC188A9385763A5CE1240636EC593"
+# cipher_text = "0123456789ABCDEFFEDCBA9876543210532EC188A9385763A5CE1240636EC593"
+cipher_text = "000000000000000000000000000000001338F2F1F5C019B1BE686450D5937C52"
+# cipher_text = "00000000000000000000000000000000564158070cf7aab289574d476c5b9416"
 # master_salt = cipher_text.scan(/../).map(&:hex)
 master_salt = cipher_text[0..31]
 # master_salt = '00000000'
@@ -39,68 +41,149 @@ puts "Salt: #{master_salt} 16"
 puts "  CT: #{cipher_text} 16"
 
 cipher = OpenSSL::Cipher.new 'AES-256-CBC'
+
+# Sanity check
+cipher.encrypt
+
+# hex_key = '00' * 32
+# hex_iv = '00' * 16
+
+hex_key ='41c5ab2857ce071e998fe00744e0bb6196069075ff1bdc65962cd73eb4113409'
+hex_iv = '2e56cd6c3dc4f81129e2f56363586dc2'
+
+puts "Encryption  IV: #{hex_iv} #{hex_iv.length / 2}"
+puts "Encryption Key: #{hex_key} #{hex_key.length / 2}"
+
+key = [hex_key].pack('H*')
+iv = [hex_iv].pack('H*')
+
+cipher.key = key
+cipher.iv = iv
+
+# Now encrypt the data:
+
+encrypted = cipher.update plaintext
+encrypted << cipher.final
+puts "Sanity cipher text length: #{encrypted.length}"
+puts "Sanity cipher text: #{bin_to_hex(encrypted)}"
+
+cipher.decrypt
+
+cipher.key = key
+cipher.iv = iv
+
+# Now decrypt the data:
+
+decrypted = cipher.update encrypted
+decrypted << cipher.final
+puts "Sanity plaintext length: #{decrypted.length}"
+puts "Sanity plaintext: #{decrypted}"
+
 cipher.decrypt
 
 # If the salt was 8 bytes, this would work, but NiFi Jasypt uses a 16 byte salt
 # cipher.pkcs5_keyivgen master_passphrase, master_salt, 1000, OpenSSL::Digest::MD5.new
 
 # Do it the hard way
+iterations = 1000
 
-# Run MD5(passphrase + salt, 1000)
-md5 = OpenSSL::Digest::MD5.new
-temp_mk = master_passphrase + master_salt
-puts "Temp MK: #{temp_mk}"
-iterations = 1
-iterations.times do
-  temp_mk = md5.digest(temp_mk)
+def evp_bytes_to_key(key_len, iv_len, md, salt, data, count)
+  key = ''.bytes
+  key_ix = 0
+  iv = ''.bytes
+  iv_ix = 0
+  md_buf = ''.bytes
+  n_key = key_len
+  n_iv = iv_len
+  i = 0
+  salt_length = salt.length
+  if data == nil
+    return [key, iv]
+  end
+  add_md = 0
+  while true
+    md.reset
+    if add_md > 0
+      md.update md_buf
+    end
+    add_md += 1
+    md.update data
+    if nil != salt
+      md.update salt[0..salt_length-1]
+    end
+    md_buf = md.digest
+    (1..count-1).each do
+      md.reset
+      md.update md_buf
+      md_buf = md.digest
+    end
+    i = 0
+    if n_key > 0
+      while true
+        if n_key == 0
+          break
+        end
+        if i == md_buf.length
+          break
+        end
+        key[key_ix] = md_buf[i]
+        key_ix += 1
+        n_key -= 1
+        i += 1
+      end
+    end
+    if n_iv > 0 && i != md_buf.length
+      while true
+        if n_iv == 0
+          break
+        end
+        if i == md_buf.length
+          break
+        end
+        iv[iv_ix] = md_buf[i]
+        iv_ix += 1
+        n_iv -= 1
+        i += 1
+      end
+    end
+    if n_key == 0 && n_iv == 0
+      break
+    end
+  end
+  (0..md_buf.length-1).each do |j|
+    md_buf[j] = '0'
+  end
+  [key, iv]
 end
 
-d_0 = ''
-puts "D_0: #{d_0}"
-d_1 = bin_to_hex(md5.digest(master_passphrase + master_salt))
-puts "D_1: #{d_1}"
-d_2 = bin_to_hex(md5.digest(d_1 + master_passphrase + master_salt))
-puts "D_2: #{d_2}"
-d_3 = bin_to_hex(md5.digest(d_2 + master_passphrase + master_salt))
-puts "D_3: #{d_3}"
+iterations = 1
+(key, iv) = evp_bytes_to_key cipher.key_len, cipher.iv_len, OpenSSL::Digest::MD5.new, master_salt, master_passphrase, iterations
 
-key = d_0 + d_1 + d_2 + d_3
-puts "Key: #{key}"
+puts ""
+puts "Output of EVP_BytesToKey"
+puts "Raw  IV: #{bin_to_hex iv.join}"
+puts "Raw key: #{bin_to_hex key.join}"
 
-# prev = ''
-# current = temp_mk
-#
-# while current.length < 32
-#   puts "   prev: #{bin_to_hex(prev)} #{prev.length}"
-#   puts "current: #{bin_to_hex(current)} #{current.length}"
-#   current = prev + md5.digest(current + master_passphrase + master_salt)
-#   prev = current
-#
-#   puts "n  prev: #{bin_to_hex(prev)} #{prev.length}"
-#   puts "n  curr: #{bin_to_hex(current)} #{current.length}"
-# end
+puts ""
 
-master_key = key
-puts "After #{iterations} iterations, the master key is #{master_key}"
-key=master_key[0..63]
-iv=master_key[64..-1]
-puts "Key: #{key}"
-puts " IV: #{iv}"
+# hex_iv = bin_to_hex iv.join.unpack("c*").pack("c*")
+# hex_key = bin_to_hex key.join.unpack("c*").pack("c*")
+
+hex_key ='41c5ab2857ce071e998fe00744e0bb6196069075ff1bdc65962cd73eb4113409'
+hex_iv = '2e56cd6c3dc4f81129e2f56363586dc2'
+
+puts "  IV: #{hex_iv} #{iv.length}"
+puts " Key: #{hex_key} #{key.length}"
+
+key = [hex_key].pack('H*')
+iv = [hex_iv].pack('H*')
 
 cipher.key = key
 cipher.iv = iv
 
-# iv = cipher.iv
-# key = cipher.key
+# Now decrypt the data:
 
-puts ""
-
-# puts "  IV: #{bin_to_hex(iv)} #{iv.length}"
-# puts " Key: #{bin_to_hex(key)} #{key.length}"
-
-# Now encrypt the data:
-
-decrypted = cipher.update cipher_text
+decrypted = cipher.update [cipher_text].pack('H*')
 decrypted << cipher.final
 puts "Plaintext length: #{decrypted.length}"
-puts "Plaintext: #{bin_to_hex(decrypted)}"
+puts "Plaintext: #{decrypted}"

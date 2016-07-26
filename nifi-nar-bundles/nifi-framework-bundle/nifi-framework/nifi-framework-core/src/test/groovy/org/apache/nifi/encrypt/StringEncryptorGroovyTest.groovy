@@ -152,11 +152,51 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
         assert recovered == EXPECTED_PROCESSOR_PASSWORD
     }
 
+    @Test
+    public void testShouldDetermineRubyKeyFormat() throws Exception {
+        // Arrange
+        final String EXPECTED_PROCESSOR_PASSWORD = "password123"
+        final String RUBY_CIPHER_TEXT = "3df73db18dfb852a120a9383d587c08c"
+
+        byte[] keyBytes = Hex.decode('41c5ab2857ce071e998fe00744e0bb6196069075ff1bdc65962cd73eb4113409')
+        byte[] ivBytes = Hex.decode('2e56cd6c3dc4f81129e2f56363586dc2')
+//        byte[] keyBytes = Hex.decode('00' * 32)
+//        byte[] ivBytes = Hex.decode('00' * 16)
+
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES")
+        IvParameterSpec iv = new IvParameterSpec(ivBytes)
+        cipher.init(Cipher.ENCRYPT_MODE, key, iv)
+
+        // Act
+        byte[] cipherBytes = cipher.doFinal(EXPECTED_PROCESSOR_PASSWORD.bytes)
+        String cipherText = Hex.toHexString(cipherBytes)
+        logger.info("Encrypted: ${cipherText}")
+
+        // Assert
+//        assert cipherText == RUBY_CIPHER_TEXT
+    }
+
+    /**
+     * Translated to Java by <a href="https://olabini.com/blog/2006/10/openssl-in-jruby/">Ola Bini</a> from the Ruby OpenSSL EVP_BytesToKey method.
+     *
+     * "The problem is that Ruby uses the function called EVP_BytesToKey, which, according to the documentation implements PKCS#5 1.5 with a few tricks up its sleeve. Not very nice. In the end I had to implement my own version of this to generate keys. And since I had to look like mad for this information, I will here give you the implementation to this function in Java. Just use the return value to initialize your own SecretKey-implementation and instantiate an IvParameterSpec and you should be set to go: (note, I release this into the public domain. And note, this is just quick, ported code to show the concept.)"
+     *
+     * Adapted to handle non-standard salt lengths for compatibility with NiFi Jasypt (hardcoded 16 byte salt for AES).
+     *
+     * @param key_len the desired key length in bytes
+     * @param iv_len the desired IV length in bytes
+     * @param md the digest
+     * @param salt the salt (usually 8 bytes)
+     * @param data the passphrase to derive the key from
+     * @param count the iterations count
+     * @return a 2-element array -- index 0 is the key, index 1 is the IV
+     */
     public byte[][] EVP_BytesToKey(int key_len, int iv_len, MessageDigest md, byte[] salt, byte[] data, int count) {
         byte[][] both = new byte[2][];
         byte[] key = new byte[key_len];
         int key_ix = 0;
-        byte[]  iv = new byte[iv_len];
+        byte[] iv = new byte[iv_len];
         int iv_ix = 0;
         both[0] = key;
         both[1] = iv;
@@ -165,49 +205,49 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
         int niv = iv_len;
         int i = 0;
         int saltLength = salt.length
-        if(data == null) {
+        if (data == null) {
             return both;
         }
         int addmd = 0;
-        for(;;) {
+        for (; ;) {
             md.reset();
-            if(addmd++ > 0) {
+            if (addmd++ > 0) {
                 md.update(md_buf);
             }
             md.update(data);
-            if(null != salt) {
-                md.update(salt,0,saltLength);
+            if (null != salt) {
+                md.update(salt, 0, saltLength);
             }
             md_buf = md.digest();
-            for(i=1;i<count;i++) {
+            for (i = 1; i < count; i++) {
                 md.reset();
                 md.update(md_buf);
                 md_buf = md.digest();
             }
-            i=0;
-            if(nkey > 0) {
-                for(;;) {
-                    if(nkey == 0) break;
-                    if(i == md_buf.length) break;
+            i = 0;
+            if (nkey > 0) {
+                for (; ;) {
+                    if (nkey == 0) break;
+                    if (i == md_buf.length) break;
                     key[key_ix++] = md_buf[i];
                     nkey--;
                     i++;
                 }
             }
-            if(niv > 0 && i != md_buf.length) {
-                for(;;) {
-                    if(niv == 0) break;
-                    if(i == md_buf.length) break;
+            if (niv > 0 && i != md_buf.length) {
+                for (; ;) {
+                    if (niv == 0) break;
+                    if (i == md_buf.length) break;
                     iv[iv_ix++] = md_buf[i];
                     niv--;
                     i++;
                 }
             }
-            if(nkey == 0 && niv == 0) {
+            if (nkey == 0 && niv == 0) {
                 break;
             }
         }
-        for(i=0;i<md_buf.length;i++) {
+        for (i = 0; i < md_buf.length; i++) {
             md_buf[i] = 0;
         }
         return both;
