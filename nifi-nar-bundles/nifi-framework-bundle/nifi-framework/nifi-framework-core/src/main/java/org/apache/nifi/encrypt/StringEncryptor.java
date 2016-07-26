@@ -17,12 +17,14 @@
 package org.apache.nifi.encrypt;
 
 import java.security.Security;
-import org.apache.nifi.util.NiFiProperties;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.util.NiFiProperties;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.encoders.Hex;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.exceptions.EncryptionInitializationException;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
+import org.jasypt.salt.FixedSaltGenerator;
 
 /**
  * <p>
@@ -67,6 +69,20 @@ public final class StringEncryptor {
         encryptor.setProviderName(provider);
         encryptor.setPassword(key);
         encryptor.setStringOutputType("hexadecimal");
+        // TODO: Remove this line
+        encryptor.setKeyObtentionIterations(1);
+        encryptor.setSaltGenerator(new FixedSaltGenerator() {
+            @Override
+            public byte[] generateSalt(int lengthBytes) {
+                // return Hex.decode("0123456789ABCDEFFEDCBA9876543210");
+                return Hex.decode("0000000000000000");
+            }
+
+            @Override
+            public boolean includePlainSaltInEncryptionResults() {
+                return true;
+            }
+        });
         encryptor.initialize();
     }
 
