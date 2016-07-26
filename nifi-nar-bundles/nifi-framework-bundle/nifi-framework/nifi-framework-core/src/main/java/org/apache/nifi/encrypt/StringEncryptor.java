@@ -63,9 +63,9 @@ public final class StringEncryptor {
     private static final String TEST_PLAINTEXT = "this is a test";
     private final StandardPBEStringEncryptor encryptor;
 
-    private StringEncryptor(final String aglorithm, final String provider, final String key) {
+    private StringEncryptor(final String algorithm, final String provider, final String key) {
         encryptor = new StandardPBEStringEncryptor();
-        encryptor.setAlgorithm(aglorithm);
+        encryptor.setAlgorithm(algorithm);
         encryptor.setProviderName(provider);
         encryptor.setPassword(key);
         encryptor.setStringOutputType("hexadecimal");
