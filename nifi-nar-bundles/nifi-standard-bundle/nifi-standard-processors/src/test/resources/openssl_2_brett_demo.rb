@@ -85,8 +85,6 @@ cipher.decrypt
 # cipher.pkcs5_keyivgen master_passphrase, master_salt, 1000, OpenSSL::Digest::MD5.new
 
 # Do it the hard way
-iterations = 1000
-
 def evp_bytes_to_key(key_len, iv_len, md, salt, data, count)
   key = ''.bytes
   key_ix = 0
@@ -159,24 +157,19 @@ end
 iterations = 1
 (key, iv) = evp_bytes_to_key cipher.key_len, cipher.iv_len, OpenSSL::Digest::MD5.new, [master_salt].pack('H*'), master_passphrase, iterations
 
+# The key and IV are byte arrays, so join them to create strings
+key = key.join
+iv = iv.join
+
+hex_key = bin_to_hex key
+hex_iv = bin_to_hex   iv
+
 puts ""
 puts "Output of EVP_BytesToKey"
-puts "Raw  IV: #{bin_to_hex iv.join}"
-puts "Raw key: #{bin_to_hex key.join}"
+puts "Hex key: #{hex_key} #{key.length}"
+puts "Hex  IV: #{hex_iv} #{iv.length}"
 
 puts ""
-
-hex_iv = bin_to_hex iv.join.unpack("c*").pack("c*")
-hex_key = bin_to_hex key.join.unpack("c*").pack("c*")
-
-# hex_key ='41c5ab2857ce071e998fe00744e0bb6196069075ff1bdc65962cd73eb4113409'
-# hex_iv = '2e56cd6c3dc4f81129e2f56363586dc2'
-
-puts "  IV: #{hex_iv} #{iv.length}"
-puts " Key: #{hex_key} #{key.length}"
-
-key = [hex_key].pack('H*')
-iv = [hex_iv].pack('H*')
 
 cipher.key = key
 cipher.iv = iv
