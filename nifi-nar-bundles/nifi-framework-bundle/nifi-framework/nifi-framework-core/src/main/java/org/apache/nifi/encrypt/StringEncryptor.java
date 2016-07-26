@@ -75,7 +75,11 @@ public final class StringEncryptor {
             @Override
             public byte[] generateSalt(int lengthBytes) {
                 // return Hex.decode("0123456789ABCDEFFEDCBA9876543210");
-                return Hex.decode("0000000000000000");
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < lengthBytes; i++) {
+                    sb.append("00");
+                }
+                return Hex.decode(sb.toString());
             }
 
             @Override

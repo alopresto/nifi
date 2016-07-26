@@ -104,8 +104,9 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
         logger.info("Iterations: ${iterations}")
 
         // Override the salt length so it is compatible with OpenSSL EVP_BytesToKey
-        encryptor.encryptor.byteEncryptor.saltSizeBytes = 8
+//        encryptor.encryptor.byteEncryptor.saltSizeBytes = 8
         logger.info("Jasypt IV: ${Hex.toHexString(encryptor.encryptor.byteEncryptor.encryptCipher.getIV())}")
+        int saltLengthBytes = encryptor.encryptor.byteEncryptor.saltSizeBytes
 
         // Act
         String cipherText = encryptor.encrypt(EXPECTED_PROCESSOR_PASSWORD)
@@ -115,11 +116,11 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
 //        String tmp = new String(copyOfDecryptCipher.doFinal(Hex.decode(cipherText)))
 //        logger.info("Temp: ${tmp}")
 
-        String salt = cipherText[0..15]
-        String ct = cipherText[16..-1]
+        String salt = cipherText[0..<saltLengthBytes * 2]
+        String ct = cipherText[saltLengthBytes * 2..-1]
         logger.info("Encrypted: ${cipherText}")
         logger.info("     Salt: ${salt}")
-        logger.info("       CT: ${ct.padLeft(64, ' ')}")
+        logger.info("       CT: ${ct.padLeft(saltLengthBytes * 2, ' ')}")
 
         // Assert
 //        Cipher cipher = Cipher.getInstance(algorithm, provider)
@@ -163,6 +164,7 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
         int nkey = key_len;
         int niv = iv_len;
         int i = 0;
+        int saltLength = salt.length
         if(data == null) {
             return both;
         }
@@ -174,7 +176,7 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
             }
             md.update(data);
             if(null != salt) {
-                md.update(salt,0,8);
+                md.update(salt,0,saltLength);
             }
             md_buf = md.digest();
             for(i=1;i<count;i++) {
