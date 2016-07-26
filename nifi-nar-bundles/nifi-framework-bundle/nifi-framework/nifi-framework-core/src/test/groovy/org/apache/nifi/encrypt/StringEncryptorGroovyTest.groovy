@@ -156,7 +156,7 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
     public void testShouldDetermineRubyKeyFormat() throws Exception {
         // Arrange
         final String EXPECTED_PROCESSOR_PASSWORD = "password123"
-        final String RUBY_CIPHER_TEXT = "3df73db18dfb852a120a9383d587c08c"
+        final String RUBY_CIPHER_TEXT = "1338f2f1f5c019b1be686450d5937c52"
 
         byte[] keyBytes = Hex.decode('41c5ab2857ce071e998fe00744e0bb6196069075ff1bdc65962cd73eb4113409')
         byte[] ivBytes = Hex.decode('2e56cd6c3dc4f81129e2f56363586dc2')
@@ -174,7 +174,7 @@ class StringEncryptorGroovyTest extends GroovyTestCase {
         logger.info("Encrypted: ${cipherText}")
 
         // Assert
-//        assert cipherText == RUBY_CIPHER_TEXT
+        assert cipherText == RUBY_CIPHER_TEXT
     }
 
     /**
