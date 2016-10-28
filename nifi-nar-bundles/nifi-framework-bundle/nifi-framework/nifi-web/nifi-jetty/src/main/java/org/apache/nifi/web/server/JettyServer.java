@@ -16,6 +16,30 @@
  */
 package org.apache.nifi.web.server;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileFilter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import javax.servlet.DispatcherType;
+import javax.servlet.ServletContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -34,6 +58,8 @@ import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.NiFiWebConfigurationContext;
 import org.apache.nifi.web.UiExtensionType;
 import org.eclipse.jetty.annotations.AnnotationConfiguration;
+import org.eclipse.jetty.rewrite.handler.HeaderPatternRule;
+import org.eclipse.jetty.rewrite.handler.RewriteHandler;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.HttpConfiguration;
@@ -62,31 +88,6 @@ import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
-
-import javax.servlet.DispatcherType;
-import javax.servlet.ServletContext;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileFilter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
 /**
  * Encapsulates the Jetty instance.
@@ -138,6 +139,7 @@ public class JettyServer implements NiFiServer {
         classlist.addBefore(JettyWebXmlConfiguration.class.getName(), AnnotationConfiguration.class.getName());
 
         // configure server
+        logger.info("Configuring Jetty server connectors");
         configureConnectors(server);
 
         // load wars from the nar working directories
@@ -608,7 +610,27 @@ public class JettyServer implements NiFiServer {
 
             // add this connector
             server.addConnector(https);
+
+            // Configure HSTS rule (only if HTTPS is enabled)
+            enableHSTS(server);
         }
+    }
+
+    private void enableHSTS(Server server) {
+        logger.info("Enabling HSTS header rule");
+        RewriteHandler rewrite = new RewriteHandler();
+        rewrite.setRewriteRequestURI(true);
+        rewrite.setRewritePathInfo(false);
+
+        HeaderPatternRule hsts = new HeaderPatternRule();
+        hsts.setPattern("/*");
+        hsts.setName("Strict-Transport-Security");
+        // TODO: Make duration configurable / read from constant
+        // TODO: Make include subdomains configurable
+        hsts.setValue("max-age=300; includeSubDomains");
+        rewrite.addRule(hsts);
+
+        server.setHandler(rewrite);
     }
 
     private SslContextFactory createSslContextFactory() {

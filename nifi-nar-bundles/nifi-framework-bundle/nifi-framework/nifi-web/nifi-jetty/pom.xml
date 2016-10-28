@@ -168,6 +168,12 @@
             <artifactId>nifi-framework-cluster</artifactId>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-rewrite</artifactId>
+            <!-- TODO: Move to parent pom -->
+            <version>${jetty.version}</version>
+        </dependency>
     </dependencies>
 </project>
 
