@@ -58,8 +58,6 @@ import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.NiFiWebConfigurationContext;
 import org.apache.nifi.web.UiExtensionType;
 import org.eclipse.jetty.annotations.AnnotationConfiguration;
-import org.eclipse.jetty.rewrite.handler.HeaderPatternRule;
-import org.eclipse.jetty.rewrite.handler.RewriteHandler;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.HttpConfiguration;
@@ -400,7 +398,7 @@ public class JettyServer implements NiFiServer {
      * Identifies all known UI extensions and stores them in the specified map.
      *
      * @param uiExtensions extensions
-     * @param warFile war
+     * @param warFile      war
      */
     private void identifyUiExtensionsForComponents(final Map<UiExtensionType, List<String>> uiExtensions, final File warFile) {
         try (final JarFile jarFile = new JarFile(warFile)) {
@@ -433,7 +431,7 @@ public class JettyServer implements NiFiServer {
     /**
      * Returns the extension in the specified WAR using the specified path.
      *
-     * @param war war
+     * @param war  war
      * @param path path
      * @return extensions
      */
@@ -478,7 +476,7 @@ public class JettyServer implements NiFiServer {
         webappContext.setDisplayName(contextPath);
 
         // instruction jetty to examine these jars for tlds, web-fragments, etc
-        webappContext.setAttribute("org.eclipse.jetty.server.webapp.ContainerIncludeJarPattern", ".*/[^/]*servlet-api-[^/]*\\.jar$|.*/javax.servlet.jsp.jstl-.*\\\\.jar$|.*/[^/]*taglibs.*\\.jar$" );
+        webappContext.setAttribute("org.eclipse.jetty.server.webapp.ContainerIncludeJarPattern", ".*/[^/]*servlet-api-[^/]*\\.jar$|.*/javax.servlet.jsp.jstl-.*\\\\.jar$|.*/[^/]*taglibs.*\\.jar$");
 
         // remove slf4j server class to allow WAR files to have slf4j dependencies in WEB-INF/lib
         List<String> serverClasses = new ArrayList<>(Arrays.asList(webappContext.getServerClasses()));
@@ -595,7 +593,17 @@ public class JettyServer implements NiFiServer {
             final HttpConfiguration httpsConfiguration = new HttpConfiguration(httpConfiguration);
             httpsConfiguration.setSecureScheme("https");
             httpsConfiguration.setSecurePort(props.getSslPort());
-            httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
+            // Configure HSTS rule (only if HTTPS is enabled)
+            enableHSTS(httpsConfiguration);
+            // httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
+            // TODO: Clean up debug
+            List<HttpConfiguration.Customizer> customizers = httpsConfiguration.getCustomizers();
+            for (HttpConfiguration.Customizer c : customizers) {
+                logger.info("Customizer: " + c.toString());
+                if (c instanceof SecureRequestCustomizer) {
+                    logger.info("\tmax-age: " + ((SecureRequestCustomizer) c).getStsMaxAge() + " sub-domains included: " + ((SecureRequestCustomizer) c).isStsIncludeSubDomains());
+                }
+            }
 
             // build the connector
             final ServerConnector https = new ServerConnector(server,
@@ -608,29 +616,20 @@ public class JettyServer implements NiFiServer {
             }
             https.setPort(port);
 
+
             // add this connector
             server.addConnector(https);
-
-            // Configure HSTS rule (only if HTTPS is enabled)
-            enableHSTS(server);
         }
     }
 
-    private void enableHSTS(Server server) {
-        logger.info("Enabling HSTS header rule");
-        RewriteHandler rewrite = new RewriteHandler();
-        rewrite.setRewriteRequestURI(true);
-        rewrite.setRewritePathInfo(false);
-
-        HeaderPatternRule hsts = new HeaderPatternRule();
-        hsts.setPattern("/*");
-        hsts.setName("Strict-Transport-Security");
-        // TODO: Make duration configurable / read from constant
-        // TODO: Make include subdomains configurable
-        hsts.setValue("max-age=300; includeSubDomains");
-        rewrite.addRule(hsts);
-
-        server.setHandler(rewrite);
+    private void enableHSTS(HttpConfiguration httpsConfiguration) {
+        logger.info("Enabling HSTS with custom SecureRequestCustomizer");
+        SecureRequestCustomizer src = new SecureRequestCustomizer();
+        // TODO: Make this customizable / read from constant
+        src.setStsMaxAge(300);
+        // TODO: Make this read from nifi.properties (default false)
+        src.setStsIncludeSubDomains(false);
+        httpsConfiguration.addCustomizer(src);
     }
 
     private SslContextFactory createSslContextFactory() {
