@@ -267,6 +267,84 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldParseLoginIdentityProvidersArgument() {
+        // Arrange
+        def flags = ["-l", "--loginIdentityProviders"]
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers.xml"
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Act
+        flags.each { String arg ->
+            tool.parse([arg, loginIdentityProvidersPath] as String[])
+            logger.info("Parsed login-identity-providers.xml location: ${tool.loginIdentityProvidersPath}")
+
+            // Assert
+            assert tool.loginIdentityProvidersPath == loginIdentityProvidersPath
+        }
+    }
+
+    @Test
+    void testParseShouldPopulateDefaultLoginIdentityProvidersArgument() {
+        // Arrange
+        String loginIdentityProvidersPath = "conf/login-identity-providers.xml"
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Act
+        tool.parse([] as String[])
+        logger.info("Parsed login-identity-providers.xml location: ${tool.loginIdentityProvidersPath}")
+
+        // Assert
+        assert new File(tool.loginIdentityProvidersPath).getPath() == new File(loginIdentityProvidersPath).getPath()
+    }
+
+    @Test
+    void testShouldParseOutputLoginIdentityProvidersArgument() {
+        // Arrange
+        def flags = ["-i", "--outputLoginIdentityProviders"]
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers.xml"
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Act
+        flags.each { String arg ->
+            tool.parse([arg, loginIdentityProvidersPath] as String[])
+            logger.info("Parsed output login-identity-providers.xml location: ${tool.outputLoginIdentityProvidersPath}")
+
+            // Assert
+            assert tool.outputLoginIdentityProvidersPath == loginIdentityProvidersPath
+        }
+    }
+
+    @Test
+    void testParseShouldPopulateDefaultOutputLoginIdentityProvidersArgument() {
+        // Arrange
+        String loginIdentityProvidersPath = "conf/login-identity-providers.xml"
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Act
+        tool.parse([] as String[])
+        logger.info("Parsed output login-identity-providers.xml location: ${tool.outputLoginIdentityProvidersPath}")
+
+        // Assert
+        assert new File(tool.outputLoginIdentityProvidersPath).getPath() == new File(loginIdentityProvidersPath).getPath()
+    }
+
+    @Test
+    void testParseShouldWarnIfLoginIdentityProvidersWillBeOverwritten() {
+        // Arrange
+        String loginIdentityProvidersPath = "conf/login-identity-providers.xml"
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Act
+        tool.parse("-n ${loginIdentityProvidersPath} -o ${loginIdentityProvidersPath}".split(" ") as String[])
+        logger.info("Parsed login-identity-providers.xml location: ${tool.loginIdentityProvidersPath}")
+        logger.info("Parsed output login-identity-providers.xml location: ${tool.outputLoginIdentityProvidersPath}")
+
+        // Assert
+        assert !TestAppender.events.isEmpty()
+        assert TestAppender.events.any { it.message =~ "The source login-identity-providers.xml and destination login-identity-providers.xml are identical \\[.*\\] so the original will be overwritten" }
+    }
+
+    @Test
     void testShouldParseKeyArgument() {
         // Arrange
         def flags = ["-k", "--key"]
@@ -294,7 +372,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.expected(msg)
 
         // Assert
-        assert msg =~ "Only one of oldPassword and oldKey can be used"
+        assert msg =~ "Only one of '-w'/'--oldPassword' and '-e'/'--oldKey' can be used"
     }
 
     @Test
@@ -307,13 +385,14 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Act
         argStrings.each { String argString ->
+            argString += " -n any/path"
             def msg = shouldFail {
                 tool.parse(argString.split(" ") as String[])
             }
             logger.expected(msg)
 
             // Assert
-            assert msg == "oldPassword and oldKey are ignored unless migrate is enabled"
+            assert msg == "'-w'/'--oldPassword' and '-e'/'--oldKey' are ignored unless '-m'/'--migrate' is enabled"
         }
     }
 
@@ -597,7 +676,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     @Test
     void testShouldHandleKeyAndPasswordFlag() {
         // Arrange
-        def args = ["-k", KEY_HEX, "-p", PASSWORD]
+        def args = ["-k", KEY_HEX, "-p", PASSWORD, "-n", ""]
         logger.info("Using args: ${args}")
 
         // Act
@@ -607,7 +686,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.expected(msg)
 
         // Assert
-        assert msg == "Only one of password and key can be used"
+        assert msg == "Only one of '-p'/'--password' and '-k'/'--key' can be used"
     }
 
     @Test

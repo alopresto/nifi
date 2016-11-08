@@ -46,6 +46,7 @@ class ConfigEncryptionTool {
     public String niFiPropertiesPath
     public String outputNiFiPropertiesPath
     public String loginIdentityProvidersPath
+    public String outputLoginIdentityProvidersPath
 
     private String keyHex
     private String migrationKeyHex
@@ -62,7 +63,9 @@ class ConfigEncryptionTool {
     private static final String VERBOSE_ARG = "verbose"
     private static final String BOOTSTRAP_CONF_ARG = "bootstrapConf"
     private static final String NIFI_PROPERTIES_ARG = "niFiProperties"
+    private static final String LOGIN_IDENTITY_PROVIDERS_ARG = "loginIdentityProviders"
     private static final String OUTPUT_NIFI_PROPERTIES_ARG = "outputNiFiProperties"
+    private static final String OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG = "outputLoginIdentityProviders"
     private static final String KEY_ARG = "key"
     private static final String PASSWORD_ARG = "password"
     private static final String KEY_MIGRATION_ARG = "oldKey"
@@ -111,8 +114,10 @@ class ConfigEncryptionTool {
         options.addOption("h", HELP_ARG, false, "Prints this usage message")
         options.addOption("v", VERBOSE_ARG, false, "Sets verbose mode (default false)")
         options.addOption("n", NIFI_PROPERTIES_ARG, true, "The nifi.properties file containing unprotected config values (will be overwritten)")
+        options.addOption("l", LOGIN_IDENTITY_PROVIDERS_ARG, true, "The login-identity-providers.xml file containing unprotected config values (will be overwritten)")
         options.addOption("b", BOOTSTRAP_CONF_ARG, true, "The bootstrap.conf file to persist master key")
         options.addOption("o", OUTPUT_NIFI_PROPERTIES_ARG, true, "The destination nifi.properties file containing protected config values (will not modify input nifi.properties)")
+        options.addOption("i", OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, true, "The destination login-identity-providers.xml file containing protected config values (will not modify input login-identity-providers.xml)")
         options.addOption("k", KEY_ARG, true, "The raw hexadecimal key to use to encrypt the sensitive properties")
         options.addOption("e", KEY_MIGRATION_ARG, true, "The old raw hexadecimal key to use during key migration")
         options.addOption("p", PASSWORD_ARG, true, "The password from which to derive the key to use to encrypt the sensitive properties")
@@ -153,12 +158,34 @@ class ConfigEncryptionTool {
             isVerbose = commandLine.hasOption(VERBOSE_ARG)
 
             bootstrapConfPath = commandLine.getOptionValue(BOOTSTRAP_CONF_ARG, determineDefaultBootstrapConfPath())
+
             niFiPropertiesPath = commandLine.getOptionValue(NIFI_PROPERTIES_ARG, determineDefaultNiFiPropertiesPath())
             outputNiFiPropertiesPath = commandLine.getOptionValue(OUTPUT_NIFI_PROPERTIES_ARG, niFiPropertiesPath)
+
+            loginIdentityProvidersPath = commandLine.getOptionValue(LOGIN_IDENTITY_PROVIDERS_ARG, determineDefaultLoginIdentityProvidersPath())
+            outputLoginIdentityProvidersPath = commandLine.getOptionValue(OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, loginIdentityProvidersPath)
+
+            if (isVerbose) {
+                logger.info("(both) bootstrap.conf:               \t${bootstrapConfPath}")
+                logger.info("(src)  nifi.properties:              \t${niFiPropertiesPath}")
+                logger.info("(dest) nifi.properties:              \t${outputNiFiPropertiesPath}")
+                logger.info("(src)  login-identity-providers.xml: \t${loginIdentityProvidersPath}")
+                logger.info("(dest) login-identity-providers.xml: \t${outputLoginIdentityProvidersPath}")
+            }
+
+            // TODO: Implement in NIFI-2655
+//            if (!commandLine.hasOption(NIFI_PROPERTIES_ARG) && !commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
+//                printUsageAndThrow("One of '-n'/'--${NIFI_PROPERTIES_ARG}' or '-l'/'--${LOGIN_IDENTITY_PROVIDERS_ARG}' must be provided", ExitCode.INVALID_ARGS)
+//            }
 
             if (niFiPropertiesPath == outputNiFiPropertiesPath) {
                 // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
                 logger.warn("The source nifi.properties and destination nifi.properties are identical [${outputNiFiPropertiesPath}] so the original will be overwritten")
+            }
+
+            if (loginIdentityProvidersPath == outputLoginIdentityProvidersPath) {
+                // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
+                logger.warn("The source login-identity-providers.xml and destination login-identity-providers.xml are identical [${outputLoginIdentityProvidersPath}] so the original will be overwritten")
             }
 
             if (commandLine.hasOption(MIGRATION_ARG)) {
@@ -169,7 +196,7 @@ class ConfigEncryptionTool {
                 if (commandLine.hasOption(PASSWORD_MIGRATION_ARG)) {
                     usingPasswordMigration = true
                     if (commandLine.hasOption(KEY_MIGRATION_ARG)) {
-                        printUsageAndThrow("Only one of ${PASSWORD_MIGRATION_ARG} and ${KEY_MIGRATION_ARG} can be used", ExitCode.INVALID_ARGS)
+                        printUsageAndThrow("Only one of '-w'/'--${PASSWORD_MIGRATION_ARG}' and '-e'/'--${KEY_MIGRATION_ARG}' can be used", ExitCode.INVALID_ARGS)
                     } else {
                         migrationPassword = commandLine.getOptionValue(PASSWORD_MIGRATION_ARG)
                     }
@@ -179,14 +206,14 @@ class ConfigEncryptionTool {
                 }
             } else {
                 if (commandLine.hasOption(PASSWORD_MIGRATION_ARG) || commandLine.hasOption(KEY_MIGRATION_ARG)) {
-                    printUsageAndThrow("${PASSWORD_MIGRATION_ARG} and ${KEY_MIGRATION_ARG} are ignored unless ${MIGRATION_ARG} is enabled", ExitCode.INVALID_ARGS)
+                    printUsageAndThrow("'-w'/'--${PASSWORD_MIGRATION_ARG}' and '-e'/'--${KEY_MIGRATION_ARG}' are ignored unless '-m'/'--${MIGRATION_ARG}' is enabled", ExitCode.INVALID_ARGS)
                 }
             }
 
             if (commandLine.hasOption(PASSWORD_ARG)) {
                 usingPassword = true
                 if (commandLine.hasOption(KEY_ARG)) {
-                    printUsageAndThrow("Only one of ${PASSWORD_ARG} and ${KEY_ARG} can be used", ExitCode.INVALID_ARGS)
+                    printUsageAndThrow("Only one of '-p'/'--${PASSWORD_ARG}' and '-k'/'--${KEY_ARG}' can be used", ExitCode.INVALID_ARGS)
                 } else {
                     password = commandLine.getOptionValue(PASSWORD_ARG)
                 }
@@ -525,6 +552,11 @@ class ConfigEncryptionTool {
     private static String determineDefaultNiFiPropertiesPath() {
         String niFiToolkitPath = System.getenv(NIFI_TOOLKIT_HOME) ?: ""
         "${niFiToolkitPath ? niFiToolkitPath + "/" : ""}conf/nifi.properties"
+    }
+
+    private static String determineDefaultLoginIdentityProvidersPath() {
+        String niFiToolkitPath = System.getenv(NIFI_TOOLKIT_HOME) ?: ""
+        "${niFiToolkitPath ? niFiToolkitPath + "/" : ""}conf/login-identity-providers.xml"
     }
 
     private static String deriveKeyFromPassword(String password) {
