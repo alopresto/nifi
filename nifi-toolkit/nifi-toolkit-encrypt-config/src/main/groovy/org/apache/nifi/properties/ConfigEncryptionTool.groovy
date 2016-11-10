@@ -58,6 +58,8 @@ class ConfigEncryptionTool {
     private boolean usingPasswordMigration = true
     private boolean migration = false
     private boolean isVerbose = false
+    private boolean handlingNiFiProperties = false
+    private boolean handlingLoginIdentityProviders = false
 
     private static final String HELP_ARG = "help"
     private static final String VERBOSE_ARG = "verbose"
@@ -146,6 +148,7 @@ class ConfigEncryptionTool {
         throw new CommandLineParseException(errorMessage, exitCode);
     }
 
+    // TODO: Refactor component steps into methods
     protected CommandLine parse(String[] args) throws CommandLineParseException {
         CommandLineParser parser = new DefaultParser()
         CommandLine commandLine
@@ -157,16 +160,38 @@ class ConfigEncryptionTool {
 
             isVerbose = commandLine.hasOption(VERBOSE_ARG)
 
-            bootstrapConfPath = commandLine.getOptionValue(BOOTSTRAP_CONF_ARG, determineDefaultBootstrapConfPath())
+            bootstrapConfPath = commandLine.getOptionValue(BOOTSTRAP_CONF_ARG)
 
-            niFiPropertiesPath = commandLine.getOptionValue(NIFI_PROPERTIES_ARG, determineDefaultNiFiPropertiesPath())
-            outputNiFiPropertiesPath = commandLine.getOptionValue(OUTPUT_NIFI_PROPERTIES_ARG, niFiPropertiesPath)
+            if (commandLine.hasOption(NIFI_PROPERTIES_ARG)) {
+                if (isVerbose) {
+                    logger.info("Handling encryption of nifi.properties")
+                }
+                niFiPropertiesPath = commandLine.getOptionValue(NIFI_PROPERTIES_ARG)
+                outputNiFiPropertiesPath = commandLine.getOptionValue(OUTPUT_NIFI_PROPERTIES_ARG, niFiPropertiesPath)
+                handlingNiFiProperties = true
 
-            loginIdentityProvidersPath = commandLine.getOptionValue(LOGIN_IDENTITY_PROVIDERS_ARG, determineDefaultLoginIdentityProvidersPath())
-            outputLoginIdentityProvidersPath = commandLine.getOptionValue(OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, loginIdentityProvidersPath)
+                if (niFiPropertiesPath == outputNiFiPropertiesPath) {
+                    // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
+                    logger.warn("The source nifi.properties and destination nifi.properties are identical [${outputNiFiPropertiesPath}] so the original will be overwritten")
+                }
+            }
+
+            if (commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
+                if (isVerbose) {
+                    logger.info("Handling encryption of login-identity-providers.xml")
+                }
+                loginIdentityProvidersPath = commandLine.getOptionValue(LOGIN_IDENTITY_PROVIDERS_ARG)
+                outputLoginIdentityProvidersPath = commandLine.getOptionValue(OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, loginIdentityProvidersPath)
+                handlingLoginIdentityProviders = true
+
+                if (loginIdentityProvidersPath == outputLoginIdentityProvidersPath) {
+                    // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
+                    logger.warn("The source login-identity-providers.xml and destination login-identity-providers.xml are identical [${outputLoginIdentityProvidersPath}] so the original will be overwritten")
+                }
+            }
 
             if (isVerbose) {
-                logger.info("(both) bootstrap.conf:               \t${bootstrapConfPath}")
+                logger.info("       bootstrap.conf:               \t${bootstrapConfPath}")
                 logger.info("(src)  nifi.properties:              \t${niFiPropertiesPath}")
                 logger.info("(dest) nifi.properties:              \t${outputNiFiPropertiesPath}")
                 logger.info("(src)  login-identity-providers.xml: \t${loginIdentityProvidersPath}")
@@ -177,16 +202,6 @@ class ConfigEncryptionTool {
 //            if (!commandLine.hasOption(NIFI_PROPERTIES_ARG) && !commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
 //                printUsageAndThrow("One of '-n'/'--${NIFI_PROPERTIES_ARG}' or '-l'/'--${LOGIN_IDENTITY_PROVIDERS_ARG}' must be provided", ExitCode.INVALID_ARGS)
 //            }
-
-            if (niFiPropertiesPath == outputNiFiPropertiesPath) {
-                // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
-                logger.warn("The source nifi.properties and destination nifi.properties are identical [${outputNiFiPropertiesPath}] so the original will be overwritten")
-            }
-
-            if (loginIdentityProvidersPath == outputLoginIdentityProvidersPath) {
-                // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
-                logger.warn("The source login-identity-providers.xml and destination login-identity-providers.xml are identical [${outputLoginIdentityProvidersPath}] so the original will be overwritten")
-            }
 
             if (commandLine.hasOption(MIGRATION_ARG)) {
                 migration = true

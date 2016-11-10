@@ -175,20 +175,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
-    void testParseShouldPopulateDefaultBootstrapConfArgument() {
-        // Arrange
-        String bootstrapPath = "conf/bootstrap.conf"
-        ConfigEncryptionTool tool = new ConfigEncryptionTool()
-
-        // Act
-        tool.parse([] as String[])
-        logger.info("Parsed bootstrap.conf location: ${tool.bootstrapConfPath}")
-
-        // Assert
-        assert new File(tool.bootstrapConfPath).getPath() == new File(bootstrapPath).getPath()
-    }
-
-    @Test
     void testShouldParseNiFiPropertiesArgument() {
         // Arrange
         def flags = ["-n", "--niFiProperties"]
@@ -202,9 +188,12 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
             // Assert
             assert tool.niFiPropertiesPath == niFiPropertiesPath
+            assert tool.handlingNiFiProperties
         }
     }
 
+    // TODO: Remove as part of NIFI-2655
+    @Ignore("Remove as part of NIFI-2655")
     @Test
     void testParseShouldPopulateDefaultNiFiPropertiesArgument() {
         // Arrange
@@ -228,7 +217,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Act
         flags.each { String arg ->
-            tool.parse([arg, niFiPropertiesPath] as String[])
+            tool.parse([arg, niFiPropertiesPath, "-n", niFiPropertiesPath] as String[])
             logger.info("Parsed output nifi.properties location: ${tool.outputNiFiPropertiesPath}")
 
             // Assert
@@ -236,6 +225,8 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         }
     }
 
+    // TODO: Remove as part of NIFI-2655
+    @Ignore("Remove as part of NIFI-2655")
     @Test
     void testParseShouldPopulateDefaultOutputNiFiPropertiesArgument() {
         // Arrange
@@ -280,9 +271,12 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
             // Assert
             assert tool.loginIdentityProvidersPath == loginIdentityProvidersPath
+            assert tool.handlingLoginIdentityProviders
         }
     }
 
+    // TODO: Remove as part of NIFI-2655
+    @Ignore("Remove as part of NIFI-2655")
     @Test
     void testParseShouldPopulateDefaultLoginIdentityProvidersArgument() {
         // Arrange
@@ -306,7 +300,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Act
         flags.each { String arg ->
-            tool.parse([arg, loginIdentityProvidersPath] as String[])
+            tool.parse([arg, loginIdentityProvidersPath, "-l", loginIdentityProvidersPath] as String[])
             logger.info("Parsed output login-identity-providers.xml location: ${tool.outputLoginIdentityProvidersPath}")
 
             // Assert
@@ -314,6 +308,8 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         }
     }
 
+    // TODO: Remove as part of NIFI-2655
+    @Ignore("Remove as part of NIFI-2655")
     @Test
     void testParseShouldPopulateDefaultOutputLoginIdentityProvidersArgument() {
         // Arrange
@@ -335,7 +331,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         ConfigEncryptionTool tool = new ConfigEncryptionTool()
 
         // Act
-        tool.parse("-n ${loginIdentityProvidersPath} -o ${loginIdentityProvidersPath}".split(" ") as String[])
+        tool.parse("-l ${loginIdentityProvidersPath} -i ${loginIdentityProvidersPath}".split(" ") as String[])
         logger.info("Parsed login-identity-providers.xml location: ${tool.loginIdentityProvidersPath}")
         logger.info("Parsed output login-identity-providers.xml location: ${tool.outputLoginIdentityProvidersPath}")
 
