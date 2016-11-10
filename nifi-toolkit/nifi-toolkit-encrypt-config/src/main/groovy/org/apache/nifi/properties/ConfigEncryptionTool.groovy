@@ -647,12 +647,14 @@ class ConfigEncryptionTool {
                 }
                 String existingKeyHex = tool.migrationKeyHex ?: tool.keyHex
 
-                try {
-                    tool.niFiProperties = tool.loadNiFiProperties(existingKeyHex)
-                } catch (Exception e) {
-                    tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+                if (tool.handlingNiFiProperties) {
+                    try {
+                        tool.niFiProperties = tool.loadNiFiProperties(existingKeyHex)
+                    } catch (Exception e) {
+                        tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+                    }
+                    tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
                 }
-                tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
             } catch (CommandLineParseException e) {
                 if (e.exitCode == ExitCode.HELP) {
                     System.exit(ExitCode.HELP.ordinal())
@@ -669,7 +671,9 @@ class ConfigEncryptionTool {
                 // Do this as part of a transaction?
                 synchronized (this) {
                     tool.writeKeyToBootstrapConf()
-                    tool.writeNiFiProperties()
+                    if (tool.handlingNiFiProperties) {
+                        tool.writeNiFiProperties()
+                    }
                 }
             } catch (Exception e) {
                 if (tool.isVerbose) {
