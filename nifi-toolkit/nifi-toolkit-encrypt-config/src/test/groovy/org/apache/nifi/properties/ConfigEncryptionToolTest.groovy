@@ -1885,6 +1885,68 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         // Some lines were not encrypted originally so the encryption attribute would not have been updated
         assert passwordLines.any { it =~ "encryption=\"none\"" }
     }
+
+    @Test
+    void testShouldDecryptLoginIdentityProvidersWithMultilineElements() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-encrypted-multiline.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX_128
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        // Act
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { it =~ ">thisIsABadPassword<" }
+        // Some lines were not encrypted originally so the encryption attribute would not have been updated
+        assert passwordLines.any { it =~ "encryption=\"none\"" }
+    }
+
+    @Test
+    void testShouldDecryptLoginIdentityProvidersWithMultipleElementsPerLine() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-encrypted-multiple-per-line.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX_128
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        // Act
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { it =~ ">thisIsABadPassword<" }
+        // Some lines were not encrypted originally so the encryption attribute would not have been updated
+        assert passwordLines.any { it =~ "encryption=\"none\"" }
+    }
 }
 
 public class TestAppender extends AppenderBase<LoggingEvent> {

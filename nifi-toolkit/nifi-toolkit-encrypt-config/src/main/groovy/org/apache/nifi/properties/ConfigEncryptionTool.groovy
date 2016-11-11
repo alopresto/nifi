@@ -385,44 +385,33 @@ class ConfigEncryptionTool {
     }
 
     List<String> decryptLoginIdentityProviders(List<String> encryptedLines) {
-//        encryptedLines.collect { String line ->
-//            if (line.contains("<property") && line =~ "name=\".* Password\"") {
-//
-//            }
-//        }
-
         AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(keyHex)
 
-        def doc = new XmlSlurper().parseText(encryptedLines.join("\n"))
-        def ldapProvider = doc.provider.'*'.find { node ->
-            node.name() == 'provider' && node.@identifier == "ldap-provider"
-        }
-        def passwords = doc.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
-            it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
-        }
-
-        passwords.each { password ->
-            String decryptedValue = sensitivePropertyProvider.unprotect(password.text())
-            password.replaceNode {
-                property(name: password.@name, encryption: "none", decryptedValue)
+        try {
+            def doc = new XmlSlurper().parseText(encryptedLines.join("\n"))
+            def ldapProvider = doc.provider.'*'.find { node ->
+                node.name() == 'provider' && node.@identifier == "ldap-provider"
             }
+            def passwords = doc.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
+                it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
+            }
+
+            passwords.each { password ->
+                if (isVerbose) {
+                    logger.info("Attempting to decrypt ${password.text()}")
+                }
+                String decryptedValue = sensitivePropertyProvider.unprotect(password.text().trim())
+                password.replaceNode {
+                    property(name: password.@name, encryption: "none", decryptedValue)
+                }
+            }
+
+            String updatedXml = XmlUtil.serialize(doc)
+            logger.info("Updated XML content: ${updatedXml}")
+            updatedXml.split("\n")
+        } catch (Exception e) {
+            printUsageAndThrow("Cannot decrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
         }
-
-        String updatedXml = XmlUtil.serialize(doc)
-        logger.info("Updated XML content: ${updatedXml}")
-        updatedXml.split("\n")
-
-//        def doc = DOMBuilder.parse(new StringReader(encryptedLines.join("\n")))
-//        def root = doc.documentElement
-//        use(DOMCategory) {
-//            def mgrPassword = root.depthFirst().grep { it.name() == "Manager Password" }.first()
-//            if (mgrPassword.value && mgrPassword.attributes().getNamedItem("encryption")) {
-//                mgrPassword*.value = sensitivePropertyProvider.unprotect(mgrPassword.value)
-//            }
-//        }
-//
-//        def result = groovy.xml.dom.DOMUtil.serialize(root)
-//        result
     }
 
     /**
