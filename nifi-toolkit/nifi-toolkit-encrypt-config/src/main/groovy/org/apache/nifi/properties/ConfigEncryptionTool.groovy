@@ -17,6 +17,7 @@
 package org.apache.nifi.properties
 
 import groovy.io.GroovyPrintWriter
+import groovy.xml.XmlUtil
 import org.apache.commons.cli.CommandLine
 import org.apache.commons.cli.CommandLineParser
 import org.apache.commons.cli.DefaultParser
@@ -52,7 +53,9 @@ class ConfigEncryptionTool {
     private String migrationKeyHex
     private String password
     private String migrationPassword
+
     private NiFiProperties niFiProperties
+    private String loginIdentityProviders
 
     private boolean usingPassword = true
     private boolean usingPasswordMigration = true
@@ -353,6 +356,76 @@ class ConfigEncryptionTool {
     }
 
     /**
+     * Loads the login identity providers configuration from the provided file path.
+     *
+     * @param existingKeyHex the key used to encrypt the configs (defaults to the current key)
+     *
+     * @return the file content
+     * @throw IOException if the login-identity-providers.xml file cannot be read
+     */
+    private NiFiProperties loadLoginIdentityProviders(String existingKeyHex = keyHex) throws IOException {
+        File loginIdentityProvidersFile
+        if (loginIdentityProvidersPath && (loginIdentityProvidersFile = new File(loginIdentityProvidersPath)).exists()) {
+            try {
+                String xmlContent = loginIdentityProvidersFile.text
+                List<String> lines = loginIdentityProvidersFile.readLines()
+                logger.info("Loaded LoginIdentityProviders content (${lines.size()} lines)")
+                List<String> decryptedLines = decryptLoginIdentityProviders(lines)
+//                String decryptedXmlContent = ConfigEncryptionUtility.decryptLoginIdentityProviders(xmlContent)
+                return properties
+            } catch (RuntimeException e) {
+                if (isVerbose) {
+                    logger.error("Encountered an error", e)
+                }
+                throw new IOException("Cannot load NiFiProperties from [${niFiPropertiesPath}]", e)
+            }
+        } else {
+            printUsageAndThrow("Cannot load NiFiProperties from [${niFiPropertiesPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+        }
+    }
+
+    List<String> decryptLoginIdentityProviders(List<String> encryptedLines) {
+//        encryptedLines.collect { String line ->
+//            if (line.contains("<property") && line =~ "name=\".* Password\"") {
+//
+//            }
+//        }
+
+        AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(keyHex)
+
+        def doc = new XmlSlurper().parseText(encryptedLines.join("\n"))
+        def ldapProvider = doc.provider.'*'.find { node ->
+            node.name() == 'provider' && node.@identifier == "ldap-provider"
+        }
+        def passwords = doc.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
+            it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
+        }
+
+        passwords.each { password ->
+            String decryptedValue = sensitivePropertyProvider.unprotect(password.text())
+            password.replaceNode {
+                property(name: password.@name, encryption: "none", decryptedValue)
+            }
+        }
+
+        String updatedXml = XmlUtil.serialize(doc)
+        logger.info("Updated XML content: ${updatedXml}")
+        updatedXml.split("\n")
+
+//        def doc = DOMBuilder.parse(new StringReader(encryptedLines.join("\n")))
+//        def root = doc.documentElement
+//        use(DOMCategory) {
+//            def mgrPassword = root.depthFirst().grep { it.name() == "Manager Password" }.first()
+//            if (mgrPassword.value && mgrPassword.attributes().getNamedItem("encryption")) {
+//                mgrPassword*.value = sensitivePropertyProvider.unprotect(mgrPassword.value)
+//            }
+//        }
+//
+//        def result = groovy.xml.dom.DOMUtil.serialize(root)
+//        result
+    }
+
+    /**
      * Accepts a {@link NiFiProperties} instance, iterates over all non-empty sensitive properties which are not already marked as protected, encrypts them using the master key, and updates the property with the protected value. Additionally, adds a new sibling property {@code x.y.z.protected=aes/gcm/{128,256}} for each indicating the encryption scheme used.
      *
      * @param plainProperties the NiFiProperties instance containing the raw values
@@ -469,6 +542,41 @@ class ConfigEncryptionTool {
     }
 
     /**
+     * Writes the contents of the login identity providers configuration file with encrypted values to the output {@code login-identity-providers.xml} file.
+     *
+     * @throw IOException if there is a problem reading or writing the login-identity-providers.xml file
+     */
+    private void writeLoginIdentityProviders() throws IOException {
+        if (!outputLoginIdentityProvidersPath) {
+            throw new IllegalArgumentException("Cannot write encrypted properties to empty login-identity-providers.xml path")
+        }
+
+        File outputLoginIdentityProvidersFile = new File(outputLoginIdentityProvidersPath)
+
+        if (isSafeToWrite(outputLoginIdentityProvidersFile)) {
+            try {
+                List<String> linesToPersist
+                File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+                if (loginIdentityProvidersFile.exists() && loginIdentityProvidersFile.canRead()) {
+                    // Instead of just writing the XML content to a file, this method attempts to maintain the structure of the original file and preserves comments
+//                    linesToPersist = serializeLoginIdentityProvidersAndPreserveFormat(xmlContent, loginIdentityProvidersFile)
+                    // TODO: Handle formatting
+                    linesToPersist = loginIdentityProviders
+                }
+
+                // Write the updated values back to the file
+                outputLoginIdentityProvidersFile.text = linesToPersist.join("\n")
+            } catch (IOException e) {
+                def msg = "Encountered an exception updating the login-identity-providers.xml file with the encrypted values"
+                logger.error(msg, e)
+                throw e
+            }
+        } else {
+            throw new IOException("The login-identity-providers.xml file at ${outputLoginIdentityProvidersPath} must be writable by the user running this tool")
+        }
+    }
+
+    /**
      * Writes the contents of the {@link NiFiProperties} instance with encrypted values to the output {@code nifi.properties} file.
      *
      * @throw IOException if there is a problem reading or writing the nifi.properties file
@@ -542,6 +650,34 @@ class ConfigEncryptionTool {
         properties.store(writer, null)
         writer.flush()
         out.toString().split("\n")
+    }
+
+
+    private
+    static List<String> serializeLoginIdentityProvidersAndPreserveFormat(String xmlContent, File originalLoginIdentityProvidersFile) {
+        // TODO: Groovy XML handling has changed, and persisting formatting (whitespace and comments) is difficult
+//        List<String> lines = originalLoginIdentityProvidersFile.readLines()
+//
+//        Document document = DOMBuilder.parse(new StringReader(xmlContent))
+//        // Only need to replace the keys that have been protected
+//        Map<String, String> protectedKeys = protectedNiFiProperties.getProtectedPropertyKeys()
+//
+//        protectedKeys.each { String key, String protectionScheme ->
+//            int l = lines.findIndexOf { it.startsWith(key) }
+//            if (l != -1) {
+//                lines[l] = "${key}=${protectedNiFiProperties.getProperty(key)}"
+//            }
+//            // Get the index of the following line (or cap at max)
+//            int p = l + 1 > lines.size() ? lines.size() : l + 1
+//            String protectionLine = "${protectedNiFiProperties.getProtectionKey(key)}=${protectionScheme}"
+//            if (p < lines.size() && lines.get(p).startsWith("${protectedNiFiProperties.getProtectionKey(key)}=")) {
+//                lines.set(p, protectionLine)
+//            } else {
+//                lines.add(p, protectionLine)
+//            }
+//        }
+//
+//        lines
     }
 
     /**
@@ -655,6 +791,15 @@ class ConfigEncryptionTool {
                     }
                     tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
                 }
+
+                if (tool.handlingLoginIdentityProviders) {
+                    try {
+                        tool.loginIdentityProviders = tool.loadLoginIdentityProviders(existingKeyHex)
+                    } catch (Exception e) {
+                        tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_INCORRECT_NUMBER_OF_PASSWORDS)
+                    }
+                    tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
+                }
             } catch (CommandLineParseException e) {
                 if (e.exitCode == ExitCode.HELP) {
                     System.exit(ExitCode.HELP.ordinal())
@@ -673,6 +818,9 @@ class ConfigEncryptionTool {
                     tool.writeKeyToBootstrapConf()
                     if (tool.handlingNiFiProperties) {
                         tool.writeNiFiProperties()
+                    }
+                    if (tool.handlingLoginIdentityProviders) {
+                        tool.writeLoginIdentityProviders()
                     }
                 }
             } catch (Exception e) {

@@ -25,6 +25,7 @@ import org.apache.nifi.util.console.TextDevice
 import org.apache.nifi.util.console.TextDevices
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
+import org.junit.AfterClass
 import org.junit.Assume
 import org.junit.Before
 import org.junit.BeforeClass
@@ -60,10 +61,14 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     public static final String KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? KEY_HEX_256 : KEY_HEX_128
     private static final String PASSWORD = "thisIsABadPassword"
     // From ConfigEncryptionTool.deriveKeyFromPassword("thisIsABadPassword")
-    private static final String PASSWORD_KEY_HEX_256 = "2C576A9585DB862F5ECBEE5B4FFFCCA14B18D8365968D7081651006507AD2BDE"
+    private static
+    final String PASSWORD_KEY_HEX_256 = "2C576A9585DB862F5ECBEE5B4FFFCCA14B18D8365968D7081651006507AD2BDE"
     private static final String PASSWORD_KEY_HEX_128 = "2C576A9585DB862F5ECBEE5B4FFFCCA1"
 
-    private static final String PASSWORD_KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? PASSWORD_KEY_HEX_256 : PASSWORD_KEY_HEX_128
+    private static
+    final String PASSWORD_KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? PASSWORD_KEY_HEX_256 : PASSWORD_KEY_HEX_128
+
+    private static final int LIP_PASSWORD_LINE_COUNT = 3
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
@@ -72,6 +77,14 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.metaClass.methodMissing = { String name, args ->
             logger.info("[${name?.toUpperCase()}] ${(args as List).join(" ")}")
         }
+
+        setupTmpDir()
+    }
+
+    @AfterClass
+    public static void tearDownOnce() throws Exception {
+        File tmpDir = new File("target/tmp/")
+        tmpDir.delete()
     }
 
     @Before
@@ -137,6 +150,13 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String datePattern = /^#\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2} \w{2,5}([\-+]\d{2}:\d{2})? \d{4}\u0024/
 
         formattedDate =~ datePattern
+    }
+
+    private static File setupTmpDir(String tmpDirPath = "target/tmp/") {
+        File tmpDir = new File(tmpDirPath)
+        tmpDir.mkdirs()
+        setFilePermissions(tmpDir, [PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE, PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE, PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE])
+        tmpDir
     }
 
     @Test
@@ -337,7 +357,9 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assert
         assert !TestAppender.events.isEmpty()
-        assert TestAppender.events.any { it.message =~ "The source login-identity-providers.xml and destination login-identity-providers.xml are identical \\[.*\\] so the original will be overwritten" }
+        assert TestAppender.events.any {
+            it.message =~ "The source login-identity-providers.xml and destination login-identity-providers.xml are identical \\[.*\\] so the original will be overwritten"
+        }
     }
 
     @Test
@@ -1727,6 +1749,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         exit.checkAssertionAfterwards(new Assertion() {
             public void checkAssertion() {
+                assert outputPropertiesFile.exists()
                 final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -1825,6 +1848,42 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         // Assert
 
         // Assertions in common method above
+    }
+
+    @Test
+    void testShouldDecryptLoginIdentityProviders() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-encrypted.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+
+        // Sanity check for decryption
+        String cipherText = "q4r7WIgN0MaxdAKM||SGgdCTPGSFEcuH4RraMYEdeyVbOx93abdWTVSWvh1w+klA"
+        String EXPECTED_PASSWORD = "thisIsABadPassword"
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX_128)
+        assert spp.unprotect(cipherText) == EXPECTED_PASSWORD
+
+        tool.keyHex = KEY_HEX_128
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        // Act
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { it =~ ">thisIsABadPassword<" }
+        // Some lines were not encrypted originally so the encryption attribute would not have been updated
+        assert passwordLines.any { it =~ "encryption=\"none\"" }
     }
 }
 
