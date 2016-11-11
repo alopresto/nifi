@@ -54,17 +54,18 @@ class AESSensitivePropertyProviderFactoryTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldGetProviderWithoutKey() throws Exception {
+    public void testShouldNotGetProviderWithoutKey() throws Exception {
         // Arrange
         SensitivePropertyProviderFactory factory = new AESSensitivePropertyProviderFactory()
 
         // Act
-        SensitivePropertyProvider provider = factory.getProvider()
+        def msg = shouldFail(SensitivePropertyProtectionException) {
+            SensitivePropertyProvider provider = factory.getProvider()
+        }
+        logger.expected(msg)
 
         // Assert
-        assert provider instanceof AESSensitivePropertyProvider
-        assert !provider.@key
-        assert !provider.@cipher
+        assert msg == "The provider factory cannot generate providers without a key"
     }
 
     @Test
@@ -87,11 +88,12 @@ class AESSensitivePropertyProviderFactoryTest extends GroovyTestCase {
         SensitivePropertyProviderFactory factory = new AESSensitivePropertyProviderFactory("")
 
         // Act
-        SensitivePropertyProvider provider = factory.getProvider()
+        def msg = shouldFail(SensitivePropertyProtectionException) {
+            SensitivePropertyProvider provider = factory.getProvider()
+        }
+        logger.expected(msg)
 
         // Assert
-        assert provider instanceof AESSensitivePropertyProvider
-        assert !provider.@key
-        assert !provider.@cipher
+        assert msg == "The provider factory cannot generate providers without a key"
     }
 }
