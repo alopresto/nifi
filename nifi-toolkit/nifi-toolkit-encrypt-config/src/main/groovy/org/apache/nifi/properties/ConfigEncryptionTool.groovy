@@ -384,16 +384,23 @@ class ConfigEncryptionTool {
         }
     }
 
-    List<String> decryptLoginIdentityProviders(List<String> encryptedLines) {
+    String decryptLoginIdentityProviders(String encryptedXml) {
         AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(keyHex)
 
         try {
-            def doc = new XmlSlurper().parseText(encryptedLines.join("\n"))
+            def doc = new XmlSlurper().parseText(encryptedXml)
             def ldapProvider = doc.provider.'*'.find { node ->
                 node.name() == 'provider' && node.@identifier == "ldap-provider"
             }
             def passwords = doc.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
                 it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
+            }
+
+            if (passwords.isEmpty()) {
+                if (isVerbose) {
+                    logger.info("No password property elements found in login-identity-providers.xml")
+                    return encryptedXml
+                }
             }
 
             passwords.each { password ->
@@ -408,7 +415,7 @@ class ConfigEncryptionTool {
 
             String updatedXml = XmlUtil.serialize(doc)
             logger.info("Updated XML content: ${updatedXml}")
-            updatedXml.split("\n")
+            updatedXml
         } catch (Exception e) {
             printUsageAndThrow("Cannot decrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
         }

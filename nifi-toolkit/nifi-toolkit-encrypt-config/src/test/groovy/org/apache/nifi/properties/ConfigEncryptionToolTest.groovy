@@ -1875,7 +1875,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Read lines: \n${lines.join("\n")}")
 
         // Act
-        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines.join("\n")).split("\n")
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
@@ -1906,7 +1906,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Read lines: \n${lines.join("\n")}")
 
         // Act
-        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines.join("\n")).split("\n")
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
@@ -1937,7 +1937,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Read lines: \n${lines.join("\n")}")
 
         // Act
-        def decryptedLines = tool.decryptLoginIdentityProviders(lines)
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines.join("\n")).split("\n")
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
@@ -1946,6 +1946,36 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         assert passwordLines.every { it =~ ">thisIsABadPassword<" }
         // Some lines were not encrypted originally so the encryption attribute would not have been updated
         assert passwordLines.any { it =~ "encryption=\"none\"" }
+    }
+
+
+    @Test
+    void testDecryptLoginIdentityProvidersShouldHandleCommentedElements() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-commented.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX_128
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        // Act
+        def decryptedLines = tool.decryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
+
+        // Assert
+
+        // If no encrypted properties are found, the original input text is just returned (comments and formatting in tact)
+        assert decryptedLines == lines
     }
 }
 
