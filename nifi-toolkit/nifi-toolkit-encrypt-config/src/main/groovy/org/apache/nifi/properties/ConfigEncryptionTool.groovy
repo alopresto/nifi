@@ -95,7 +95,7 @@ class ConfigEncryptionTool {
     private static final String FOOTER = buildFooter()
 
     private static
-    final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new nifi.properties file if specified)."
+    final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"
@@ -395,7 +395,7 @@ class ConfigEncryptionTool {
 
             if (passwords.isEmpty()) {
                 if (isVerbose) {
-                    logger.info("No password property elements found in login-identity-providers.xml")
+                    logger.info("No encrypted password property elements found in login-identity-providers.xml")
                 }
                 return encryptedXml
             }
@@ -432,7 +432,7 @@ class ConfigEncryptionTool {
 
             if (passwords.isEmpty()) {
                 if (isVerbose) {
-                    logger.info("No password property elements found in login-identity-providers.xml")
+                    logger.info("No unencrypted password property elements found in login-identity-providers.xml")
                 }
                 return plainXml
             }
@@ -586,17 +586,17 @@ class ConfigEncryptionTool {
 
         if (isSafeToWrite(outputLoginIdentityProvidersFile)) {
             try {
-                List<String> linesToPersist
+                String updatedXmlContent
                 File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
                 if (loginIdentityProvidersFile.exists() && loginIdentityProvidersFile.canRead()) {
                     // Instead of just writing the XML content to a file, this method attempts to maintain the structure of the original file and preserves comments
-//                    linesToPersist = serializeLoginIdentityProvidersAndPreserveFormat(xmlContent, loginIdentityProvidersFile)
+//                    updatedXmlContent = serializeLoginIdentityProvidersAndPreserveFormat(xmlContent, loginIdentityProvidersFile)
                     // TODO: Handle formatting
-                    linesToPersist = loginIdentityProviders
+                    updatedXmlContent = loginIdentityProviders
                 }
 
                 // Write the updated values back to the file
-                outputLoginIdentityProvidersFile.text = linesToPersist.join("\n")
+                outputLoginIdentityProvidersFile.text = updatedXmlContent
             } catch (IOException e) {
                 def msg = "Encountered an exception updating the login-identity-providers.xml file with the encrypted values"
                 logger.error(msg, e)
