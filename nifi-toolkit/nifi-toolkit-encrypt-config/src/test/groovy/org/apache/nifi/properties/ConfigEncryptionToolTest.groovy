@@ -69,6 +69,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     final String PASSWORD_KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? PASSWORD_KEY_HEX_256 : PASSWORD_KEY_HEX_128
 
     private static final int LIP_PASSWORD_LINE_COUNT = 3
+    private final String PASSWORD_PROP_REGEX = "<property[^>]* name=\".* Password\""
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
@@ -98,6 +99,10 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
     private static boolean isUnlimitedStrengthCryptoAvailable() {
         Cipher.getMaxAllowedKeyLength("AES") > 128
+    }
+
+    private static int getKeyLength(String keyHex = KEY_HEX) {
+        keyHex?.size() * 4
     }
 
     private static void printProperties(NiFiProperties properties) {
@@ -1879,7 +1884,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
-        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        def passwordLines = decryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
         assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
         assert passwordLines.every { it =~ ">thisIsABadPassword<" }
         // Some lines were not encrypted originally so the encryption attribute would not have been updated
@@ -1910,7 +1915,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
-        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        def passwordLines = decryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
         assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
         assert passwordLines.every { it =~ ">thisIsABadPassword<" }
         // Some lines were not encrypted originally so the encryption attribute would not have been updated
@@ -1941,7 +1946,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Decrypted lines: \n${decryptedLines.join("\n")}")
 
         // Assert
-        def passwordLines = decryptedLines.findAll { it =~ "<property[^>]* name=\".* Password\"" }
+        def passwordLines = decryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
         assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
         assert passwordLines.every { it =~ ">thisIsABadPassword<" }
         // Some lines were not encrypted originally so the encryption attribute would not have been updated
@@ -1977,6 +1982,157 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         // If no encrypted properties are found, the original input text is just returned (comments and formatting in tact)
         assert decryptedLines == lines
     }
+
+    @Test
+    void testShouldEncryptLoginIdentityProviders() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        String encryptionScheme = "encryption=\"aes/gcm/${getKeyLength(KEY_HEX)}\""
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
+
+        // Act
+        def encryptedLines = tool.encryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Encrypted lines: \n${encryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = encryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { !it.contains(">thisIsABadPassword<") }
+        assert passwordLines.every { it.contains(encryptionScheme) }
+        passwordLines.each {
+            String ct = (it =~ ">(.*)</property>")[0][1]
+            logger.info("Cipher text: ${ct}")
+            assert spp.unprotect(ct) == PASSWORD
+        }
+    }
+
+    @Test
+    void testShouldEncryptLoginIdentityProvidersWithMultilineElements() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-multiline.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        String encryptionScheme = "encryption=\"aes/gcm/${getKeyLength(KEY_HEX)}\""
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
+
+        // Act
+        def encryptedLines = tool.encryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Encrypted lines: \n${encryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = encryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { !it.contains(">thisIsABadPassword<") }
+        assert passwordLines.every { it.contains(encryptionScheme) }
+        passwordLines.each {
+            String ct = (it =~ ">(.*)</property>")[0][1]
+            logger.info("Cipher text: ${ct}")
+            assert spp.unprotect(ct) == PASSWORD
+        }
+    }
+
+    @Test
+    void testShouldEncryptLoginIdentityProvidersWithMultipleElementsPerLine() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-multiple-per-line.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        String encryptionScheme = "encryption=\"aes/gcm/${getKeyLength(KEY_HEX)}\""
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
+
+        // Act
+        def encryptedLines = tool.encryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Encrypted lines: \n${encryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = encryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        assert passwordLines.every { !it.contains(">thisIsABadPassword<") }
+        assert passwordLines.every { it.contains(encryptionScheme) }
+        passwordLines.each {
+            String ct = (it =~ ">(.*)</property>")[0][1]
+            logger.info("Cipher text: ${ct}")
+            assert spp.unprotect(ct) == PASSWORD
+        }
+    }
+
+
+    @Test
+    void testEncryptLoginIdentityProvidersShouldHandleCommentedElements() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-commented.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX_128
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        // Act
+        def encryptedLines = tool.encryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Encrypted lines: \n${encryptedLines.join("\n")}")
+
+        // Assert
+
+        // If no sensitive properties are found, the original input text is just returned (comments and formatting in tact)
+        assert encryptedLines == lines
+    }
+
+    // TODO: Encrypt plain XML elements
+    // TODO: XML comments & whitespace formatting
+    // TODO: Migrate LIP to new key
+    // TODO: Full cycle with plain LIP
+    // TODO: Full cycle with encrypted LIP
+    // TODO: Full cycle with LIP and NFP
 }
 
 public class TestAppender extends AppenderBase<LoggingEvent> {

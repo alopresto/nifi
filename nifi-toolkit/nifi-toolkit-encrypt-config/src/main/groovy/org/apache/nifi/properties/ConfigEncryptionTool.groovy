@@ -363,35 +363,32 @@ class ConfigEncryptionTool {
      * @return the file content
      * @throw IOException if the login-identity-providers.xml file cannot be read
      */
-    private NiFiProperties loadLoginIdentityProviders(String existingKeyHex = keyHex) throws IOException {
+    private String loadLoginIdentityProviders(String existingKeyHex = keyHex) throws IOException {
         File loginIdentityProvidersFile
         if (loginIdentityProvidersPath && (loginIdentityProvidersFile = new File(loginIdentityProvidersPath)).exists()) {
             try {
                 String xmlContent = loginIdentityProvidersFile.text
                 List<String> lines = loginIdentityProvidersFile.readLines()
                 logger.info("Loaded LoginIdentityProviders content (${lines.size()} lines)")
-                List<String> decryptedLines = decryptLoginIdentityProviders(lines)
+                String decryptedXmlContent = decryptLoginIdentityProviders(xmlContent, existingKeyHex)
 //                String decryptedXmlContent = ConfigEncryptionUtility.decryptLoginIdentityProviders(xmlContent)
-                return properties
+                return decryptedXmlContent
             } catch (RuntimeException e) {
                 if (isVerbose) {
                     logger.error("Encountered an error", e)
                 }
-                throw new IOException("Cannot load NiFiProperties from [${niFiPropertiesPath}]", e)
+                throw new IOException("Cannot load LoginIdentityProviders from [${loginIdentityProvidersPath}]", e)
             }
         } else {
-            printUsageAndThrow("Cannot load NiFiProperties from [${niFiPropertiesPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+            printUsageAndThrow("Cannot load LoginIdentityProviders from [${loginIdentityProvidersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
         }
     }
 
-    String decryptLoginIdentityProviders(String encryptedXml) {
-        AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(keyHex)
+    String decryptLoginIdentityProviders(String encryptedXml, String existingKeyHex = keyHex) {
+        AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(existingKeyHex)
 
         try {
             def doc = new XmlSlurper().parseText(encryptedXml)
-            def ldapProvider = doc.provider.'*'.find { node ->
-                node.name() == 'provider' && node.@identifier == "ldap-provider"
-            }
             def passwords = doc.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
                 it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
             }
@@ -399,8 +396,8 @@ class ConfigEncryptionTool {
             if (passwords.isEmpty()) {
                 if (isVerbose) {
                     logger.info("No password property elements found in login-identity-providers.xml")
-                    return encryptedXml
                 }
+                return encryptedXml
             }
 
             passwords.each { password ->
@@ -413,11 +410,49 @@ class ConfigEncryptionTool {
                 }
             }
 
+            // Does not preserve whitespace formatting or comments
             String updatedXml = XmlUtil.serialize(doc)
             logger.info("Updated XML content: ${updatedXml}")
             updatedXml
         } catch (Exception e) {
             printUsageAndThrow("Cannot decrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
+        }
+    }
+
+    String encryptLoginIdentityProviders(String plainXml, String newKeyHex = keyHex) {
+        AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(newKeyHex)
+
+        try {
+            def doc = new XmlSlurper().parseText(plainXml)
+            // Only operate on un-encrypted passwords
+            def passwords = doc.provider.find { it.identifier == 'ldap-provider' }
+                    .property.findAll {
+                it.@name =~ "Password" && (it.@encryption == "none" || it.@encryption == "")
+            }
+
+            if (passwords.isEmpty()) {
+                if (isVerbose) {
+                    logger.info("No password property elements found in login-identity-providers.xml")
+                }
+                return plainXml
+            }
+
+            passwords.each { password ->
+                if (isVerbose) {
+                    logger.info("Attempting to encrypt ${password.name()}")
+                }
+                String encryptedValue = sensitivePropertyProvider.protect(password.text().trim())
+                password.replaceNode {
+                    property(name: password.@name, encryption: sensitivePropertyProvider.identifierKey, encryptedValue)
+                }
+            }
+
+            // Does not preserve whitespace formatting or comments
+            String updatedXml = XmlUtil.serialize(doc)
+            logger.info("Updated XML content: ${updatedXml}")
+            updatedXml
+        } catch (Exception e) {
+            printUsageAndThrow("Cannot encrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
         }
     }
 
@@ -794,7 +829,7 @@ class ConfigEncryptionTool {
                     } catch (Exception e) {
                         tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_INCORRECT_NUMBER_OF_PASSWORDS)
                     }
-                    tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
+                    tool.loginIdentityProviders = tool.encryptLoginIdentityProviders(tool.loginIdentityProviders)
                 }
             } catch (CommandLineParseException e) {
                 if (e.exitCode == ExitCode.HELP) {
