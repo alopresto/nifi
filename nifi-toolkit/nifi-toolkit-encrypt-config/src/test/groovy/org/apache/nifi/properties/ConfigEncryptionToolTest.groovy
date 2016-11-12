@@ -18,6 +18,7 @@ package org.apache.nifi.properties
 
 import ch.qos.logback.classic.spi.LoggingEvent
 import ch.qos.logback.core.AppenderBase
+import groovy.xml.XmlUtil
 import org.apache.commons.lang3.SystemUtils
 import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
 import org.apache.nifi.util.NiFiProperties
@@ -2097,7 +2098,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         }
     }
 
-
     @Test
     void testEncryptLoginIdentityProvidersShouldHandleCommentedElements() {
         // Arrange
@@ -2152,7 +2152,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         File outputLIPFile = new File("target/tmp/tmp-lip.xml")
         outputLIPFile.delete()
 
-       String originalXmlContent = inputLIPFile.text
+        String originalXmlContent = inputLIPFile.text
         logger.info("Original XML content: ${originalXmlContent}")
 
         String[] args = ["-l", inputLIPFile.path, "-b", bootstrapFile.path, "-i", outputLIPFile.path, "-k", KEY_HEX, "-v"]
@@ -2168,9 +2168,13 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 def originalParsedXml = new XmlSlurper().parseText(originalXmlContent)
                 def updatedParsedXml = new XmlSlurper().parseText(updatedXmlContent)
                 assert originalParsedXml != updatedParsedXml
-                assert originalParsedXml.'**'.findAll { it.@encryption } != updatedParsedXml.'**'.findAll { it.@encryption }
+                assert originalParsedXml.'**'.findAll { it.@encryption } != updatedParsedXml.'**'.findAll {
+                    it.@encryption
+                }
 
-                def encryptedValues = updatedParsedXml.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
+                def encryptedValues = updatedParsedXml.provider.find {
+                    it.identifier == 'ldap-provider'
+                }.property.findAll {
                     it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
                 }
 
@@ -2249,7 +2253,9 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 assert originalParsedXml != updatedParsedXml
 //                assert originalParsedXml.'**'.findAll { it.@encryption } != updatedParsedXml.'**'.findAll { it.@encryption }
 
-                def encryptedValues = updatedParsedXml.provider.find { it.identifier == 'ldap-provider' }.property.findAll {
+                def encryptedValues = updatedParsedXml.provider.find {
+                    it.identifier == 'ldap-provider'
+                }.property.findAll {
                     it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
                 }
 
@@ -2281,6 +2287,66 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         // Assert
 
         // Assertions defined above
+    }
+
+    @Test
+    void testSerializeLoginIdentityProvidersAndPreserveFormatShouldRespectCommentsAndWhitespace() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        // Just need to read the lines from the original file, parse them to XML, serialize back, and compare output, as no transformation operation will occur
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        def parsedXml = new XmlSlurper().parseText(workingFile.text)
+        String serializedXml = new XmlUtil().serialize(parsedXml)
+        logger.info("Serialized XML: \n${serializedXml}")
+
+        // Act
+        def serializedLines = tool.serializeLoginIdentityProvidersAndPreserveFormat(serializedXml, workingFile)
+        logger.info("Serialized lines: \n${serializedLines.join("\n")}")
+
+        // Assert
+        assert serializedLines.size() == lines.size()
+    }
+
+    @Test
+    void testSerializeLoginIdentityProvidersAndPreserveFormatShouldRespectCommentsAndWhitespaceWithChanges() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        // Just need to read the lines from the original file, parse them to XML, serialize back, and compare output, as no transformation operation will occur
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        String plainXml = workingFile.text
+        String encryptedXml = tool.encryptLoginIdentityProviders(plainXml, KEY_HEX)
+        logger.info("Encrypted XML: \n${encryptedXml}")
+
+        // Act
+        def serializedLines = tool.serializeLoginIdentityProvidersAndPreserveFormat(encryptedXml, workingFile)
+        logger.info("Serialized lines: \n${serializedLines.join("\n")}")
+
+        // Assert
+        assert serializedLines.size() == lines.size()
     }
 
     // TODO: XML comments & whitespace formatting

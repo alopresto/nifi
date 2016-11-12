@@ -96,6 +96,7 @@ class ConfigEncryptionTool {
 
     private static
     final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
+    static private final String LDAP_PROVIDER_REGEX = /<provider>.*<identifier>\s*ldap-provider.*?<\/provider>/
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"
@@ -686,29 +687,17 @@ class ConfigEncryptionTool {
 
     private
     static List<String> serializeLoginIdentityProvidersAndPreserveFormat(String xmlContent, File originalLoginIdentityProvidersFile) {
-        // TODO: Groovy XML handling has changed, and persisting formatting (whitespace and comments) is difficult
-//        List<String> lines = originalLoginIdentityProvidersFile.readLines()
-//
-//        Document document = DOMBuilder.parse(new StringReader(xmlContent))
-//        // Only need to replace the keys that have been protected
-//        Map<String, String> protectedKeys = protectedNiFiProperties.getProtectedPropertyKeys()
-//
-//        protectedKeys.each { String key, String protectionScheme ->
-//            int l = lines.findIndexOf { it.startsWith(key) }
-//            if (l != -1) {
-//                lines[l] = "${key}=${protectedNiFiProperties.getProperty(key)}"
-//            }
-//            // Get the index of the following line (or cap at max)
-//            int p = l + 1 > lines.size() ? lines.size() : l + 1
-//            String protectionLine = "${protectedNiFiProperties.getProtectionKey(key)}=${protectionScheme}"
-//            if (p < lines.size() && lines.get(p).startsWith("${protectedNiFiProperties.getProtectionKey(key)}=")) {
-//                lines.set(p, protectionLine)
-//            } else {
-//                lines.add(p, protectionLine)
-//            }
-//        }
-//
-//        lines
+       def parsedXml = new XmlSlurper().parseText(xmlContent)
+        def provider = parsedXml.provider.find { it.identifier == "ldap-provider" }
+        def serializedProvider = new XmlUtil().serialize(provider)
+        // Remove XML declaration from top
+        serializedProvider = serializedProvider.replaceFirst(/<\?xml version="1.0" encoding="UTF-8"\?>/, "")
+
+        // Find the provider element of the new XML in the file contents
+        String fileContents = originalLoginIdentityProvidersFile.text
+        // TODO: Not replacing with encrypted content
+        fileContents = fileContents.replaceFirst(LDAP_PROVIDER_REGEX, serializedProvider)
+        fileContents.split("\n")
     }
 
     /**
