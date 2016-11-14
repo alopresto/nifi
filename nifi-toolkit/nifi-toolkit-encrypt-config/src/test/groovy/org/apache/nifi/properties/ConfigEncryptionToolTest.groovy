@@ -2322,10 +2322,120 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         assert trimmedLines.size() == trimmedSerializedLines.size()
     }
 
-    // TODO: XML comments & whitespace formatting
-    // TODO: Migrate LIP to new key
-    // TODO: Full cycle with encrypted LIP
-    // TODO: Full cycle with LIP and NFP
+    @Test
+    void testShouldPerformFullOperationForNiFiPropertiesAndLoginIdentityProviders() {
+        // Arrange
+        exit.expectSystemExitWithStatus(0)
+
+        File tmpDir = setupTmpDir()
+
+        File emptyKeyFile = new File("src/test/resources/bootstrap_with_empty_master_key.conf")
+        File bootstrapFile = new File("target/tmp/tmp_bootstrap.conf")
+        bootstrapFile.delete()
+
+        Files.copy(emptyKeyFile.toPath(), bootstrapFile.toPath())
+        final List<String> originalBootstrapLines = bootstrapFile.readLines()
+        String originalKeyLine = originalBootstrapLines.find {
+            it.startsWith(ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX)
+        }
+        logger.info("Original key line from bootstrap.conf: ${originalKeyLine}")
+        assert originalKeyLine == ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX
+
+        final String EXPECTED_KEY_LINE = ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX + KEY_HEX
+
+        // Set up the NFP file
+        File inputPropertiesFile = new File("src/test/resources/nifi_with_sensitive_properties_unprotected.properties")
+        File outputPropertiesFile = new File("target/tmp/tmp_nifi.properties")
+        outputPropertiesFile.delete()
+
+        NiFiProperties inputProperties = new NiFiPropertiesLoader().load(inputPropertiesFile)
+        logger.info("Loaded ${inputProperties.size()} properties from input file")
+        ProtectedNiFiProperties protectedInputProperties = new ProtectedNiFiProperties(inputProperties)
+        def originalSensitiveValues = protectedInputProperties.getSensitivePropertyKeys().collectEntries { String key -> [(key): protectedInputProperties.getProperty(key)] }
+        logger.info("Original sensitive values: ${originalSensitiveValues}")
+
+        // Set up the LIP file
+        File inputLIPFile = new File("src/test/resources/login-identity-providers-populated.xml")
+        File outputLIPFile = new File("target/tmp/tmp-lip.xml")
+        outputLIPFile.delete()
+
+        String originalXmlContent = inputLIPFile.text
+        logger.info("Original XML content: ${originalXmlContent}")
+
+        String[] args = ["-n", inputPropertiesFile.path, "-l", inputLIPFile.path, "-b", bootstrapFile.path, "-i", outputLIPFile.path, "-o", outputPropertiesFile.path, "-k", KEY_HEX, "-v"]
+
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
+
+        exit.checkAssertionAfterwards(new Assertion() {
+            public void checkAssertion() {
+                final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
+                logger.info("Updated nifi.properties:")
+                logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
+
+                // Check that the output values for sensitive properties are not the same as the original (i.e. it was encrypted)
+                NiFiProperties updatedProperties = new NiFiPropertiesLoader().readProtectedPropertiesFromDisk(outputPropertiesFile)
+                assert updatedProperties.size() >= inputProperties.size()
+                originalSensitiveValues.every { String key, String originalValue ->
+                    assert updatedProperties.getProperty(key) != originalValue
+                }
+
+                // Check that the new NiFiProperties instance matches the output file (values still encrypted)
+                updatedProperties.getPropertyKeys().every { String key ->
+                    assert updatedPropertiesLines.contains("${key}=${updatedProperties.getProperty(key)}".toString())
+                }
+
+                final String updatedXmlContent = outputLIPFile.text
+                logger.info("Updated XML content: ${updatedXmlContent}")
+
+                // Check that the output values for sensitive properties are not the same as the original (i.e. it was encrypted)
+                def originalParsedXml = new XmlSlurper().parseText(originalXmlContent)
+                def updatedParsedXml = new XmlSlurper().parseText(updatedXmlContent)
+                assert originalParsedXml != updatedParsedXml
+                assert originalParsedXml.'**'.findAll { it.@encryption } != updatedParsedXml.'**'.findAll {
+                    it.@encryption
+                }
+
+                def encryptedValues = updatedParsedXml.provider.find {
+                    it.identifier == 'ldap-provider'
+                }.property.findAll {
+                    it.@name =~ "Password" && it.@encryption =~ "aes/gcm/\\d{3}"
+                }
+
+                encryptedValues.each {
+                    assert spp.unprotect(it.text()) == PASSWORD
+                }
+
+                // Check that the comments are still there
+                def trimmedLines = inputLIPFile.readLines().collect {it.trim() }.findAll { it }
+                def trimmedSerializedLines = updatedXmlContent.split("\n").collect { it.trim() }.findAll { it }
+                assert trimmedLines.size() == trimmedSerializedLines.size()
+
+                // Check that the key was persisted to the bootstrap.conf
+                final List<String> updatedBootstrapLines = bootstrapFile.readLines()
+                String updatedKeyLine = updatedBootstrapLines.find {
+                    it.startsWith(ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX)
+                }
+                logger.info("Updated key line: ${updatedKeyLine}")
+
+                assert updatedKeyLine == EXPECTED_KEY_LINE
+                assert originalBootstrapLines.size() == updatedBootstrapLines.size()
+
+                // Clean up
+                outputPropertiesFile.deleteOnExit()
+                outputLIPFile.deleteOnExit()
+                bootstrapFile.deleteOnExit()
+                tmpDir.deleteOnExit()
+            }
+        });
+
+        // Act
+        ConfigEncryptionTool.main(args)
+        logger.info("Invoked #main with ${args.join(" ")}")
+
+        // Assert
+
+        // Assertions defined above
+    }
 }
 
 public class TestAppender extends AppenderBase<LoggingEvent> {

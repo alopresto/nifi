@@ -97,6 +97,7 @@ class ConfigEncryptionTool {
     private static
     final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
     static private final String LDAP_PROVIDER_REGEX = /<provider>\s*<identifier>\s*ldap-provider[\s\S]*?<\/provider>/
+    static private final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"
@@ -591,9 +592,7 @@ class ConfigEncryptionTool {
                 File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
                 if (loginIdentityProvidersFile.exists() && loginIdentityProvidersFile.canRead()) {
                     // Instead of just writing the XML content to a file, this method attempts to maintain the structure of the original file and preserves comments
-//                    updatedXmlContent = serializeLoginIdentityProvidersAndPreserveFormat(xmlContent, loginIdentityProvidersFile)
-                    // TODO: Handle formatting
-                    updatedXmlContent = loginIdentityProviders
+                    updatedXmlContent = serializeLoginIdentityProvidersAndPreserveFormat(loginIdentityProviders, loginIdentityProvidersFile).join("\n")
                 }
 
                 // Write the updated values back to the file
@@ -691,11 +690,10 @@ class ConfigEncryptionTool {
         def provider = parsedXml.provider.find { it.identifier == "ldap-provider" }
         def serializedProvider = new XmlUtil().serialize(provider)
         // Remove XML declaration from top
-        serializedProvider = serializedProvider.replaceFirst(/<\?xml version="1.0" encoding="UTF-8"\?>/, "")
+        serializedProvider = serializedProvider.replaceFirst(XML_DECLARATION_REGEX, "")
 
         // Find the provider element of the new XML in the file contents
         String fileContents = originalLoginIdentityProvidersFile.text
-        // TODO: Not replacing with encrypted content
         fileContents = fileContents.replaceFirst(LDAP_PROVIDER_REGEX, serializedProvider)
         fileContents.split("\n")
     }
