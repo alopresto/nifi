@@ -429,7 +429,7 @@ class ConfigEncryptionTool {
             // Only operate on un-encrypted passwords
             def passwords = doc.provider.find { it.identifier == 'ldap-provider' }
                     .property.findAll {
-                it.@name =~ "Password" && (it.@encryption == "none" || it.@encryption == "")
+                it.@name =~ "Password" && (it.@encryption == "none" || it.@encryption == "") && it.text()
             }
 
             if (passwords.isEmpty()) {
@@ -454,6 +454,9 @@ class ConfigEncryptionTool {
             logger.info("Updated XML content: ${updatedXml}")
             updatedXml
         } catch (Exception e) {
+            if (isVerbose) {
+                logger.error("Encountered exception", e)
+            }
             printUsageAndThrow("Cannot encrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
         }
     }

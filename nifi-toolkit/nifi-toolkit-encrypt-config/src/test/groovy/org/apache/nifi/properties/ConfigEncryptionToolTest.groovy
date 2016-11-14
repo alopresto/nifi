@@ -2022,6 +2022,45 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldEncryptLoginIdentityProvidersWithEmptySensitiveElements() {
+        // Arrange
+        String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-empty.xml"
+        File loginIdentityProvidersFile = new File(loginIdentityProvidersPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(loginIdentityProvidersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        String encryptionScheme = "encryption=\"aes/gcm/${getKeyLength(KEY_HEX)}\""
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
+
+        // Act
+        def encryptedLines = tool.encryptLoginIdentityProviders(lines.join("\n")).split("\n")
+        logger.info("Encrypted lines: \n${encryptedLines.join("\n")}")
+
+        // Assert
+        def passwordLines = encryptedLines.findAll { it =~ PASSWORD_PROP_REGEX }
+        assert passwordLines.size() == LIP_PASSWORD_LINE_COUNT
+        def populatedPasswordLines = passwordLines.findAll { it.contains(">.*<") }
+        assert populatedPasswordLines.every { !it.contains(">thisIsABadPassword<") }
+        assert populatedPasswordLines.every { it.contains(encryptionScheme) }
+        populatedPasswordLines.each {
+            String ct = (it =~ ">(.*)</property>")[0][1]
+            logger.info("Cipher text: ${ct}")
+            assert spp.unprotect(ct) == PASSWORD
+        }
+    }
+
+    @Test
     void testShouldEncryptLoginIdentityProvidersWithMultilineElements() {
         // Arrange
         String loginIdentityProvidersPath = "src/test/resources/login-identity-providers-populated-multiline.xml"
