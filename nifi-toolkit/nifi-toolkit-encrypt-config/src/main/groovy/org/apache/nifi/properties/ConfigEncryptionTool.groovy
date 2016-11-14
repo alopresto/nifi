@@ -424,6 +424,7 @@ class ConfigEncryptionTool {
     String encryptLoginIdentityProviders(String plainXml, String newKeyHex = keyHex) {
         AESSensitivePropertyProvider sensitivePropertyProvider = new AESSensitivePropertyProvider(newKeyHex)
 
+        // TODO: Switch to XmlParser & XmlNodePrinter to maintain "empty" element structure
         try {
             def doc = new XmlSlurper().parseText(plainXml)
             // Only operate on un-encrypted passwords
