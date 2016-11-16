@@ -52,7 +52,6 @@ import java.util.zip.GZIPInputStream
 
 class ConfigEncryptionTool {
     private static final Logger logger = LoggerFactory.getLogger(ConfigEncryptionTool.class)
-    private static final Pattern ENC_PATTERN = Pattern.compile("${Pattern.quote(FlowSerializer.ENC_PREFIX)}[\\w+]+=?=?${Pattern.quote(FlowSerializer.ENC_SUFFIX)}")
 
     public String bootstrapConfPath
     public String niFiPropertiesPath
@@ -111,8 +110,15 @@ class ConfigEncryptionTool {
     private static
     final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
     private static final String LDAP_PROVIDER_CLASS = "org.apache.nifi.ldap.LdapProvider"
-    static private final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
-    static private final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
+    private static final String LDAP_PROVIDER_REGEX = /<provider>\s*<identifier>\s*ldap-provider[\s\S]*?<\/provider>/
+    private static final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
+
+    // TODO: Switch to String and rename, as Groovy does not need Pattern compiled at start
+    // TODO: Add boundary markers to beginning and end of pattern?
+    private static
+    final Pattern ENC_PATTERN = Pattern.compile("${Pattern.quote(FlowSerializer.ENC_PREFIX)}[\\w+]+=?=?${Pattern.quote(FlowSerializer.ENC_SUFFIX)}")
+    private static final String FLOW_XML_CIPHER_TEXT_REGEX = /^enc\{[\w\+\/]+?={0,2}\}$/
+
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"

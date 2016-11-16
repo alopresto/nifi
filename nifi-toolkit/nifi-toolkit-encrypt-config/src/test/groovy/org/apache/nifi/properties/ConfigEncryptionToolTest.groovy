@@ -2635,17 +2635,75 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
-    public void testEncRegex() {
-        assertTrue(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aBc19+==}").matches())
-        assertTrue(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aBc19+=}").matches())
-        assertTrue(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aBc19+}").matches())
-        assertTrue(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{a}").matches())
+    public void testFlowXmlPatternShouldMatchArbitraryCipherTexts() {
+        // Arrange
+        def validCipherTexts = ["aBc19+==",
+                                "aBc19+=",
+                                "aBc19+",
+                                "a",
+                                null]
 
-        assertFalse(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aBc19+===}").matches())
-        assertFalse(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aB=c19+}").matches())
-        assertFalse(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{aB@}").matches())
-        assertFalse(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{\"}").matches())
-        assertFalse(ConfigEncryptionTool.ENC_PATTERN.matcher("enc{>}").matches())
+        def invalidCipherTexts = ["",
+                                  "}",
+                                  "aBc19+===",
+                                  "aB=c19+",
+                                  "aB@",
+                                  "\"",
+                                  ">"]
+
+        // Act
+        def successfulResults = validCipherTexts.collect { String cipherText ->
+            def result = ConfigEncryptionTool.ENC_PATTERN.matcher(/enc{${cipherText}}/).matches()
+            logger.info("Result for ${cipherText} -> ${result}")
+            result
+        }
+
+        def failedResults = invalidCipherTexts.collect { String cipherText ->
+            def result = ConfigEncryptionTool.ENC_PATTERN.matcher(/enc{${cipherText}}/).matches()
+            logger.info("Result for ${cipherText} -> ${result}")
+            result
+        }
+
+        // Assert
+        assert successfulResults.every { it }
+        assert failedResults.every { !it }
+    }
+
+    @Test
+    public void testFlowXmlRegexShouldMatchArbitraryCipherTexts() {
+        // Arrange
+        def validCipherTexts = ["aBc19+==",
+                                "aBc19+=",
+                                "aBc19+",
+                                "aBc19/+",
+                                "aBc19/+=",
+                                "a",
+                                null]
+
+        def invalidCipherTexts = ["",
+                                  "}",
+                                  "aBc19+===",
+                                  "aB=c19+",
+                                  "aB@",
+                                  "\"",
+                                  ">"]
+
+        // Act
+        def successfulResults = validCipherTexts.collect { String cipherText ->
+            def result = ("enc{${cipherText}}" =~ ConfigEncryptionTool.FLOW_XML_CIPHER_TEXT_REGEX).find()
+            logger.info("Result for ${cipherText} -> ${result}")
+            result
+        }
+
+        def failedResults = invalidCipherTexts.collect { String cipherText ->
+            def result = ("enc{${cipherText}}" =~ ConfigEncryptionTool.FLOW_XML_CIPHER_TEXT_REGEX).find()
+            logger.info("Result for ${cipherText} -> ${result}")
+            result
+        }
+
+        // Assert
+        assert successfulResults.every { it }
+        assert failedResults.every { !it }
     }
 
     @Test
