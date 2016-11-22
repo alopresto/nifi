@@ -2629,6 +2629,59 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     // TODO: Test decryption cipher initialization against known cipher text
     // TODO: Test cipher text parsing and encryption
 
+    @Test
+    void testDecryptFlowXmlContentShouldVerifyPattern() {
+        // Arrange
+        String existingFlowPassword = "flowPassword"
+        final String DEFAULT_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
+        final String DEFAULT_PROVIDER = "BC"
+
+        String sensitivePropertyValue = "thisIsABadProcessorPassword"
+
+        StringEncryptor sanityEncryptor = new StringEncryptor(DEFAULT_ALGORITHM, DEFAULT_PROVIDER, existingFlowPassword)
+        String sanityCipherText = "enc{${sanityEncryptor.encrypt(sensitivePropertyValue)}}"
+        logger.info("Sanity check value: \t${sensitivePropertyValue} -> ${sanityCipherText}")
+
+        def validCipherTexts = (0..4).collect {
+            "enc{${sanityEncryptor.encrypt(sensitivePropertyValue)}}"
+        }
+        logger.info("Generated valid cipher texts: \n${validCipherTexts.join("\n")}")
+
+        def invalidCipherTexts = ["enc{}",
+                                  "enc{x}",
+                                  "encx",
+                                  "enc{012}",
+                                  "enc{01",
+                                  "enc{aBc19+===}",
+                                  "enc{aB=c19+}",
+                                  "enc{aB@}",
+                                  "",
+                                  "}",
+                                  "\"",
+                                  ">",
+                                  null]
+
+        // Act
+        def successfulResults = validCipherTexts.collect { String cipherText ->
+            ConfigEncryptionTool.decryptFlowElement(cipherText, existingFlowPassword)
+        }
+
+        def failedResults = invalidCipherTexts.collect { String cipherText ->
+            def msg = shouldFail(SensitivePropertyProtectionException) {
+                ConfigEncryptionTool.decryptFlowElement(cipherText, existingFlowPassword)
+            }
+            logger.expected(msg)
+            msg
+        }
+
+        // Assert
+        assert successfulResults.every { it == sensitivePropertyValue }
+        assert failedResults.every {
+            it =~ /The provided cipher text does not match the expected format 'enc\{0123456789ABCDEF\.\.\.\}'/ ||
+                    it == "The provided cipher text must have an even number of hex characters"
+        }
+    }
+
     /**
      * This test verifies that the crypto logic in the tool is compatible with the default {@link StringEncryptor} implementation.
      */

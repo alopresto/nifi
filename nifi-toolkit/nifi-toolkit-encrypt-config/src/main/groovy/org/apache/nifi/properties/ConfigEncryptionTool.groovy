@@ -123,7 +123,7 @@ class ConfigEncryptionTool {
     private static
     final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
     private static final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
-    private static final String FLOW_XML_CIPHER_TEXT_REGEX = /^enc\{[\w\+\/]+?={0,2}\}$/
+    private static final String WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX = /^enc\{[a-fA-F0-9]+\}$/
 
     private static final String DEFAULT_PROVIDER = BouncyCastleProvider.PROVIDER_NAME
     private static final String DEFAULT_FLOW_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
@@ -495,7 +495,13 @@ class ConfigEncryptionTool {
      */
     private static String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
         // Drop the "enc{" and closing "}"
+        if (!(wrappedCipherText =~ WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX)) {
+            throw new SensitivePropertyProtectionException("The provided cipher text does not match the expected format 'enc{0123456789ABCDEF...}'")
+        }
         String unwrappedCipherText = wrappedCipherText.replaceAll(/enc\{/, "")[0..<-1]
+        if (unwrappedCipherText.length() % 2 == 1 || unwrappedCipherText.length() == 0) {
+            throw new SensitivePropertyProtectionException("The provided cipher text must have an even number of hex characters")
+        }
 
         // Decode the hex
         byte[] cipherBytes = Hex.decodeHex(unwrappedCipherText.chars)
@@ -587,7 +593,7 @@ class ConfigEncryptionTool {
         int elementCount = 0
 
         // Scan the XML content and identify every encrypted element, decrypt it, and replace it with the re-encrypted value
-        String migratedFlowXmlContent = flowXmlContent.replaceAll(FLOW_XML_CIPHER_TEXT_REGEX) { String wrappedCipherText ->
+        String migratedFlowXmlContent = flowXmlContent.replaceAll(WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX) { String wrappedCipherText ->
             String plaintext = decryptFlowElement(wrappedCipherText, existingFlowPassword, algorithm, provider)
             byte[] cipherBytes = encryptCipher.doFinal(plaintext.bytes)
             byte[] saltAndCipherBytes = encryptionSalt + cipherBytes
