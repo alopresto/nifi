@@ -493,7 +493,8 @@ class ConfigEncryptionTool {
      * @param provider the security provider (defaults to BC)
      * @return the plaintext in UTF-8 encoding
      */
-    private static String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+    private
+    static String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
         // Drop the "enc{" and closing "}"
         if (!(wrappedCipherText =~ WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX)) {
             throw new SensitivePropertyProtectionException("The provided cipher text does not match the expected format 'enc{0123456789ABCDEF...}'")
@@ -549,11 +550,42 @@ class ConfigEncryptionTool {
      * "some text" -> {@code enc{0123456789ABCDEF} }
      *
      * @param plaintext the plaintext in UTF-8 encoding
+     * @param saltBytes the salt to embed in the cipher text to allow key derivation and decryption later in raw format
      * @param encryptCipher the configured Cipher instance
      * @return the wrapped and hex-encoded cipher text
      */
-    private String encryptFlowElement(String plaintext, Cipher encryptCipher) {
+    private static String encryptFlowElement(String plaintext, byte[] saltBytes, Cipher encryptCipher) {
+        byte[] plainBytes = plaintext?.getBytes(StandardCharsets.UTF_8) ?: new byte[0]
 
+        /* The structure of each cipher text is 16 bytes of salt || actual cipher text,
+         * so extract the salt (32 bytes encoded as hex, 16 bytes raw) and combine that
+         * with the default (and unchanged) iteration count that is hardcoded in
+         * {@link StandardPBEByteEncryptor}. I am extracting
+         * these values to magic numbers here so when the refactoring is performed,
+         * stronger decisions can be implemented here
+         */
+        if (saltBytes.length != DEFAULT_SALT_SIZE_BYTES) {
+            throw new SensitivePropertyProtectionException("The salt must be ${DEFAULT_SALT_SIZE_BYTES} bytes")
+        }
+
+        byte[] cipherBytes = encryptCipher.doFinal(plainBytes)
+        byte[] saltAndCipherBytes = concatByteArrays(saltBytes, cipherBytes)
+
+        // Encode the hex
+        String hexEncodedCipherText = Hex.encodeHexString(saltAndCipherBytes)
+        "enc{${hexEncodedCipherText}}"
+    }
+
+    /**
+     * Utility method to quickly concatenate an arbitrary number of byte[].
+     *
+     * @param arrays the byte[] arrays
+     * @returna single byte[] containing the values concatenated
+     */
+    private static byte[] concatByteArrays(byte[]... arrays) {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
+        arrays.each { byte[] it -> outputStream.write(it) }
+        outputStream.toByteArray()
     }
 
     /**

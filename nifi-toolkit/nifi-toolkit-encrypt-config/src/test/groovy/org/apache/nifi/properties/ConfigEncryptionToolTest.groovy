@@ -42,6 +42,10 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import javax.crypto.Cipher
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.PBEParameterSpec
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.security.KeyException
@@ -71,6 +75,9 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
     private static final int LIP_PASSWORD_LINE_COUNT = 3
     private final String PASSWORD_PROP_REGEX = "<property[^>]* name=\".* Password\""
+
+    private static final String DEFAULT_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
+    private static final String DEFAULT_PROVIDER = "BC"
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
@@ -2733,6 +2740,61 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assert
         assert decryptedElement == EXPECTED_PLAINTEXT
+    }
+
+    @Test
+    void testShouldEncryptFlowXmlContent() {
+        // Arrange
+        String flowPassword = "flowPassword"
+        String sensitivePropertyValue = "thisIsABadProcessorPassword"
+        byte[] saltBytes = "thisIsABadSalt..".bytes
+
+        StringEncryptor sanityEncryptor = new StringEncryptor(DEFAULT_ALGORITHM, DEFAULT_PROVIDER, flowPassword)
+
+        Cipher encryptionCipher = generateEncryptionCipher(flowPassword)
+
+        // Act
+        String encryptedElement = ConfigEncryptionTool.encryptFlowElement(sensitivePropertyValue, saltBytes, encryptionCipher)
+        logger.info("Encrypted flow element: ${encryptedElement}")
+
+        // Assert
+        assert encryptedElement =~ ConfigEncryptionTool.WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX
+        String sanityPlaintext = sanityEncryptor.decrypt(encryptedElement[4..<-1])
+        logger.info("Sanity check value: \t${encryptedElement} -> ${sanityPlaintext}")
+
+        assert sanityPlaintext == sensitivePropertyValue
+    }
+
+    @Test
+    void testShouldEncryptAndDecryptFlowXmlContent() {
+        // Arrange
+        String flowPassword = "flowPassword"
+        String sensitivePropertyValue = "thisIsABadProcessorPassword"
+        byte[] saltBytes = "thisIsABadSalt..".bytes
+
+        Cipher encryptionCipher = generateEncryptionCipher(flowPassword)
+
+        // Act
+        String encryptedElement = ConfigEncryptionTool.encryptFlowElement(sensitivePropertyValue, saltBytes, encryptionCipher)
+        logger.info("Encrypted flow element: ${encryptedElement}")
+
+        String decryptedElement = ConfigEncryptionTool.decryptFlowElement(encryptedElement, flowPassword)
+        logger.info("Decrypted flow element: ${decryptedElement}")
+
+        // Assert
+        assert encryptedElement =~ ConfigEncryptionTool.WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX
+        assert decryptedElement == sensitivePropertyValue
+    }
+
+    private static Cipher generateEncryptionCipher(String password, String algorithm = DEFAULT_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+        Cipher cipher = Cipher.getInstance(algorithm, provider)
+        PBEKeySpec keySpec = new PBEKeySpec(password.chars)
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
+        SecretKey pbeKey = keyFactory.generateSecret(keySpec)
+        byte[] saltBytes = "thisIsABadSalt..".bytes
+        PBEParameterSpec parameterSpec = new PBEParameterSpec(saltBytes, 1000)
+        cipher.init(Cipher.ENCRYPT_MODE, pbeKey, parameterSpec)
+        cipher
     }
 
     // TODO: Test cipher text extraction and replacement in XML (no attribute update necessary)
