@@ -2844,24 +2844,44 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     @Test
     void testMigrateFlowXmlContentShouldUseConstantSalt() {
         // Arrange
-        String flowPassword = "flowPassword"
-        String sensitivePropertyValue = "thisIsABadProcessorPassword"
-        byte[] saltBytes = "thisIsABadSalt..".bytes
+        String flowXmlPath = "src/test/resources/flow.xml"
+        File flowXmlFile = new File(flowXmlPath)
 
-        StringEncryptor sanityEncryptor = new StringEncryptor(DEFAULT_ALGORITHM, DEFAULT_PROVIDER, flowPassword)
+        File tmpDir = setupTmpDir()
 
-        Cipher encryptionCipher = generateEncryptionCipher(flowPassword)
+        File workingFile = new File("target/tmp/tmp-flow.xml")
+        workingFile.delete()
+        Files.copy(flowXmlFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        final String SENSITIVE_VALUE = "thisIsABadPassword"
+
+        String existingFlowPassword = "nififtw!"
+        String newFlowPassword = "thisIsABadPassword"
+
+        String xmlContent = workingFile.text
+        logger.info("Read flow.xml: \n${xmlContent}")
+
+        // There are two encrypted passwords in this flow
+        int cipherTextCount = xmlContent.findAll(WFXCTR).size()
+        logger.info("Found ${cipherTextCount} encrypted properties in the original flow.xml content")
 
         // Act
-        String encryptedElement = ConfigEncryptionTool.encryptFlowElement(sensitivePropertyValue, saltBytes, encryptionCipher)
-        logger.info("Encrypted flow element: ${encryptedElement}")
+        String migratedXmlContent = tool.migrateFlowXmlContent(xmlContent, existingFlowPassword, newFlowPassword)
+        logger.info("Migrated flow.xml: \n${migratedXmlContent}")
 
         // Assert
-        assert encryptedElement =~ WFXCTR
-        String sanityPlaintext = sanityEncryptor.decrypt(encryptedElement[4..<-1])
-        logger.info("Sanity check value: \t${encryptedElement} -> ${sanityPlaintext}")
+        def newCipherTexts = migratedXmlContent.findAll(WFXCTR)
 
-        assert sanityPlaintext == sensitivePropertyValue
+        assert newCipherTexts.size() == cipherTextCount
+
+        // Check that the same salt was used on all output
+        String saltHex = newCipherTexts.first()[4..<36]
+        logger.info("First detected salt: ${saltHex}")
+        newCipherTexts.every {
+            assert it[4..<36] == saltHex
+        }
     }
 
     // TODO: Test cipher text extraction and replacement in XML (no attribute update necessary)
