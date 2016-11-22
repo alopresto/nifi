@@ -1076,6 +1076,24 @@ class ConfigEncryptionTool {
     }
 
     /**
+     * Utility method which returns true if the {@link org.apache.nifi.util.NiFiProperties} instance has encrypted properties.
+     *
+     * @return true if the properties instance will require a key to access
+     */
+    boolean niFiPropertiesAreEncrypted() {
+        if (niFiPropertiesPath) {
+            try {
+                def nfp = NiFiPropertiesLoader.withKey(keyHex).readProtectedPropertiesFromDisk(new File(niFiPropertiesPath))
+                return nfp.hasProtectedKeys()
+            } catch (SensitivePropertyProtectionException | IOException e) {
+                return true
+            }
+        } else {
+            return false
+        }
+    }
+
+    /**
      * Runs main tool logic (parsing arguments, reading files, protecting properties, and writing key and properties out to destination files).
      *
      * @param args the command-line arguments
@@ -1089,9 +1107,14 @@ class ConfigEncryptionTool {
             try {
                 tool.parse(args)
 
-                // TODO: Unnecessary if -x (only necessary if nifi.properties is already encrypted)
-                if (!tool.ignorePropertiesFiles) {
-                    tool.keyHex = tool.getKey()
+                boolean existingNiFiPropertiesAreEncrypted = tool.niFiPropertiesAreEncrypted()
+                if (!tool.ignorePropertiesFiles || (tool.handlingFlowXml && existingNiFiPropertiesAreEncrypted)) {
+                    // If we are handling the flow.xml.gz and nifi.properties is already encrypted, try getting the key from bootstrap.conf rather than the console
+                    if (tool.ignorePropertiesFiles) {
+                        tool.keyHex = NiFiPropertiesLoader.extractKeyFromBootstrapFile(tool.bootstrapConfPath)
+                    } else {
+                        tool.keyHex = tool.getKey()
+                    }
 
                     if (!tool.keyHex) {
                         tool.printUsageAndThrow("Hex key must be provided", ExitCode.INVALID_ARGS)
@@ -1171,13 +1194,27 @@ class ConfigEncryptionTool {
 
                     tool.flowXml = tool.migrateFlowXmlContent(tool.flowXml, existingFlowPassword, newFlowPassword, existingAlgorithm, existingProvider, newAlgorithm, newProvider)
 
-                    // Update the NiFiProperties object with the new flow password before it gets encrypted (wasteful, but NiFiProperties instances are immutable)
-                    Properties rawProperties = new Properties()
-                    nfp.getPropertyKeys().each { String k ->
-                        rawProperties.put(k, nfp.getProperty(k))
+                    // If the new key is the hard-coded internal value, don't persist it to nifi.properties
+                    if (newFlowPassword != DEFAULT_NIFI_SENSITIVE_PROPS_KEY && newFlowPassword != existingFlowPassword) {
+                        // Update the NiFiProperties object with the new flow password before it gets encrypted (wasteful, but NiFiProperties instances are immutable)
+                        Properties rawProperties = new Properties()
+                        nfp.getPropertyKeys().each { String k ->
+                            rawProperties.put(k, nfp.getProperty(k))
+                        }
+
+                        // If the tool is not going to encrypt NiFiProperties and the existing file is already encrypted, encrypt and update the new sensitive props key
+                        if (!tool.handlingNiFiProperties && existingNiFiPropertiesAreEncrypted) {
+                            AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(tool.keyHex)
+                            String encryptedSPK = spp.protect(newFlowPassword)
+                            rawProperties.put(NiFiProperties.SENSITIVE_PROPS_KEY, encryptedSPK)
+                            if (tool.isVerbose) {
+                                logger.info("Tool is not configured to encrypt nifi.properties, but the existing nifi.properties is encrypted and flow.xml.gz was migrated, so manually persisting the new encrypted value to nifi.properties")
+                            }
+                        } else {
+                            rawProperties.put(NiFiProperties.SENSITIVE_PROPS_KEY, newFlowPassword)
+                        }
+                        tool.niFiProperties = new StandardNiFiProperties(rawProperties)
                     }
-                    rawProperties.put(NiFiProperties.SENSITIVE_PROPS_KEY, newFlowPassword)
-                    tool.niFiProperties = new StandardNiFiProperties(rawProperties)
                 }
 
                 if (tool.handlingNiFiProperties) {
