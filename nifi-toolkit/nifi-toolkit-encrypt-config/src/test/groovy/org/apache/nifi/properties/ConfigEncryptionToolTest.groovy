@@ -1321,9 +1321,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Updated nifi.properties:")
         logger.info("\n" * 2 + updatedLines.join("\n"))
 
-        assert TestAppender.events.collect {
-            it.message
-        }.contains("The source nifi.properties and destination nifi.properties are identical [${workingFile.path}] so the original will be overwritten".toString())
+        assert TestAppender.events*.message.contains("The source nifi.properties and destination nifi.properties are identical [${workingFile.path}] so the original will be overwritten".toString())
 
         workingFile.deleteOnExit()
     }
