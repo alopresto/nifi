@@ -123,7 +123,7 @@ class ConfigEncryptionTool {
     private static
     final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
     private static final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
-    private static final String WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX = /^enc\{[a-fA-F0-9]+\}$/
+    private static final String WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX = /enc\{[a-fA-F0-9]+?\}/
 
     private static final String DEFAULT_PROVIDER = BouncyCastleProvider.PROVIDER_NAME
     private static final String DEFAULT_FLOW_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
@@ -628,7 +628,7 @@ class ConfigEncryptionTool {
         String migratedFlowXmlContent = flowXmlContent.replaceAll(WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX) { String wrappedCipherText ->
             String plaintext = decryptFlowElement(wrappedCipherText, existingFlowPassword, algorithm, provider)
             byte[] cipherBytes = encryptCipher.doFinal(plaintext.bytes)
-            byte[] saltAndCipherBytes = encryptionSalt + cipherBytes
+            byte[] saltAndCipherBytes = concatByteArrays(encryptionSalt, cipherBytes)
             elementCount++
             "enc{${Hex.encodeHex(saltAndCipherBytes)}}"
         }

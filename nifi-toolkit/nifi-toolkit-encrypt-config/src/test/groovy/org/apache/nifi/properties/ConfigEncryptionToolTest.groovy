@@ -78,6 +78,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
     private static final String DEFAULT_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
     private static final String DEFAULT_PROVIDER = "BC"
+    private static final String WFXCTR = ConfigEncryptionTool.WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
@@ -2633,8 +2634,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     // TODO: -f without -n should fail
     // TODO: All combo scenarios
     // TODO: -n without -x should encrypt nifi.properties (probably already covered)
-    // TODO: Test decryption cipher initialization against known cipher text
-    // TODO: Test cipher text parsing and encryption
 
     @Test
     void testDecryptFlowXmlContentShouldVerifyPattern() {
@@ -2758,7 +2757,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Encrypted flow element: ${encryptedElement}")
 
         // Assert
-        assert encryptedElement =~ ConfigEncryptionTool.WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX
+        assert encryptedElement =~ WFXCTR
         String sanityPlaintext = sanityEncryptor.decrypt(encryptedElement[4..<-1])
         logger.info("Sanity check value: \t${encryptedElement} -> ${sanityPlaintext}")
 
@@ -2782,11 +2781,12 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Decrypted flow element: ${decryptedElement}")
 
         // Assert
-        assert encryptedElement =~ ConfigEncryptionTool.WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX
+        assert encryptedElement =~ WFXCTR
         assert decryptedElement == sensitivePropertyValue
     }
 
-    private static Cipher generateEncryptionCipher(String password, String algorithm = DEFAULT_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+    private
+    static Cipher generateEncryptionCipher(String password, String algorithm = DEFAULT_ALGORITHM, String provider = DEFAULT_PROVIDER) {
         Cipher cipher = Cipher.getInstance(algorithm, provider)
         PBEKeySpec keySpec = new PBEKeySpec(password.chars)
         SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
@@ -2795,6 +2795,73 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         PBEParameterSpec parameterSpec = new PBEParameterSpec(saltBytes, 1000)
         cipher.init(Cipher.ENCRYPT_MODE, pbeKey, parameterSpec)
         cipher
+    }
+
+    @Test
+    void testShouldMigrateFlowXmlContent() {
+        // Arrange
+        String flowXmlPath = "src/test/resources/flow.xml"
+        File flowXmlFile = new File(flowXmlPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-flow.xml")
+        workingFile.delete()
+        Files.copy(flowXmlFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        final String SENSITIVE_VALUE = "thisIsABadPassword"
+
+        String existingFlowPassword = "nififtw!"
+        String newFlowPassword = "thisIsABadPassword"
+
+        String xmlContent = workingFile.text
+        logger.info("Read flow.xml: \n${xmlContent}")
+
+        // There are two encrypted passwords in this flow
+        int cipherTextCount = xmlContent.findAll(WFXCTR).size()
+        logger.info("Found ${cipherTextCount} encrypted properties in the original flow.xml content")
+
+        // Act
+        String migratedXmlContent = tool.migrateFlowXmlContent(xmlContent, existingFlowPassword, newFlowPassword)
+        logger.info("Migrated flow.xml: \n${migratedXmlContent}")
+
+        // Assert
+        def newCipherTexts = migratedXmlContent.findAll(WFXCTR)
+
+        assert newCipherTexts.size() == cipherTextCount
+        newCipherTexts.every {
+            assert ConfigEncryptionTool.decryptFlowElement(it, newFlowPassword) == SENSITIVE_VALUE
+        }
+
+        // Ensure that everything else is identical
+        assert migratedXmlContent.replaceAll(WFXCTR, "") ==
+                xmlContent.replaceAll(WFXCTR, "")
+    }
+
+
+    @Test
+    void testMigrateFlowXmlContentShouldUseConstantSalt() {
+        // Arrange
+        String flowPassword = "flowPassword"
+        String sensitivePropertyValue = "thisIsABadProcessorPassword"
+        byte[] saltBytes = "thisIsABadSalt..".bytes
+
+        StringEncryptor sanityEncryptor = new StringEncryptor(DEFAULT_ALGORITHM, DEFAULT_PROVIDER, flowPassword)
+
+        Cipher encryptionCipher = generateEncryptionCipher(flowPassword)
+
+        // Act
+        String encryptedElement = ConfigEncryptionTool.encryptFlowElement(sensitivePropertyValue, saltBytes, encryptionCipher)
+        logger.info("Encrypted flow element: ${encryptedElement}")
+
+        // Assert
+        assert encryptedElement =~ WFXCTR
+        String sanityPlaintext = sanityEncryptor.decrypt(encryptedElement[4..<-1])
+        logger.info("Sanity check value: \t${encryptedElement} -> ${sanityPlaintext}")
+
+        assert sanityPlaintext == sensitivePropertyValue
     }
 
     // TODO: Test cipher text extraction and replacement in XML (no attribute update necessary)
