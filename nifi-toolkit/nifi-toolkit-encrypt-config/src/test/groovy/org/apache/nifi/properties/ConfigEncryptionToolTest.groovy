@@ -82,7 +82,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
     private static final int LIP_PASSWORD_LINE_COUNT = 3
     private final String PASSWORD_PROP_REGEX = "<property[^>]* name=\".* Password\""
-    private List<LoggingEvent> events;
 
     @BeforeClass
     public static void setUpOnce() throws Exception {
@@ -292,7 +291,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assert
         assert !TestAppender.events.isEmpty()
-        assert TestAppender.events.first().message =~ "The source nifi.properties and destination nifi.properties are identical \\[.*\\] so the original will be overwritten"
+        assert TestAppender.events.any { it.message =~ "The source nifi.properties and destination nifi.properties are identical \\[.*\\] so the original will be overwritten" }
     }
 
     @Test
