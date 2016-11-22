@@ -127,7 +127,12 @@ class ConfigEncryptionTool {
     private static final String FOOTER = buildFooter()
 
     private static
-    final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
+    final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or " +
+            "login-identity-providers.xml file with plain sensitive configuration values, " +
+            "prompts the user for a master key, and encrypts each value. It will replace the " +
+            "plain value with the protected value in the same file (or write to a new file if " +
+            "specified). It can also be used to migrate already-encrypted values in those " +
+            "files or in flow.xml.gz to be encrypted with a new key."
     private static final String LDAP_PROVIDER_CLASS = "org.apache.nifi.ldap.LdapProvider"
     private static
     final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
