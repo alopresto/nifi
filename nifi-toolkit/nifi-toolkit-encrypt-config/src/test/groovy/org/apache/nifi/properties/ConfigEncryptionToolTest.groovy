@@ -19,6 +19,7 @@ package org.apache.nifi.properties
 import org.apache.commons.lang3.SystemUtils
 import org.apache.log4j.AppenderSkeleton
 import org.apache.log4j.spi.LoggingEvent
+import org.apache.nifi.encrypt.StringEncryptor
 import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
 import org.apache.nifi.util.NiFiProperties
 import org.apache.nifi.util.console.TextDevice
@@ -2308,7 +2309,9 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assert
         assert serializedLines == encryptedLines
-        assert TestAppender.events.any { it.renderedMessage =~ "No provider element with class org.apache.nifi.ldap.LdapProvider found in XML content; the file could be empty or the element may be missing or commented out" }
+        assert TestAppender.events.any {
+            it.renderedMessage =~ "No provider element with class org.apache.nifi.ldap.LdapProvider found in XML content; the file could be empty or the element may be missing or commented out"
+        }
     }
 
     @Test
@@ -2337,7 +2340,9 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assert
         assert serializedLines.findAll { it }.isEmpty()
-        assert TestAppender.events.any { it.renderedMessage =~ "No provider element with class org.apache.nifi.ldap.LdapProvider found in XML content; the file could be empty or the element may be missing or commented out" }
+        assert TestAppender.events.any {
+            it.renderedMessage =~ "No provider element with class org.apache.nifi.ldap.LdapProvider found in XML content; the file could be empty or the element may be missing or commented out"
+        }
     }
 
     @Test
@@ -2616,6 +2621,115 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Assertions defined above
     }
+
+    // TODO: -x should not encrypt nifi.properties or lip.xml
+    // TODO: -f without -n should fail
+    // TODO: All combo scenarios
+    // TODO: -n without -x should encrypt nifi.properties (probably already covered)
+    // TODO: Test decryption cipher initialization against known cipher text
+    // TODO: Test cipher text parsing and encryption
+
+    /**
+     * This test verifies that the crypto logic in the tool is compatible with the default {@link StringEncryptor} implementation.
+     */
+    @Test
+    void testShouldDecryptFlowXmlContent() {
+        // Arrange
+        String existingFlowPassword = "flowPassword"
+        final String DEFAULT_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
+        final String DEFAULT_PROVIDER = "BC"
+
+        String sensitivePropertyValue = "thisIsABadProcessorPassword"
+
+        StringEncryptor sanityEncryptor = new StringEncryptor(DEFAULT_ALGORITHM, DEFAULT_PROVIDER, existingFlowPassword)
+        String sanityCipherText = "enc{${sanityEncryptor.encrypt(sensitivePropertyValue)}}"
+        logger.info("Sanity check value: \t${sensitivePropertyValue} -> ${sanityCipherText}")
+
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        // Act
+        String decryptedElement = tool.decryptFlowElement(sanityCipherText, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
+        logger.info("Decrypted flow element: ${decryptedElement}")
+        String decryptedElementWithDefaultParameters = tool.decryptFlowElement(sanityCipherText, existingFlowPassword)
+        logger.info("Decrypted flow element: ${decryptedElementWithDefaultParameters}")
+
+        // Assert
+        assert decryptedElement == sensitivePropertyValue
+        assert decryptedElementWithDefaultParameters == sensitivePropertyValue
+    }
+
+    /**
+     * This test verifies that the crypto logic in the tool is compatible with an encrypted value taken from a production flow.xml.gz.
+     */
+    @Test
+    void testShouldDecryptFlowXmlContentFromLegacyFlow() {
+        // Arrange
+
+        // StringEncryptor.DEFAULT_SENSITIVE_PROPS_KEY = "nififtw!" at the time this test
+        // was written and for the encrypted value, but it could change, so don't
+        // reference transitively here
+        String existingFlowPassword = "nififtw!"
+        final String DEFAULT_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
+        final String DEFAULT_PROVIDER = "BC"
+
+        final String EXPECTED_PLAINTEXT = "thisIsABadPassword"
+
+        final String ENCRYPTED_VALUE_FROM_FLOW = "enc{2032416987A00D9FCD757528D7AE609D7E793CA5F956641DB53E14CDB9BFCD4037B73AC705CD3F5C1C1BDE18B8D7B281}"
+
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        // Act
+        String decryptedElement = tool.decryptFlowElement(ENCRYPTED_VALUE_FROM_FLOW, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
+        logger.info("Decrypted flow element: ${decryptedElement}")
+
+        // Assert
+        assert decryptedElement == EXPECTED_PLAINTEXT
+    }
+
+    // TODO: Test cipher text extraction and replacement in XML (no attribute update necessary)
+    // TODO: Test with 128/256-bit available
+    // Not a complete flow but sufficient to test XML extraction, crypto, and replacement -- the encrypted value is "thisIsABadPassword"
+//    String xml = """
+//<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+//<flowController encoding-version="1.0">
+//  <rootGroup>
+//    <id>fcf146b2-0157-1000-7850-7adf1d31e3fa</id>
+//    <name>NiFi Flow</name>
+//    <position x="0.0" y="0.0"/>
+//    <comment/>
+//    <processGroup>
+//      <id>8a61ec1d-0158-1000-3a1a-12c54fe77838</id>
+//      <name>EncryptedProperties Example</name>
+//      <position x="1119.0" y="295.0"/>
+//      <comment/>
+//      <processor>
+//        <id>8a621f0b-0158-1000-b5c2-92a09a124501</id>
+//        <name>Encrypt</name>
+//        <position x="626.0" y="237.0"/>
+//        <styles/>
+//        <comment/>
+//        <class>org.apache.nifi.processors.standard.EncryptContent</class>
+//        <property>
+//          <name>Password</name>
+//          <value>enc{2032416987A00D9FCD757528D7AE609D7E793CA5F956641DB53E14CDB9BFCD4037B73AC705CD3F5C1C1BDE18B8D7B281}</value>
+//        </property>
+//      </processor>
+//    </processGroup>
+//  </rootGroup>
+//</flowController>
+//"""
+
+    // Not a complete flow but sufficient to test XML extraction, crypto, and replacement -- the encrypted value is "thisIsABadPassword"
+//    String xml = """
+//<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+//        <property>
+//          <name>Password</name>
+//          <value>enc{2032416987A00D9FCD757528D7AE609D7E793CA5F956641DB53E14CDB9BFCD4037B73AC705CD3F5C1C1BDE18B8D7B281}</value>
+//        </property>
+//"""
+
 }
 
 public class TestAppender extends AppenderSkeleton {

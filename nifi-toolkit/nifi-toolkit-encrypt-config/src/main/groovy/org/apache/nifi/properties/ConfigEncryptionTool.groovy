@@ -25,6 +25,7 @@ import org.apache.commons.cli.HelpFormatter
 import org.apache.commons.cli.Options
 import org.apache.commons.cli.ParseException
 import org.apache.commons.codec.binary.Hex
+import org.apache.commons.io.IOUtils
 import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
 import org.apache.nifi.toolkit.tls.commandLine.ExitCode
 import org.apache.nifi.util.NiFiProperties
@@ -37,9 +38,16 @@ import org.slf4j.LoggerFactory
 import org.xml.sax.SAXException
 
 import javax.crypto.Cipher
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.PBEParameterSpec
 import java.nio.charset.StandardCharsets
 import java.security.KeyException
+import java.security.SecureRandom
 import java.security.Security
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 class ConfigEncryptionTool {
     private static final Logger logger = LoggerFactory.getLogger(ConfigEncryptionTool.class)
@@ -49,11 +57,16 @@ class ConfigEncryptionTool {
     public String outputNiFiPropertiesPath
     public String loginIdentityProvidersPath
     public String outputLoginIdentityProvidersPath
+    public String flowXmlPath
+    public String outputFlowXmlPath
 
     private String keyHex
     private String migrationKeyHex
     private String password
     private String migrationPassword
+
+    // This is the raw value used in nifi.sensitive.props.key
+    private String flowPropertiesPassword
 
     private NiFiProperties niFiProperties
     private String loginIdentityProviders
@@ -64,6 +77,7 @@ class ConfigEncryptionTool {
     private boolean isVerbose = false
     private boolean handlingNiFiProperties = false
     private boolean handlingLoginIdentityProviders = false
+    private boolean handlingFlowXml = false
 
     private static final String HELP_ARG = "help"
     private static final String VERBOSE_ARG = "verbose"
@@ -72,12 +86,16 @@ class ConfigEncryptionTool {
     private static final String LOGIN_IDENTITY_PROVIDERS_ARG = "loginIdentityProviders"
     private static final String OUTPUT_NIFI_PROPERTIES_ARG = "outputNiFiProperties"
     private static final String OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG = "outputLoginIdentityProviders"
+    private static final String FLOW_XML_ARG = "flowXml"
+    private static final String OUTPUT_FLOW_XML_ARG = "outputFlowXml"
     private static final String KEY_ARG = "key"
     private static final String PASSWORD_ARG = "password"
     private static final String KEY_MIGRATION_ARG = "oldKey"
     private static final String PASSWORD_MIGRATION_ARG = "oldPassword"
     private static final String USE_KEY_ARG = "useRawKey"
     private static final String MIGRATION_ARG = "migrate"
+    private static final String PROPS_KEY_ARG = "propsKey"
+    private static final String DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG = "encryptFlowXmlOnly"
 
     private static final int MIN_PASSWORD_LENGTH = 12
 
@@ -85,6 +103,10 @@ class ConfigEncryptionTool {
     private static final int SCRYPT_N = 2**16
     private static final int SCRYPT_R = 8
     private static final int SCRYPT_P = 1
+
+    // Hard-coded values from StandardPBEByteEncryptor which will be removed during refactor of all flow encryption code in NIFI-1465
+    private static final int DEFAULT_KDF_ITERATIONS = 1000
+    private static final int DEFAULT_SALT_SIZE_BYTES = 16
 
     private static
     final String BOOTSTRAP_KEY_COMMENT = "# Master key in hexadecimal format for encrypted sensitive configuration values"
@@ -98,8 +120,13 @@ class ConfigEncryptionTool {
     private static
     final String DEFAULT_DESCRIPTION = "This tool reads from a nifi.properties and/or login-identity-providers.xml file with plain sensitive configuration values, prompts the user for a master key, and encrypts each value. It will replace the plain value with the protected value in the same file (or write to a new file if specified)."
     private static final String LDAP_PROVIDER_CLASS = "org.apache.nifi.ldap.LdapProvider"
-    static private final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
-    static private final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
+    private static
+    final String LDAP_PROVIDER_REGEX = /<provider>[\s\S]*?<class>\s*org\.apache\.nifi\.ldap\.LdapProvider[\s\S]*?<\/provider>/
+    private static final String XML_DECLARATION_REGEX = /<\?xml version="1.0" encoding="UTF-8"\?>/
+    private static final String FLOW_XML_CIPHER_TEXT_REGEX = /^enc\{[\w\+\/]+?={0,2}\}$/
+
+    private static final String DEFAULT_PROVIDER = BouncyCastleProvider.PROVIDER_NAME
+    private static final String DEFAULT_FLOW_ALGORITHM = "PBEWITHMD5AND256BITAES-CBC-OPENSSL"
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"
@@ -109,8 +136,8 @@ class ConfigEncryptionTool {
         "${SEP}Java home: ${System.getenv(JAVA_HOME)}${SEP}NiFi Toolkit home: ${System.getenv(NIFI_TOOLKIT_HOME)}"
     }
 
-    private final Options options;
-    private final String header;
+    private final Options options
+    private final String header
 
 
     public ConfigEncryptionTool() {
@@ -124,15 +151,19 @@ class ConfigEncryptionTool {
         options.addOption("v", VERBOSE_ARG, false, "Sets verbose mode (default false)")
         options.addOption("n", NIFI_PROPERTIES_ARG, true, "The nifi.properties file containing unprotected config values (will be overwritten)")
         options.addOption("l", LOGIN_IDENTITY_PROVIDERS_ARG, true, "The login-identity-providers.xml file containing unprotected config values (will be overwritten)")
+        options.addOption("f", FLOW_XML_ARG, true, "The flow.xml.gz file currently protected with old password (will be overwritten)")
         options.addOption("b", BOOTSTRAP_CONF_ARG, true, "The bootstrap.conf file to persist master key")
         options.addOption("o", OUTPUT_NIFI_PROPERTIES_ARG, true, "The destination nifi.properties file containing protected config values (will not modify input nifi.properties)")
         options.addOption("i", OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, true, "The destination login-identity-providers.xml file containing protected config values (will not modify input login-identity-providers.xml)")
+        options.addOption("g", OUTPUT_FLOW_XML_ARG, true, "The destination flow.xml.gz file containing protected config values (will not modify input flow.xml.gz)")
         options.addOption("k", KEY_ARG, true, "The raw hexadecimal key to use to encrypt the sensitive properties")
         options.addOption("e", KEY_MIGRATION_ARG, true, "The old raw hexadecimal key to use during key migration")
         options.addOption("p", PASSWORD_ARG, true, "The password from which to derive the key to use to encrypt the sensitive properties")
         options.addOption("w", PASSWORD_MIGRATION_ARG, true, "The old password from which to derive the key during migration")
         options.addOption("r", USE_KEY_ARG, false, "If provided, the secure console will prompt for the raw key value in hexadecimal form")
-        options.addOption("m", MIGRATION_ARG, false, "If provided, the sensitive properties will be re-encrypted with a new key")
+        options.addOption("m", MIGRATION_ARG, false, "If provided, the nifi.properties and/or login-identity-providers.xml sensitive properties will be re-encrypted with a new key")
+        options.addOption("x", DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG, false, "If provided, the properties in flow.xml.gz will be re-encrypted with a new key but the nifi.properties and/or login-identity-providers.xml files will not be modified")
+        options.addOption("s", PROPS_KEY_ARG, true, "The password or key to use to encrypt the sensitive processor properties in flow.xml.gz")
     }
 
     /**
@@ -169,13 +200,35 @@ class ConfigEncryptionTool {
 
             bootstrapConfPath = commandLine.getOptionValue(BOOTSTRAP_CONF_ARG)
 
+            // If this flag is provided, the nifi.properties is necessary to read/write the flow encryption key, but the encryption process will not actually be applied to nifi.properties / login-identity-providers.xml
+            if (commandLine.hasOption(DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG)) {
+                handlingNiFiProperties = false
+                handlingLoginIdentityProviders = false
+            } else {
+                if (commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
+                    if (isVerbose) {
+                        logger.info("Handling encryption of login-identity-providers.xml")
+                    }
+                    loginIdentityProvidersPath = commandLine.getOptionValue(LOGIN_IDENTITY_PROVIDERS_ARG)
+                    outputLoginIdentityProvidersPath = commandLine.getOptionValue(OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, loginIdentityProvidersPath)
+                    handlingLoginIdentityProviders = true
+
+                    if (loginIdentityProvidersPath == outputLoginIdentityProvidersPath) {
+                        // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
+                        logger.warn("The source login-identity-providers.xml and destination login-identity-providers.xml are identical [${outputLoginIdentityProvidersPath}] so the original will be overwritten")
+                    }
+                }
+            }
+
+            // This needs to occur even if the nifi.properties won't be encrypted
             if (commandLine.hasOption(NIFI_PROPERTIES_ARG)) {
-                if (isVerbose) {
+                boolean ignoreFlagPresent = commandLine.hasOption(DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG)
+                if (isVerbose && !ignoreFlagPresent) {
                     logger.info("Handling encryption of nifi.properties")
                 }
                 niFiPropertiesPath = commandLine.getOptionValue(NIFI_PROPERTIES_ARG)
                 outputNiFiPropertiesPath = commandLine.getOptionValue(OUTPUT_NIFI_PROPERTIES_ARG, niFiPropertiesPath)
-                handlingNiFiProperties = true
+                handlingNiFiProperties = !ignoreFlagPresent
 
                 if (niFiPropertiesPath == outputNiFiPropertiesPath) {
                     // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
@@ -183,17 +236,21 @@ class ConfigEncryptionTool {
                 }
             }
 
-            if (commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
+            if (commandLine.hasOption(FLOW_XML_ARG)) {
                 if (isVerbose) {
-                    logger.info("Handling encryption of login-identity-providers.xml")
+                    logger.info("Handling encryption of flow.xml.gz")
                 }
-                loginIdentityProvidersPath = commandLine.getOptionValue(LOGIN_IDENTITY_PROVIDERS_ARG)
-                outputLoginIdentityProvidersPath = commandLine.getOptionValue(OUTPUT_LOGIN_IDENTITY_PROVIDERS_ARG, loginIdentityProvidersPath)
-                handlingLoginIdentityProviders = true
+                flowXmlPath = commandLine.getOptionValue(FLOW_XML_ARG)
+                outputFlowXmlPath = commandLine.getOptionValue(OUTPUT_FLOW_XML_ARG, flowXmlPath)
+                handlingFlowXml = true
 
-                if (loginIdentityProvidersPath == outputLoginIdentityProvidersPath) {
+                if (flowXmlPath == outputFlowXmlPath) {
                     // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
-                    logger.warn("The source login-identity-providers.xml and destination login-identity-providers.xml are identical [${outputLoginIdentityProvidersPath}] so the original will be overwritten")
+                    logger.warn("The source flow.xml.gz and destination flow.xml.gz are identical [${outputFlowXmlPath}] so the original will be overwritten")
+                }
+
+                if (!commandLine.hasOption(NIFI_PROPERTIES_ARG)) {
+                    printUsageAndThrow("In order to migrate a flow.xml.gz, a nifi.properties file must also be specified via '-n'/'--${NIFI_PROPERTIES_ARG}'.", ExitCode.INVALID_ARGS)
                 }
             }
 
@@ -203,6 +260,8 @@ class ConfigEncryptionTool {
                 logger.info("(dest) nifi.properties:              \t${outputNiFiPropertiesPath}")
                 logger.info("(src)  login-identity-providers.xml: \t${loginIdentityProvidersPath}")
                 logger.info("(dest) login-identity-providers.xml: \t${outputLoginIdentityProvidersPath}")
+                logger.info("(src)  flow.xml.gz: \t${flowXmlPath}")
+                logger.info("(dest) flow.xml.gz: \t${outputFlowXmlPath}")
             }
 
             // TODO: Implement in NIFI-2655
@@ -251,6 +310,10 @@ class ConfigEncryptionTool {
                     usingPassword = false
                 }
             }
+
+            if (commandLine.hasOption(PROPS_KEY_ARG)) {
+                flowPropertiesPassword = commandLine.getOptionValue(PROPS_KEY_ARG)
+            }
         } catch (ParseException e) {
             if (isVerbose) {
                 logger.error("Encountered an error", e)
@@ -297,6 +360,10 @@ class ConfigEncryptionTool {
 
     private String getMigrationKey() {
         getKeyInternal(TextDevices.defaultTextDevice(), migrationKeyHex, migrationPassword, usingPasswordMigration)
+    }
+
+    private String getFlowPassword(TextDevice textDevice = TextDevices.defaultTextDevice()) {
+        readPasswordFromConsole(textDevice)
     }
 
     private static String readKeyFromConsole(TextDevice textDevice) {
@@ -384,6 +451,167 @@ class ConfigEncryptionTool {
             }
         } else {
             printUsageAndThrow("Cannot load LoginIdentityProviders from [${loginIdentityProvidersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+        }
+    }
+
+    /**
+     * Loads the flow definition from the provided file path, handling the GZIP file compression. Unlike {@link #loadLoginIdentityProviders()} this method does not decrypt the content (for performance and separation of concern reasons).
+     *
+     * @return the file content
+     * @throw IOException if the flow.xml.gz file cannot be read
+     */
+    private String loadFlowXml() throws IOException {
+        File flowXmlFile
+        if (flowXmlPath && (flowXmlFile = new File(flowXmlPath)).exists()) {
+            try {
+                new FileInputStream(flowXmlPath).withCloseable {
+                    new GZIPInputStream(it).withCloseable {
+                        String xmlContent = IOUtils.toString(it, StandardCharsets.UTF_8)
+                        return xmlContent
+                    }
+                }
+            } catch (RuntimeException e) {
+                if (isVerbose) {
+                    logger.error("Encountered an error", e)
+                }
+                throw new IOException("Cannot load flow from [${flowXmlPath}]", e)
+            }
+        } else {
+            printUsageAndThrow("Cannot load flow from [${flowXmlPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+        }
+    }
+
+    /**
+     * Decrypts a single element encrypted in the flow.xml.gz style (hex-encoded and wrapped with "enc{" and "}").
+     *
+     * Example:
+     * {@code enc{0123456789ABCDEF} } -> "some text"
+     *
+     * @param wrappedCipherText the wrapped and hex-encoded cipher text
+     * @param password the password used to encrypt the content (UTF-8 encoded)
+     * @param algorithm the encryption and KDF algorithm (defaults to PBEWITHMD5AND256BITAES-CBC-OPENSSL)
+     * @param provider the security provider (defaults to BC)
+     * @return the plaintext in UTF-8 encoding
+     */
+    private String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+        // Drop the "enc{" and closing "}"
+        String unwrappedCipherText = wrappedCipherText.replaceAll(/enc\{/, "")[0..<-1]
+
+        // Decode the hex
+        byte[] cipherBytes = Hex.decodeHex(unwrappedCipherText.chars)
+
+        /* The structure of each cipher text is 16 bytes of salt || actual cipher text,
+         * so extract the salt (32 bytes encoded as hex, 16 bytes raw) and combine that
+         * with the default (and unchanged) iteration count that is hardcoded in
+         * {@link StandardPBEByteEncryptor}. I am extracting
+         * these values to magic numbers here so when the refactoring is performed,
+         * stronger decisions can be implemented here
+         */
+        byte[] saltBytes = cipherBytes[0..<DEFAULT_SALT_SIZE_BYTES]
+        cipherBytes = cipherBytes[DEFAULT_SALT_SIZE_BYTES..-1]
+
+        Cipher decryptionCipher = generateFlowDecryptionCipher(saltBytes, password, algorithm, provider)
+
+        byte[] plainBytes = decryptionCipher.doFinal(cipherBytes)
+        new String(plainBytes, StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Returns an initialized {@link javax.crypto.Cipher} instance with the extracted salt.
+     *
+     * @param saltBytes the salt (raw bytes)
+     * @param password the password (UTF-8 encoding)
+     * @param algorithm the KDF/encryption algorithm
+     * @param provider the security provider
+     * @return the initialized {@link javax.crypto.Cipher}
+     */
+    private
+    static Cipher generateFlowDecryptionCipher(byte[] saltBytes, String password, String algorithm, String provider) {
+        Cipher decryptCipher = Cipher.getInstance(algorithm, provider)
+        PBEKeySpec keySpec = new PBEKeySpec(password.chars)
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
+        SecretKey pbeKey = keyFactory.generateSecret(keySpec)
+        PBEParameterSpec parameterSpec = new PBEParameterSpec(saltBytes, DEFAULT_KDF_ITERATIONS)
+        decryptCipher.init(Cipher.DECRYPT_MODE, pbeKey, parameterSpec)
+        decryptCipher
+    }
+
+    /**
+     * Encrypts a single element in the flow.xml.gz style (hex-encoded and wrapped with "enc{" and "}").
+     *
+     * Example:
+     * "some text" -> {@code enc{0123456789ABCDEF} }
+     *
+     * @param plaintext the plaintext in UTF-8 encoding
+     * @param encryptCipher the configured Cipher instance
+     * @return the wrapped and hex-encoded cipher text
+     */
+    private String encryptFlowElement(String plaintext, Cipher encryptCipher) {
+
+    }
+
+    /**
+     * Scans XML content and decrypts each encrypted element, then re-encrypts it with the new key, and returns the final XML content.
+     *
+     * @param flowXmlContent the original flow.xml.gz content
+     * @param existingFlowPassword the existing value of nifi.sensitive.props.key (not a raw key, but rather a password)
+     * @param newFlowPassword the password to use to for encryption (not a raw key, but rather a password)
+     * @param algorithm the KDF algorithm to use (defaults to PBEWITHMD5AND256BITAES-CBC-OPENSSL)
+     * @param provider the {@link java.security.Provider} to use (defaults to BC)
+     * @return the encrypted XML content
+     */
+    private String migrateFlowXmlContent(String flowXmlContent, String existingFlowPassword, String newFlowPassword, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+        /* The Jasypt StringEncryptor implementation is final and has some design decisions
+         * that will pollute this code (i.e. using a random salt on every encrypt operation
+         * rather than a unique IV, so the derived key for every encrypt/decrypt operation is
+         * different, which is very wasteful), so just use the standard JCE ciphers with the
+         * password derived using the prescribed algorithm
+         */
+        Cipher encryptCipher = Cipher.getInstance(algorithm, provider)
+
+        /* For re-encryption, for performance reasons, we will use a fixed salt for all of
+         * the operations. These values are stored in the same file and the default key is in the
+         * source code (see NIFI-1465 and NIFI-1277), so the security trade-off is minimal
+         * but the performance hit is substantial. We can't make this decision for
+         * decryption because the FlowSerializer still uses StringEncryptor which does not
+         * follow this pattern
+         */
+        byte[] encryptionSalt = new byte[DEFAULT_SALT_SIZE_BYTES]
+        new SecureRandom().nextBytes(encryptionSalt)
+        PBEKeySpec keySpec = new PBEKeySpec(newFlowPassword.chars)
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
+        SecretKey pbeKey = keyFactory.generateSecret(keySpec)
+        PBEParameterSpec parameterSpec = new PBEParameterSpec(encryptionSalt, DEFAULT_KDF_ITERATIONS)
+        encryptCipher.init(Cipher.ENCRYPT_MODE, pbeKey, parameterSpec)
+
+        int elementCount = 0
+
+        // Scan the XML content and identify every encrypted element, decrypt it, and replace it with the re-encrypted value
+        String migratedFlowXmlContent = flowXmlContent.replaceAll(FLOW_XML_CIPHER_TEXT_REGEX) { String wrappedCipherText ->
+            String plaintext = decryptFlowElement(wrappedCipherText, existingFlowPassword, algorithm, provider)
+            byte[] cipherBytes = encryptCipher.doFinal(plaintext.bytes)
+            byte[] saltAndCipherBytes = encryptionSalt + cipherBytes
+            elementCount++
+            "enc{${Hex.encodeHex(saltAndCipherBytes)}}"
+        }
+
+        if (isVerbose) {
+            logger.info("Decrypted and re-encrypted ${elementCount} elements for flow.xml.gz")
+        }
+
+        migratedFlowXmlContent
+    }
+
+    /**
+     * Writes the XML content to the {@link .outputFlowXmlPath} location, handling the GZIP file compression.
+     *
+     * @param flowXmlContent the XML content to write
+     */
+    private void writeFlowXmlToFile(String flowXmlContent) {
+        new FileOutputStream(outputFlowXmlPath).withCloseable {
+            new GZIPOutputStream(it).withCloseable {
+                IOUtils.write(flowXmlContent, it, StandardCharsets.UTF_8)
+            }
         }
     }
 
@@ -779,6 +1007,7 @@ class ConfigEncryptionTool {
             try {
                 tool.parse(args)
 
+                // TODO: Unnecessary if -x
                 tool.keyHex = tool.getKey()
 
                 if (!tool.keyHex) {
