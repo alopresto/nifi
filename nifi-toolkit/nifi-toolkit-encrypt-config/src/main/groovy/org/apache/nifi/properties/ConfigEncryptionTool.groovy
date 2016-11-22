@@ -68,8 +68,12 @@ class ConfigEncryptionTool {
     // This is the raw value used in nifi.sensitive.props.key
     private String flowPropertiesPassword
 
+    private String newFlowAlgorithm
+    private String newFlowProvider
+
     private NiFiProperties niFiProperties
     private String loginIdentityProviders
+    private String flowXml
 
     private boolean usingPassword = true
     private boolean usingPasswordMigration = true
@@ -78,6 +82,7 @@ class ConfigEncryptionTool {
     private boolean handlingNiFiProperties = false
     private boolean handlingLoginIdentityProviders = false
     private boolean handlingFlowXml = false
+    private boolean ignorePropertiesFiles = false
 
     private static final String HELP_ARG = "help"
     private static final String VERBOSE_ARG = "verbose"
@@ -96,7 +101,11 @@ class ConfigEncryptionTool {
     private static final String MIGRATION_ARG = "migrate"
     private static final String PROPS_KEY_ARG = "propsKey"
     private static final String DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG = "encryptFlowXmlOnly"
+    private static final String NEW_FLOW_ALGORITHM_ARG = "newFlowAlgorithm"
+    private static final String NEW_FLOW_PROVIDER_ARG = "newFlowProvider"
 
+    // Hard-coded fallback value from {@link org.apache.nifi.encrypt.StringEncryptor}
+    private static final String DEFAULT_NIFI_SENSITIVE_PROPS_KEY = "nififtw!"
     private static final int MIN_PASSWORD_LENGTH = 12
 
     // Strong parameters as of 12 Aug 2016
@@ -164,6 +173,8 @@ class ConfigEncryptionTool {
         options.addOption("m", MIGRATION_ARG, false, "If provided, the nifi.properties and/or login-identity-providers.xml sensitive properties will be re-encrypted with a new key")
         options.addOption("x", DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG, false, "If provided, the properties in flow.xml.gz will be re-encrypted with a new key but the nifi.properties and/or login-identity-providers.xml files will not be modified")
         options.addOption("s", PROPS_KEY_ARG, true, "The password or key to use to encrypt the sensitive processor properties in flow.xml.gz")
+        options.addOption("A", NEW_FLOW_ALGORITHM_ARG, true, "The algorithm to use to encrypt the sensitive processor properties in flow.xml.gz")
+        options.addOption("P", NEW_FLOW_PROVIDER_ARG, true, "The security provider to use to encrypt the sensitive processor properties in flow.xml.gz")
     }
 
     /**
@@ -204,6 +215,7 @@ class ConfigEncryptionTool {
             if (commandLine.hasOption(DO_NOT_ENCRYPT_NIFI_PROPERTIES_ARG)) {
                 handlingNiFiProperties = false
                 handlingLoginIdentityProviders = false
+                ignorePropertiesFiles = true
             } else {
                 if (commandLine.hasOption(LOGIN_IDENTITY_PROVIDERS_ARG)) {
                     if (isVerbose) {
@@ -243,6 +255,9 @@ class ConfigEncryptionTool {
                 flowXmlPath = commandLine.getOptionValue(FLOW_XML_ARG)
                 outputFlowXmlPath = commandLine.getOptionValue(OUTPUT_FLOW_XML_ARG, flowXmlPath)
                 handlingFlowXml = true
+
+                newFlowAlgorithm = commandLine.getOptionValue(NEW_FLOW_ALGORITHM_ARG)
+                newFlowProvider = commandLine.getOptionValue(NEW_FLOW_PROVIDER_ARG)
 
                 if (flowXmlPath == outputFlowXmlPath) {
                     // TODO: Add confirmation pause and provide -y flag to offer no-interaction mode?
@@ -594,11 +609,11 @@ class ConfigEncryptionTool {
      * @param flowXmlContent the original flow.xml.gz content
      * @param existingFlowPassword the existing value of nifi.sensitive.props.key (not a raw key, but rather a password)
      * @param newFlowPassword the password to use to for encryption (not a raw key, but rather a password)
-     * @param algorithm the KDF algorithm to use (defaults to PBEWITHMD5AND256BITAES-CBC-OPENSSL)
-     * @param provider the {@link java.security.Provider} to use (defaults to BC)
+     * @param existingAlgorithm the KDF algorithm to use (defaults to PBEWITHMD5AND256BITAES-CBC-OPENSSL)
+     * @param existingProvider the {@link java.security.Provider} to use (defaults to BC)
      * @return the encrypted XML content
      */
-    private String migrateFlowXmlContent(String flowXmlContent, String existingFlowPassword, String newFlowPassword, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+    private String migrateFlowXmlContent(String flowXmlContent, String existingFlowPassword, String newFlowPassword, String existingAlgorithm = DEFAULT_FLOW_ALGORITHM, String existingProvider = DEFAULT_PROVIDER, String newAlgorithm = DEFAULT_FLOW_ALGORITHM, String newProvider = DEFAULT_PROVIDER) {
         /* For re-encryption, for performance reasons, we will use a fixed salt for all of
          * the operations. These values are stored in the same file and the default key is in the
          * source code (see NIFI-1465 and NIFI-1277), so the security trade-off is minimal
@@ -608,13 +623,13 @@ class ConfigEncryptionTool {
          */
         byte[] encryptionSalt = new byte[DEFAULT_SALT_SIZE_BYTES]
         new SecureRandom().nextBytes(encryptionSalt)
-        Cipher encryptCipher = generateFlowEncryptionCipher(newFlowPassword, encryptionSalt, algorithm, provider)
+        Cipher encryptCipher = generateFlowEncryptionCipher(newFlowPassword, encryptionSalt, newAlgorithm, newProvider)
 
         int elementCount = 0
 
         // Scan the XML content and identify every encrypted element, decrypt it, and replace it with the re-encrypted value
         String migratedFlowXmlContent = flowXmlContent.replaceAll(WRAPPED_FLOW_XML_CIPHER_TEXT_REGEX) { String wrappedCipherText ->
-            String plaintext = decryptFlowElement(wrappedCipherText, existingFlowPassword, algorithm, provider)
+            String plaintext = decryptFlowElement(wrappedCipherText, existingFlowPassword, existingAlgorithm, existingProvider)
             byte[] cipherBytes = encryptCipher.doFinal(plaintext.bytes)
             byte[] saltAndCipherBytes = concatByteArrays(encryptionSalt, cipherBytes)
             elementCount++
@@ -942,8 +957,11 @@ class ConfigEncryptionTool {
         List<String> lines = originalPropertiesFile.readLines()
 
         ProtectedNiFiProperties protectedNiFiProperties = new ProtectedNiFiProperties(niFiProperties)
-        // Only need to replace the keys that have been protected
+        // Only need to replace the keys that have been protected AND nifi.sensitive.props.key
         Map<String, String> protectedKeys = protectedNiFiProperties.getProtectedPropertyKeys()
+        if (!protectedKeys.containsKey(NiFiProperties.SENSITIVE_PROPS_KEY)) {
+            protectedKeys.put(NiFiProperties.SENSITIVE_PROPS_KEY, protectedNiFiProperties.getProperty(ProtectedNiFiProperties.getProtectionKey(NiFiProperties.SENSITIVE_PROPS_KEY)))
+        }
 
         protectedKeys.each { String key, String protectionScheme ->
             int l = lines.findIndexOf { it.startsWith(key) }
@@ -952,7 +970,7 @@ class ConfigEncryptionTool {
             }
             // Get the index of the following line (or cap at max)
             int p = l + 1 > lines.size() ? lines.size() : l + 1
-            String protectionLine = "${protectedNiFiProperties.getProtectionKey(key)}=${protectionScheme}"
+            String protectionLine = "${protectedNiFiProperties.getProtectionKey(key)}=${protectionScheme ?: ""}"
             if (p < lines.size() && lines.get(p).startsWith("${protectedNiFiProperties.getProtectionKey(key)}=")) {
                 lines.set(p, protectionLine)
             } else {
@@ -1053,6 +1071,10 @@ class ConfigEncryptionTool {
         "NIFI_SCRYPT_SALT".getBytes(StandardCharsets.UTF_8)
     }
 
+    private String getExistingFlowPassword() {
+        return niFiProperties.getProperty(NiFiProperties.SENSITIVE_PROPS_KEY) as String ?: DEFAULT_NIFI_SENSITIVE_PROPS_KEY
+    }
+
     /**
      * Runs main tool logic (parsing arguments, reading files, protecting properties, and writing key and properties out to destination files).
      *
@@ -1067,49 +1089,51 @@ class ConfigEncryptionTool {
             try {
                 tool.parse(args)
 
-                // TODO: Unnecessary if -x
-                tool.keyHex = tool.getKey()
+                // TODO: Unnecessary if -x (only necessary if nifi.properties is already encrypted)
+                if (!tool.ignorePropertiesFiles) {
+                    tool.keyHex = tool.getKey()
 
-                if (!tool.keyHex) {
-                    tool.printUsageAndThrow("Hex key must be provided", ExitCode.INVALID_ARGS)
-                }
-
-                try {
-                    // Validate the length and format
-                    tool.keyHex = parseKey(tool.keyHex)
-                } catch (KeyException e) {
-                    if (tool.isVerbose) {
-                        logger.error("Encountered an error", e)
-                    }
-                    tool.printUsageAndThrow(e.getMessage(), ExitCode.INVALID_ARGS)
-                }
-
-                if (tool.migration) {
-                    String migrationKeyHex = tool.getMigrationKey()
-
-                    if (!migrationKeyHex) {
-                        tool.printUsageAndThrow("Original hex key must be provided for migration", ExitCode.INVALID_ARGS)
+                    if (!tool.keyHex) {
+                        tool.printUsageAndThrow("Hex key must be provided", ExitCode.INVALID_ARGS)
                     }
 
                     try {
                         // Validate the length and format
-                        tool.migrationKeyHex = parseKey(migrationKeyHex)
+                        tool.keyHex = parseKey(tool.keyHex)
                     } catch (KeyException e) {
                         if (tool.isVerbose) {
                             logger.error("Encountered an error", e)
                         }
                         tool.printUsageAndThrow(e.getMessage(), ExitCode.INVALID_ARGS)
                     }
+
+                    if (tool.migration) {
+                        String migrationKeyHex = tool.getMigrationKey()
+
+                        if (!migrationKeyHex) {
+                            tool.printUsageAndThrow("Original hex key must be provided for migration", ExitCode.INVALID_ARGS)
+                        }
+
+                        try {
+                            // Validate the length and format
+                            tool.migrationKeyHex = parseKey(migrationKeyHex)
+                        } catch (KeyException e) {
+                            if (tool.isVerbose) {
+                                logger.error("Encountered an error", e)
+                            }
+                            tool.printUsageAndThrow(e.getMessage(), ExitCode.INVALID_ARGS)
+                        }
+                    }
                 }
                 String existingKeyHex = tool.migrationKeyHex ?: tool.keyHex
 
-                if (tool.handlingNiFiProperties) {
+                // Load NiFiProperties for either scenario; only encrypt if "handling" (see after flow XML)
+                if (tool.handlingNiFiProperties || tool.handlingFlowXml) {
                     try {
                         tool.niFiProperties = tool.loadNiFiProperties(existingKeyHex)
                     } catch (Exception e) {
                         tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_READING_NIFI_PROPERTIES)
                     }
-                    tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
                 }
 
                 if (tool.handlingLoginIdentityProviders) {
@@ -1119,6 +1143,45 @@ class ConfigEncryptionTool {
                         tool.printUsageAndThrow("Cannot migrate key if no previous encryption occurred", ExitCode.ERROR_INCORRECT_NUMBER_OF_PASSWORDS)
                     }
                     tool.loginIdentityProviders = tool.encryptLoginIdentityProviders(tool.loginIdentityProviders)
+                }
+
+                if (tool.handlingFlowXml) {
+                    try {
+                        tool.flowXml = tool.loadFlowXml()
+                    } catch (Exception e) {
+                        tool.printUsageAndThrow("Cannot load flow.xml.gz", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+                    }
+
+                    // If the flow password was not set in nifi.properties, use the hard-coded default
+                    String existingFlowPassword = tool.getExistingFlowPassword()
+
+                    // If the new password was not provided in the arguments, read from the console. If that is empty, use the same value (essentially a copy no-op)
+                    String newFlowPassword = tool.flowPropertiesPassword ?: tool.getFlowPassword()
+                    if (!newFlowPassword) {
+                        newFlowPassword = existingFlowPassword
+                    }
+
+                    // Get the algorithms and providers
+                    NiFiProperties nfp = tool.niFiProperties
+                    String existingAlgorithm = nfp?.getProperty(NiFiProperties.SENSITIVE_PROPS_ALGORITHM) ?: DEFAULT_FLOW_ALGORITHM
+                    String existingProvider = nfp?.getProperty(NiFiProperties.SENSITIVE_PROPS_PROVIDER) ?: DEFAULT_PROVIDER
+
+                    String newAlgorithm = tool.newFlowAlgorithm ?: existingAlgorithm
+                    String newProvider = tool.newFlowProvider ?: existingProvider
+
+                    tool.flowXml = tool.migrateFlowXmlContent(tool.flowXml, existingFlowPassword, newFlowPassword, existingAlgorithm, existingProvider, newAlgorithm, newProvider)
+
+                    // Update the NiFiProperties object with the new flow password before it gets encrypted (wasteful, but NiFiProperties instances are immutable)
+                    Properties rawProperties = new Properties()
+                    nfp.getPropertyKeys().each { String k ->
+                        rawProperties.put(k, nfp.getProperty(k))
+                    }
+                    rawProperties.put(NiFiProperties.SENSITIVE_PROPS_KEY, newFlowPassword)
+                    tool.niFiProperties = new StandardNiFiProperties(rawProperties)
+                }
+
+                if (tool.handlingNiFiProperties) {
+                    tool.niFiProperties = tool.encryptSensitiveProperties(tool.niFiProperties)
                 }
             } catch (CommandLineParseException e) {
                 if (e.exitCode == ExitCode.HELP) {
@@ -1135,8 +1198,13 @@ class ConfigEncryptionTool {
             try {
                 // Do this as part of a transaction?
                 synchronized (this) {
-                    tool.writeKeyToBootstrapConf()
-                    if (tool.handlingNiFiProperties) {
+                    if (!tool.ignorePropertiesFiles) {
+                        tool.writeKeyToBootstrapConf()
+                    }
+                    if (tool.handlingFlowXml) {
+                        tool.writeFlowXmlToFile(tool.flowXml)
+                    }
+                    if (tool.handlingNiFiProperties || tool.handlingFlowXml) {
                         tool.writeNiFiProperties()
                     }
                     if (tool.handlingLoginIdentityProviders) {

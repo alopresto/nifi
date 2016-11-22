@@ -1278,7 +1278,14 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
             assert updatedLines.contains("${key}=${niFiProperties.getProperty(key)}".toString())
         }
 
-        assert originalLines == updatedLines
+        if (originalLines.size() != updatedLines.size()) {
+            // In situations where the original nifi.properties did not have a protection scheme for nifi.sensitive.props.key, it is added automatically now
+            def differentLines = updatedLines - originalLines
+            assert differentLines.size() == 1
+            assert differentLines.first() == "nifi.sensitive.props.key.protected="
+        } else {
+            assert originalLines == updatedLines
+        }
 
         logger.info("Updated nifi.properties:")
         logger.info("\n" * 2 + updatedLines.join("\n"))
@@ -1313,7 +1320,14 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
             assert updatedLines.contains("${key}=${niFiProperties.getProperty(key)}".toString())
         }
 
-        assert originalLines == updatedLines
+        if (originalLines.size() != updatedLines.size()) {
+            // In situations where the original nifi.properties did not have a protection scheme for nifi.sensitive.props.key, it is added automatically now
+            def differentLines = updatedLines - originalLines
+            assert differentLines.size() == 1
+            assert differentLines.first() == "nifi.sensitive.props.key.protected="
+        } else {
+            assert originalLines == updatedLines
+        }
 
         logger.info("Updated nifi.properties:")
         logger.info("\n" * 2 + updatedLines.join("\n"))
@@ -2680,7 +2694,92 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         assert msg == "In order to migrate a flow.xml.gz, a nifi.properties file must also be specified via '-n'/'--niFiProperties'." as String
     }
 
+    // TODO: Test different algs/providers
+    // TODO: Test reading sensitive props key from console
+    // TODO: Test migrating from default key to default key
+    // TODO: Test flow migration and nifi.properties w/ & w/o encryption
+    // TODO: Test flow migration if nifi.properties already encrypted but not "handling NFP" on this operation
     // TODO: All combo scenarios
+    @Test
+    void testShouldPerformFullOperationOnFlowXmlWithoutEncryptedNiFiProperties() {
+        // Arrange
+        exit.expectSystemExitWithStatus(0)
+
+        File tmpDir = setupTmpDir()
+
+        File emptyKeyFile = new File("src/test/resources/bootstrap_with_empty_master_key.conf")
+        File bootstrapFile = new File("target/tmp/tmp_bootstrap.conf")
+        bootstrapFile.delete()
+
+        Files.copy(emptyKeyFile.toPath(), bootstrapFile.toPath())
+        final List<String> originalBootstrapLines = bootstrapFile.readLines()
+        String originalKeyLine = originalBootstrapLines.find {
+            it.startsWith(ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX)
+        }
+        logger.info("Original key line from bootstrap.conf: ${originalKeyLine}")
+        assert originalKeyLine == ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX
+
+        final String EXPECTED_KEY_LINE = ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX
+
+        // Not "handling" NFP, so update in place (not source test resource)
+        String niFiPropertiesTemplatePath = "src/test/resources/nifi_default.properties"
+        File niFiPropertiesFile = new File(niFiPropertiesTemplatePath)
+
+        File workingNiFiPropertiesFile = new File("target/tmp/tmp-nifi.properties")
+        workingNiFiPropertiesFile.delete()
+        Files.copy(niFiPropertiesFile.toPath(), workingNiFiPropertiesFile.toPath())
+
+        File flowXmlFile = new File("src/test/resources/flow.xml.gz")
+        File workingFlowXmlFile = new File("target/tmp/tmp-flow.xml.gz")
+        workingFlowXmlFile.delete()
+        Files.copy(flowXmlFile.toPath(), workingFlowXmlFile.toPath())
+
+        NiFiProperties inputProperties = new NiFiPropertiesLoader().load(workingNiFiPropertiesFile)
+        logger.info("Loaded ${inputProperties.size()} properties from input file")
+        ProtectedNiFiProperties protectedInputProperties = new ProtectedNiFiProperties(inputProperties)
+        def originalSensitiveValues = protectedInputProperties.getSensitivePropertyKeys().collectEntries { String key -> [(key): protectedInputProperties.getProperty(key)] }
+        logger.info("Original sensitive values: ${originalSensitiveValues}")
+
+        String newFlowPassword = "thisIsABadPassword"
+
+        String[] args = ["-n", workingNiFiPropertiesFile.path, "-f", workingFlowXmlFile.path, "-x", "-v", "-s", newFlowPassword]
+
+        exit.checkAssertionAfterwards(new Assertion() {
+            public void checkAssertion() {
+                final List<String> updatedPropertiesLines = workingNiFiPropertiesFile.readLines()
+                logger.info("Updated nifi.properties:")
+                logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
+
+                // Check that the output values for everything is the same except the sensitive props key
+                NiFiProperties updatedProperties = new NiFiPropertiesLoader().readProtectedPropertiesFromDisk(workingNiFiPropertiesFile)
+                assert updatedProperties.size() == inputProperties.size()
+                assert updatedProperties.getProperty(NiFiProperties.SENSITIVE_PROPS_KEY) == newFlowPassword
+                originalSensitiveValues.every { String key, String originalValue ->
+                    if (key != NiFiProperties.SENSITIVE_PROPS_KEY) {
+                        assert updatedProperties.getProperty(key) == originalValue
+                    }
+                }
+
+                // Check that bootstrap.conf did not change
+                final List<String> updatedBootstrapLines = bootstrapFile.readLines()
+                String updatedKeyLine = updatedBootstrapLines.find {
+                    it.startsWith(ConfigEncryptionTool.BOOTSTRAP_KEY_PREFIX)
+                }
+                logger.info("Updated key line: ${updatedKeyLine}")
+
+                assert updatedKeyLine == EXPECTED_KEY_LINE
+                assert originalBootstrapLines.size() == updatedBootstrapLines.size()
+            }
+        });
+
+        // Act
+        ConfigEncryptionTool.main(args)
+        logger.info("Invoked #main with ${args.join(" ")}")
+
+        // Assert
+
+        // Assertions defined above
+    }
 
     @Test
     void testDecryptFlowXmlContentShouldVerifyPattern() {
