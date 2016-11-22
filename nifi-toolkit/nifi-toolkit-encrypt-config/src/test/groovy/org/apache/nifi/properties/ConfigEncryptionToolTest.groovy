@@ -2840,7 +2840,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 xmlContent.replaceAll(WFXCTR, "")
     }
 
-
     @Test
     void testMigrateFlowXmlContentShouldUseConstantSalt() {
         // Arrange
@@ -2854,8 +2853,6 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         Files.copy(flowXmlFile.toPath(), workingFile.toPath())
         ConfigEncryptionTool tool = new ConfigEncryptionTool()
         tool.isVerbose = true
-
-        final String SENSITIVE_VALUE = "thisIsABadPassword"
 
         String existingFlowPassword = "nififtw!"
         String newFlowPassword = "thisIsABadPassword"
@@ -2882,6 +2879,72 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         newCipherTexts.every {
             assert it[4..<36] == saltHex
         }
+    }
+
+    @Test
+    void testShouldLoadFlowXmlContent() {
+        // Arrange
+        String flowXmlPath = "src/test/resources/flow.xml"
+        File flowXmlFile = new File(flowXmlPath)
+
+        String flowXmlGzPath = "src/test/resources/flow.xml.gz"
+        File flowXmlGzFile = new File(flowXmlGzPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-flow.xml")
+        workingFile.delete()
+        Files.copy(flowXmlFile.toPath(), workingFile.toPath())
+        File workingGzFile = new File("target/tmp/tmp-flow.xml.gz")
+        workingGzFile.delete()
+        Files.copy(flowXmlGzFile.toPath(), workingGzFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+        tool.flowXmlPath = workingGzFile.path
+
+        String xmlContent = workingFile.text
+        logger.info("Read flow.xml: \n${xmlContent}")
+
+        // Act
+        String readXmlContent = tool.loadFlowXml()
+        logger.info("Loaded flow.xml.gz: \n${readXmlContent}")
+
+        // Assert
+        assert readXmlContent == xmlContent
+    }
+
+    @Test
+    void testShouldWriteFlowXmlToFile() {
+        // Arrange
+        String flowXmlPath = "src/test/resources/flow.xml"
+        File flowXmlFile = new File(flowXmlPath)
+
+        String flowXmlGzPath = "src/test/resources/flow.xml.gz"
+        File flowXmlGzFile = new File(flowXmlGzPath)
+
+        File tmpDir = setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-flow.xml")
+        workingFile.delete()
+        Files.copy(flowXmlFile.toPath(), workingFile.toPath())
+        File workingGzFile = new File("target/tmp/tmp-flow.xml.gz")
+        workingGzFile.delete()
+        Files.copy(flowXmlGzFile.toPath(), workingGzFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+        tool.outputFlowXmlPath = workingGzFile.path.replaceAll("flow.xml.gz", "output.xml.gz")
+
+        String xmlContent = workingFile.text
+        logger.info("Read flow.xml: \n${xmlContent}")
+
+        // Act
+        tool.writeFlowXmlToFile(xmlContent)
+
+        // Assert
+
+        // Set the input path to what was just written and rely on the separately-tested load method to uncompress and read the contents
+        tool.flowXmlPath = tool.outputFlowXmlPath
+        assert tool.loadFlowXml() == xmlContent
     }
 
     // TODO: Test cipher text extraction and replacement in XML (no attribute update necessary)
