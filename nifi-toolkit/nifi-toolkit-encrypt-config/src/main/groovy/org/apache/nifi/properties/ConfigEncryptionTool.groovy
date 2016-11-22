@@ -260,8 +260,8 @@ class ConfigEncryptionTool {
                 logger.info("(dest) nifi.properties:              \t${outputNiFiPropertiesPath}")
                 logger.info("(src)  login-identity-providers.xml: \t${loginIdentityProvidersPath}")
                 logger.info("(dest) login-identity-providers.xml: \t${outputLoginIdentityProvidersPath}")
-                logger.info("(src)  flow.xml.gz: \t${flowXmlPath}")
-                logger.info("(dest) flow.xml.gz: \t${outputFlowXmlPath}")
+                logger.info("(src)  flow.xml.gz: \t\t\t\t\t${flowXmlPath}")
+                logger.info("(dest) flow.xml.gz: \t\t\t\t\t${outputFlowXmlPath}")
             }
 
             // TODO: Implement in NIFI-2655
@@ -517,7 +517,7 @@ class ConfigEncryptionTool {
         byte[] saltBytes = cipherBytes[0..<DEFAULT_SALT_SIZE_BYTES]
         cipherBytes = cipherBytes[DEFAULT_SALT_SIZE_BYTES..-1]
 
-        Cipher decryptionCipher = generateFlowDecryptionCipher(saltBytes, password, algorithm, provider)
+        Cipher decryptionCipher = generateFlowDecryptionCipher(password, saltBytes, algorithm, provider)
 
         byte[] plainBytes = decryptionCipher.doFinal(cipherBytes)
         new String(plainBytes, StandardCharsets.UTF_8)
@@ -526,14 +526,14 @@ class ConfigEncryptionTool {
     /**
      * Returns an initialized {@link javax.crypto.Cipher} instance with the extracted salt.
      *
-     * @param saltBytes the salt (raw bytes)
      * @param password the password (UTF-8 encoding)
+     * @param saltBytes the salt (raw bytes)
      * @param algorithm the KDF/encryption algorithm
      * @param provider the security provider
      * @return the initialized {@link javax.crypto.Cipher}
      */
     private
-    static Cipher generateFlowDecryptionCipher(byte[] saltBytes, String password, String algorithm, String provider) {
+    static Cipher generateFlowDecryptionCipher(String password, byte[] saltBytes, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
         Cipher decryptCipher = Cipher.getInstance(algorithm, provider)
         PBEKeySpec keySpec = new PBEKeySpec(password.chars)
         SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
@@ -582,7 +582,7 @@ class ConfigEncryptionTool {
      * @param arrays the byte[] arrays
      * @returna single byte[] containing the values concatenated
      */
-    private static byte[] concatByteArrays(byte[]... arrays) {
+    private static byte[] concatByteArrays(byte[] ... arrays) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
         arrays.each { byte[] it -> outputStream.write(it) }
         outputStream.toByteArray()
@@ -599,14 +599,6 @@ class ConfigEncryptionTool {
      * @return the encrypted XML content
      */
     private String migrateFlowXmlContent(String flowXmlContent, String existingFlowPassword, String newFlowPassword, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
-        /* The Jasypt StringEncryptor implementation is final and has some design decisions
-         * that will pollute this code (i.e. using a random salt on every encrypt operation
-         * rather than a unique IV, so the derived key for every encrypt/decrypt operation is
-         * different, which is very wasteful), so just use the standard JCE ciphers with the
-         * password derived using the prescribed algorithm
-         */
-        Cipher encryptCipher = Cipher.getInstance(algorithm, provider)
-
         /* For re-encryption, for performance reasons, we will use a fixed salt for all of
          * the operations. These values are stored in the same file and the default key is in the
          * source code (see NIFI-1465 and NIFI-1277), so the security trade-off is minimal
@@ -616,11 +608,7 @@ class ConfigEncryptionTool {
          */
         byte[] encryptionSalt = new byte[DEFAULT_SALT_SIZE_BYTES]
         new SecureRandom().nextBytes(encryptionSalt)
-        PBEKeySpec keySpec = new PBEKeySpec(newFlowPassword.chars)
-        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
-        SecretKey pbeKey = keyFactory.generateSecret(keySpec)
-        PBEParameterSpec parameterSpec = new PBEParameterSpec(encryptionSalt, DEFAULT_KDF_ITERATIONS)
-        encryptCipher.init(Cipher.ENCRYPT_MODE, pbeKey, parameterSpec)
+        Cipher encryptCipher = generateFlowEncryptionCipher(newFlowPassword, encryptionSalt, algorithm, provider)
 
         int elementCount = 0
 
@@ -638,6 +626,40 @@ class ConfigEncryptionTool {
         }
 
         migratedFlowXmlContent
+    }
+
+    /**
+     * Returns an initialized encryption cipher for the flow.xml.gz content.
+     *
+     * @param newFlowPassword the new encryption password
+     * @param saltBytes the salt [16 bytes in raw format]
+     * @param algorithm the KDF/encryption algorithm
+     * @param provider the security provider
+     * @return the initialized cipher instance
+     */
+    private
+    static Cipher generateFlowEncryptionCipher(String newFlowPassword, byte[] saltBytes, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+        /* The Jasypt StringEncryptor implementation is final and has some design decisions
+         * that will pollute this code (i.e. using a random salt on every encrypt operation
+         * rather than a unique IV, so the derived key for every encrypt/decrypt operation is
+         * different, which is very wasteful), so just use the standard JCE ciphers with the
+         * password derived using the prescribed algorithm
+         */
+        Cipher encryptCipher = Cipher.getInstance(algorithm, provider)
+
+        /* For re-encryption, for performance reasons, we will use a fixed salt for all of
+         * the operations. These values are stored in the same file and the default key is in the
+         * source code (see NIFI-1465 and NIFI-1277), so the security trade-off is minimal
+         * but the performance hit is substantial. We can't make this decision for
+         * decryption because the FlowSerializer still uses StringEncryptor which does not
+         * follow this pattern
+         */
+        PBEKeySpec keySpec = new PBEKeySpec(newFlowPassword.chars)
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(algorithm, provider)
+        SecretKey pbeKey = keyFactory.generateSecret(keySpec)
+        PBEParameterSpec parameterSpec = new PBEParameterSpec(saltBytes, DEFAULT_KDF_ITERATIONS)
+        encryptCipher.init(Cipher.ENCRYPT_MODE, pbeKey, parameterSpec)
+        encryptCipher
     }
 
     /**
