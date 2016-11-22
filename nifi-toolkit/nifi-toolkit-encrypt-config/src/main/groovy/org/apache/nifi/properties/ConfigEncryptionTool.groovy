@@ -493,7 +493,7 @@ class ConfigEncryptionTool {
      * @param provider the security provider (defaults to BC)
      * @return the plaintext in UTF-8 encoding
      */
-    private String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
+    private static String decryptFlowElement(String wrappedCipherText, String password, String algorithm = DEFAULT_FLOW_ALGORITHM, String provider = DEFAULT_PROVIDER) {
         // Drop the "enc{" and closing "}"
         String unwrappedCipherText = wrappedCipherText.replaceAll(/enc\{/, "")[0..<-1]
 

@@ -2645,13 +2645,10 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String sanityCipherText = "enc{${sanityEncryptor.encrypt(sensitivePropertyValue)}}"
         logger.info("Sanity check value: \t${sensitivePropertyValue} -> ${sanityCipherText}")
 
-        ConfigEncryptionTool tool = new ConfigEncryptionTool()
-        tool.isVerbose = true
-
         // Act
-        String decryptedElement = tool.decryptFlowElement(sanityCipherText, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
+        String decryptedElement = ConfigEncryptionTool.decryptFlowElement(sanityCipherText, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
         logger.info("Decrypted flow element: ${decryptedElement}")
-        String decryptedElementWithDefaultParameters = tool.decryptFlowElement(sanityCipherText, existingFlowPassword)
+        String decryptedElementWithDefaultParameters = ConfigEncryptionTool.decryptFlowElement(sanityCipherText, existingFlowPassword)
         logger.info("Decrypted flow element: ${decryptedElementWithDefaultParameters}")
 
         // Assert
@@ -2677,11 +2674,8 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         final String ENCRYPTED_VALUE_FROM_FLOW = "enc{2032416987A00D9FCD757528D7AE609D7E793CA5F956641DB53E14CDB9BFCD4037B73AC705CD3F5C1C1BDE18B8D7B281}"
 
-        ConfigEncryptionTool tool = new ConfigEncryptionTool()
-        tool.isVerbose = true
-
         // Act
-        String decryptedElement = tool.decryptFlowElement(ENCRYPTED_VALUE_FROM_FLOW, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
+        String decryptedElement = ConfigEncryptionTool.decryptFlowElement(ENCRYPTED_VALUE_FROM_FLOW, existingFlowPassword, DEFAULT_ALGORITHM, DEFAULT_PROVIDER)
         logger.info("Decrypted flow element: ${decryptedElement}")
 
         // Assert
