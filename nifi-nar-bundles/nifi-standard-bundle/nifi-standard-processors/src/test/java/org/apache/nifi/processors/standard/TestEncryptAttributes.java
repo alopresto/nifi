@@ -159,7 +159,7 @@ public class TestEncryptAttributes {
             Map<String,String> initAttrs = ff.getAttributes();
 
             if (attrOption.equals(EncryptAttributes.CUSTOM_ATTR)) {
-                runner.setProperty(EncryptAttributes.ATTR_SELECT_REG_EX,"attr\\.\\d|filename");
+                runner.setProperty(EncryptAttributes.ATTR_SELECT_REGEX,"attr\\.\\d|filename");
                 runner.setProperty("attr.1","${attr.1:notNull()}");
                 runner.setProperty("filename","${filename:notNull()}");
             }

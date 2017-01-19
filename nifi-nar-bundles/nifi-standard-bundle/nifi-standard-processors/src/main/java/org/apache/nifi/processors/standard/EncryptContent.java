@@ -73,82 +73,18 @@ public class EncryptContent extends AbstractProcessor {
     private static final String WEAK_CRYPTO_ALLOWED_NAME = "allowed";
     private static final String WEAK_CRYPTO_NOT_ALLOWED_NAME = "not-allowed";
 
-    public static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
-            .name("Mode")
-            .description("Specifies whether the content should be encrypted or decrypted")
-            .required(true)
-            .allowableValues(ENCRYPT_MODE, DECRYPT_MODE)
-            .defaultValue(ENCRYPT_MODE)
-            .build();
-    public static final PropertyDescriptor KEY_DERIVATION_FUNCTION = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION)
-            .displayName("Key Derivation Function")
-            .description("Specifies the key derivation function to generate the key from the password (and salt)")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildKeyDerivationFunctionAllowableValues())
-            .defaultValue(KeyDerivationFunction.BCRYPT.name())
-            .build();
-    public static final PropertyDescriptor ENCRYPTION_ALGORITHM = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.ENCRYPTION_ALGORITHM)
-            .displayName("Encryption Algorithm")
-            .description("The Encryption Algorithm to use")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildEncryptionMethodAllowableValues())
-            .defaultValue(EncryptionMethod.MD5_128AES.name())
-            .build();
-    public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PASSWORD)
-            .displayName("Password")
-            .description("The Password to use for encrypting or decrypting the data")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor PUBLIC_KEYRING = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PUBLIC_KEYRING)
-            .displayName("Public Keyring File")
-            .description("In a PGP encrypt mode, this keyring contains the public key of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PUBLIC_KEY_USERID = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PUBLIC_KEY_USERID)
-            .displayName("Public Key User Id")
-            .description("In a PGP encrypt mode, this user id of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PRIVATE_KEYRING = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PRIVATE_KEYRING)
-            .displayName("Private Keyring File")
-            .description("In a PGP decrypt mode, this keyring contains the private key of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE)
-            .displayName("Private Keyring Passphrase")
-            .description("In a PGP decrypt mode, this is the private keyring passphrase")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor RAW_KEY_HEX = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.RAW_KEY_HEX)
-            .displayName("Raw Key (hexadecimal)")
-            .description("In keyed encryption, this is the raw key, encoded in hexadecimal")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor ALLOW_WEAK_CRYPTO = new PropertyDescriptor.Builder()
-            .name("allow-weak-crypto")
-            .displayName("Allow insecure cryptographic modes")
-            .description("Overrides the default behavior to prevent unsafe combinations of encryption algorithms and short passwords on JVMs with limited strength cryptographic jurisdiction policies")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildWeakCryptoAllowableValues())
-            .defaultValue(EncryptProcessorUtils.buildDefaultWeakCryptoAllowableValue().getValue())
-            .build();
+    // PropertyDescriptors defined in EncryptProcessorUtils
+    private static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
+    private static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
+    private static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
+    private static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
+    private static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
+    private static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
+    private static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
+    private static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
+    private static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
+    private static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
+
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
             .description("Any FlowFile that is successfully encrypted or decrypted will be routed to success").build();
@@ -162,6 +98,10 @@ public class EncryptContent extends AbstractProcessor {
     static {
         // add BouncyCastle encryption providers
         Security.addProvider(new BouncyCastleProvider());
+    }
+
+    private static PropertyDescriptor copy(final PropertyDescriptor original) {
+        return new PropertyDescriptor.Builder().fromPropertyDescriptor(original).build();
     }
 
     @Override
@@ -198,28 +138,7 @@ public class EncryptContent extends AbstractProcessor {
     @Override
     protected Collection<ValidationResult> customValidate(final ValidationContext context) {
         final List<ValidationResult> validationResults = new ArrayList<>(super.customValidate(context));
-        final String methodValue = context.getProperty(ENCRYPTION_ALGORITHM).getValue();
-        final EncryptionMethod encryptionMethod = EncryptionMethod.valueOf(methodValue);
-        final String algorithm = encryptionMethod.getAlgorithm();
-        final String password = context.getProperty(PASSWORD).getValue();
-        final KeyDerivationFunction kdf = KeyDerivationFunction.valueOf(context.getProperty(KEY_DERIVATION_FUNCTION).getValue());
-        final String keyHex = context.getProperty(RAW_KEY_HEX).getValue();
-        if (EncryptProcessorUtils.isPGPAlgorithm(algorithm)) {
-            final boolean encrypt = context.getProperty(MODE).getValue().equalsIgnoreCase(ENCRYPT_MODE);
-            final String publicKeyring = context.getProperty(PUBLIC_KEYRING).getValue();
-            final String publicUserId = context.getProperty(PUBLIC_KEY_USERID).getValue();
-            final String privateKeyring = context.getProperty(PRIVATE_KEYRING).getValue();
-            final String privateKeyringPassphrase = context.getProperty(PRIVATE_KEYRING_PASSPHRASE).getValue();
-            validationResults.addAll(EncryptProcessorUtils.validatePGP(encryptionMethod, password, encrypt, publicKeyring, publicUserId, privateKeyring, privateKeyringPassphrase));
-        } else { // Not PGP
-            if (encryptionMethod.isKeyedCipher()) { // Raw key
-                validationResults.addAll(EncryptProcessorUtils.validateKeyed(encryptionMethod, kdf, keyHex));
-            } else { // PBE
-                boolean allowWeakCrypto = context.getProperty(ALLOW_WEAK_CRYPTO).getValue().equalsIgnoreCase(WEAK_CRYPTO_ALLOWED_NAME);
-                validationResults.addAll(EncryptProcessorUtils.validatePBE(encryptionMethod, kdf, password, allowWeakCrypto));
-            }
-        }
-        return validationResults;
+        return EncryptProcessorUtils.standardValidate(context, validationResults);
     }
 
     @Override

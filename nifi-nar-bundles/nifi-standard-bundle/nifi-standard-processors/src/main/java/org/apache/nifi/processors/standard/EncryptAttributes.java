@@ -72,36 +72,35 @@ import java.util.regex.Pattern;
 
 /**
  * Provides functionality of encrypting attributes with various algorithms.
- * Note. It'll not modify filename or uuid as they are sensitive and are
- * internally used by either Algorithm itself or FlowFile repo.
+ * The {@code uuid} attribute will never be encrypted as it is necessary for provenance repository operation.
  */
 @EventDriven
 @SideEffectFree
 @SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"encryption", "decryption", "password", "JCE", "OpenPGP", "PGP", "GPG", "regex",
-        "regexp", "Attribute Expression Language"})
-@CapabilityDescription("Encrypts or Decrypts a FlowFile attributes using either symmetric encryption with a password " +
+        "regexp", "attribute", "Attribute Expression Language"})
+@CapabilityDescription("Encrypts or decrypts one or more FlowFile attributes using either symmetric encryption with a password " +
         "and randomly generated salt, or asymmetric encryption using a public and secret key. Different options are " +
         "available to provide list of attributes. Default options are: 'all-attributes'/'core-attributes/" +
         "'all-except-core-attributes'. You can also add custom properties containing expression language condition. " +
         "These conditions will be evaluated and only those attributes will be considered for which the condition " +
-        "is \'true\'. You can also provide RegEx to select a group of attributes. RegEx and Expression Language conditions" +
-        "can be combined for advanced filtering of attribute list")
+        "is \'true\'. You can also provide a regular expression to select a group of attributes. Regular expression and Expression Language conditions" +
+        "can be combined for advanced filtering of the attribute list.")
 @DynamicProperty(name = "Attribute Name", value = "Attribute Expression Language", description = "Evaluates expression language " +
-        "as boolean expression, if attribute exist and boolean condition evaluates to true, then it'll be considered " +
-        "for encryption/decryption")
+        "as boolean expression; if an attribute exists and the boolean condition evaluates to true, the attribute will be encrypted/decrypted")
 public class EncryptAttributes extends AbstractProcessor {
 
     public static final String ENCRYPT_MODE = "Encrypt";
     public static final String DECRYPT_MODE = "Decrypt";
 
-    public static final String WEAK_CRYPTO_ALLOWED_NAME = "allowed";
-    public static final String WEAK_CRYPTO_NOT_ALLOWED_NAME = "not-allowed";
-    public static final String ALL_ATTR = "All Attributes";
-    public static final String CORE_ATTR = "Core Attributes";
-    public static final String ALL_EXCEPT_CORE_ATTR = "All Except Core Attributes";
-    public static final String CUSTOM_ATTR = "Custom Attributes";
+    private static final String ALL_ATTR = "All Attributes";
+    private static final String CORE_ATTR = "Core Attributes";
+    private static final String ALL_EXCEPT_CORE_ATTR = "All Except Core Attributes";
+    private static final String CUSTOM_ATTR = "Custom Attributes";
+
+    private static final String ATTRS_TO_ENCRYPT_PD_NAME = "attributes-to-encrypt";
+    private static final String ATTR_SELECT_REGEX_PD_NAME = "attribute-select-regex";
 
     private static final AllowableValue ALL_ATTR_ALLOWABLE_VALUE = new AllowableValue(ALL_ATTR, ALL_ATTR,
             "All attributes will be considered for encryption/decryption. Note: \'uuid\' attribute will be ignored. " +
@@ -115,8 +114,21 @@ public class EncryptAttributes extends AbstractProcessor {
                     "Custom Expression Language conditions which will consider only those attributes to which it evaluates " +
                     "to true. Note: \'uuid\' ignored and if using PGP encryption/decryption the \'filename\' will also be ignored");
 
-    public static final PropertyDescriptor ATTRS_TO_ENCRYPT = new PropertyDescriptor.Builder()
-            .name("attributes-to-encrypt")
+    // PropertyDescriptors defined in EncryptProcessorUtils
+    private static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
+    private static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
+    private static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
+    private static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
+    private static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
+    private static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
+    private static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
+    private static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
+    private static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
+    private static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
+
+    // Custom PropertyDescriptors for this processor
+    private static final PropertyDescriptor ATTRS_TO_ENCRYPT = new PropertyDescriptor.Builder()
+            .name(ATTRS_TO_ENCRYPT_PD_NAME)
             .displayName("Attributes to Encrypt")
             .description("Choose the attributes you would like to encrypt. You can also dynamic properties " +
                     "with Expression Language condition, if matches then it'll be encrypted otherwise ignored.")
@@ -125,89 +137,11 @@ public class EncryptAttributes extends AbstractProcessor {
                     CUSTOM_ATTR_ALLOWABLE_VALUE)
             .defaultValue(ALL_ATTR_ALLOWABLE_VALUE.getValue())
             .build();
-    public static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
-            .name("mode")
-            .displayName("Mode")
-            .description("Specifies whether the content should be encrypted or decrypted")
-            .required(true)
-            .allowableValues(ENCRYPT_MODE, DECRYPT_MODE)
-            .defaultValue(ENCRYPT_MODE)
-            .build();
-    public static final PropertyDescriptor KEY_DERIVATION_FUNCTION = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION)
-            .displayName("Key Derivation Function")
-            .description("Specifies the key derivation function to generate the key from the password (and salt)")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildKeyDerivationFunctionAllowableValues())
-            .defaultValue(KeyDerivationFunction.OPENSSL_EVP_BYTES_TO_KEY.name())
-            .build();
-    public static final PropertyDescriptor ENCRYPTION_ALGORITHM = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.ENCRYPTION_ALGORITHM)
-            .displayName("Encryption Algorithm")
-            .description("The Encryption Algorithm to use")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildEncryptionMethodAllowableValues())
-            .defaultValue(EncryptionMethod.MD5_128AES.name())
-            .build();
-    public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PASSWORD)
-            .displayName("Password")
-            .description("The Password to use for encrypting or decrypting the data")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor PUBLIC_KEYRING = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PRIVATE_KEYRING)
-            .displayName("Public Keyring File")
-            .description("In a PGP encrypt mode, this keyring contains the public key of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PUBLIC_KEY_USERID = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PUBLIC_KEY_USERID)
-            .displayName("Public Key User Id")
-            .description("In a PGP encrypt mode, this user id of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PRIVATE_KEYRING = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PRIVATE_KEYRING)
-            .displayName("Private Keyring File")
-            .description("In a PGP decrypt mode, this keyring contains the private key of the recipient")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE)
-            .displayName("Private Keyring Passphrase")
-            .description("In a PGP decrypt mode, this is the private keyring passphrase")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor RAW_KEY_HEX = new PropertyDescriptor.Builder()
-            .name(EncryptProcessorUtils.RAW_KEY_HEX)
-            .displayName("Raw Key (hexadecimal)")
-            .description("In keyed encryption, this is the raw key, encoded in hexadecimal")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-    public static final PropertyDescriptor ALLOW_WEAK_CRYPTO = new PropertyDescriptor.Builder()
-            .name("allow-weak-crypto")
-            .displayName("Allow insecure cryptographic modes")
-            .description("Overrides the default behavior to prevent unsafe combinations of encryption algorithms and short passwords on JVMs with limited strength cryptographic jurisdiction policies")
-            .required(true)
-            .allowableValues(EncryptProcessorUtils.buildWeakCryptoAllowableValues())
-            .defaultValue(EncryptProcessorUtils.buildDefaultWeakCryptoAllowableValue().getValue())
-            .build();
-    public static final PropertyDescriptor ATTR_SELECT_REG_EX = new PropertyDescriptor.Builder()
-            .name("attribute-select-regex")
+    private static final PropertyDescriptor ATTR_SELECT_REGEX = new PropertyDescriptor.Builder()
+            .name(ATTR_SELECT_REGEX_PD_NAME)
             .displayName("Attributes Selection RegEx")
-            .description("If " + CUSTOM_ATTR_ALLOWABLE_VALUE.getDisplayName() + " is selcted then provied a RegEx to select " +
-                    "attributes matching a specific pattern. Only those attributes will be encrypted/decrypted " +
-                    "who matches against given regex pattern")
+            .description("If " + CUSTOM_ATTR_ALLOWABLE_VALUE.getDisplayName() + " is selected then provide a regular expression to select " +
+                    "attributes matching a specific pattern. Only attributes matching the expression will be encrypted/decrypted")
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .defaultValue(".*")
@@ -230,6 +164,10 @@ public class EncryptAttributes extends AbstractProcessor {
         Security.addProvider(new BouncyCastleProvider());
     }
 
+    private static PropertyDescriptor copy(final PropertyDescriptor original) {
+        return new PropertyDescriptor.Builder().fromPropertyDescriptor(original).build();
+    }
+
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> properties = new ArrayList<>();
@@ -244,7 +182,7 @@ public class EncryptAttributes extends AbstractProcessor {
         properties.add(PUBLIC_KEY_USERID);
         properties.add(PRIVATE_KEYRING);
         properties.add(PRIVATE_KEYRING_PASSPHRASE);
-        properties.add(ATTR_SELECT_REG_EX);
+        properties.add(ATTR_SELECT_REGEX);
         this.properties = Collections.unmodifiableList(properties);
 
         final Set<Relationship> relationships = new HashSet<>();
@@ -267,28 +205,7 @@ public class EncryptAttributes extends AbstractProcessor {
     @Override
     protected Collection<ValidationResult> customValidate(final ValidationContext context) {
         final List<ValidationResult> validationResults = new ArrayList<>(super.customValidate(context));
-        final String methodValue = context.getProperty(ENCRYPTION_ALGORITHM).getValue();
-        final EncryptionMethod encryptionMethod = EncryptionMethod.valueOf(methodValue);
-        final String algorithm = encryptionMethod.getAlgorithm();
-        final String password = context.getProperty(PASSWORD).getValue();
-        final KeyDerivationFunction kdf = KeyDerivationFunction.valueOf(context.getProperty(KEY_DERIVATION_FUNCTION).getValue());
-        final String keyHex = context.getProperty(RAW_KEY_HEX).getValue();
-        if (EncryptProcessorUtils.isPGPAlgorithm(algorithm)) {
-            final boolean encrypt = context.getProperty(MODE).getValue().equalsIgnoreCase(ENCRYPT_MODE);
-            final String publicKeyring = context.getProperty(PUBLIC_KEYRING).getValue();
-            final String publicUserId = context.getProperty(PUBLIC_KEY_USERID).getValue();
-            final String privateKeyring = context.getProperty(PRIVATE_KEYRING).getValue();
-            final String privateKeyringPassphrase = context.getProperty(PRIVATE_KEYRING_PASSPHRASE).getValue();
-            validationResults.addAll(EncryptProcessorUtils.validatePGP(encryptionMethod, password, encrypt, publicKeyring, publicUserId, privateKeyring, privateKeyringPassphrase));
-        } else { // Not PGP
-            if (encryptionMethod.isKeyedCipher()) { // Raw key
-                validationResults.addAll(EncryptProcessorUtils.validateKeyed(encryptionMethod, kdf, keyHex));
-            } else { // PBE
-                boolean allowWeakCrypto = context.getProperty(ALLOW_WEAK_CRYPTO).getValue().equalsIgnoreCase(WEAK_CRYPTO_ALLOWED_NAME);
-                validationResults.addAll(EncryptProcessorUtils.validatePBE(encryptionMethod, kdf, password, allowWeakCrypto));
-            }
-        }
-        return validationResults;
+        return EncryptProcessorUtils.standardValidate(context, validationResults);
     }
 
     @Override
@@ -394,10 +311,10 @@ public class EncryptAttributes extends AbstractProcessor {
             //return true then encrypt/decrypt it.
             if (!propMap.isEmpty()) {
                 HashSet<String> attrsToEncryptClone = new HashSet<>(attrsToEncrypt);
-                for(String attr: attrsToEncryptClone) {
+                for (String attr : attrsToEncryptClone) {
                     if (propMap.containsKey(attr)) {
                         boolean matches = propMap.get(attr).evaluateAttributeExpressions(flowFile).asBoolean();
-                        if (!matches){
+                        if (!matches) {
                             attrsToEncrypt.remove(attr);
                             getLogger().warn("{} expression-language expression evaluates to false",
                                     new Object[]{propMap.get(attr).getValue()});
@@ -414,7 +331,7 @@ public class EncryptAttributes extends AbstractProcessor {
         if (EncryptProcessorUtils.isPGPAlgorithm(algorithm)) {
             attrsToEncrypt.remove(CoreAttributes.FILENAME.key());
             getLogger().info("Removing filename from {}cryption because of {} algorithm",
-                    new Object[]{(encrypt)?"en":"de", algorithm});
+                    new Object[]{(encrypt) ? "en" : "de", algorithm});
         }
         return attrsToEncrypt;
     }
@@ -432,7 +349,7 @@ public class EncryptAttributes extends AbstractProcessor {
             String encryptedVal = (encrypt) ? performEncryption(attrVal, encryptor) : performDecryption(attrVal, encryptor);
             newAttrs.put(attr, encryptedVal);
             getLogger().debug("{}crypted {} from '{}' to '{}'",
-                    new Object[]{(encrypt)?"en":"de", attr, attrVal, encryptedVal});
+                    new Object[]{(encrypt) ? "en" : "de", attr, attrVal, encryptedVal});
         }
 
         return newAttrs;
@@ -459,7 +376,7 @@ public class EncryptAttributes extends AbstractProcessor {
 
         final ComponentLog logger = getLogger();
         final PropertyValue attrList = context.getProperty(ATTRS_TO_ENCRYPT);
-        final PropertyValue attrSelectRegex = context.getProperty(ATTR_SELECT_REG_EX);
+        final PropertyValue attrSelectRegex = context.getProperty(ATTR_SELECT_REGEX);
         final String method = context.getProperty(ENCRYPTION_ALGORITHM).getValue();
         final EncryptionMethod encryptionMethod = EncryptionMethod.valueOf(method);
         final String providerName = encryptionMethod.getProvider();
