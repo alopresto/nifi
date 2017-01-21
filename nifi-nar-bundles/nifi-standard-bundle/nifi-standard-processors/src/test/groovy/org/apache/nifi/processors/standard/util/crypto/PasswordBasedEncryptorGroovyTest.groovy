@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory
 import javax.crypto.Cipher
 import java.security.Security
 
-public class PasswordBasedEncryptorGroovyTest {
+class PasswordBasedEncryptorGroovyTest {
     private static final Logger logger = LoggerFactory.getLogger(PasswordBasedEncryptorGroovyTest.class)
 
     private static final String TEST_RESOURCES_PREFIX = "src/test/resources/TestEncryptContent/"
@@ -44,7 +44,7 @@ public class PasswordBasedEncryptorGroovyTest {
     private static final String LEGACY_PASSWORD = "Hello, World!"
 
     @BeforeClass
-    public static void setUpOnce() throws Exception {
+    static void setUpOnce() throws Exception {
         Security.addProvider(new BouncyCastleProvider())
 
         logger.metaClass.methodMissing = { String name, args ->
@@ -53,15 +53,15 @@ public class PasswordBasedEncryptorGroovyTest {
     }
 
     @Before
-    public void setUp() throws Exception {
+    void setUp() throws Exception {
     }
 
     @After
-    public void tearDown() throws Exception {
+    void tearDown() throws Exception {
     }
 
     @Test
-    public void testShouldEncryptAndDecrypt() throws Exception {
+    void testShouldEncryptAndDecrypt() throws Exception {
         // Arrange
         final String PLAINTEXT = "This is a plaintext message."
         logger.info("Plaintext: {}", PLAINTEXT)
@@ -107,7 +107,7 @@ public class PasswordBasedEncryptorGroovyTest {
     }
 
     @Test
-    public void testShouldDecryptLegacyOpenSSLSaltedCipherText() throws Exception {
+    void testShouldDecryptLegacyOpenSSLSaltedCipherText() throws Exception {
         // Arrange
         Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", PasswordBasedEncryptor.supportsUnlimitedStrength())
 
@@ -136,7 +136,7 @@ public class PasswordBasedEncryptorGroovyTest {
     }
 
     @Test
-    public void testShouldDecryptLegacyOpenSSLUnsaltedCipherText() throws Exception {
+    void testShouldDecryptLegacyOpenSSLUnsaltedCipherText() throws Exception {
         // Arrange
         Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", PasswordBasedEncryptor.supportsUnlimitedStrength())
 
@@ -165,7 +165,7 @@ public class PasswordBasedEncryptorGroovyTest {
     }
 
     @Test
-    public void testShouldDecryptNiFiLegacySaltedCipherTextWithVariableSaltLength() throws Exception {
+    void testShouldDecryptNiFiLegacySaltedCipherTextWithVariableSaltLength() throws Exception {
         // Arrange
         final String PLAINTEXT = new File("${TEST_RESOURCES_PREFIX}/plain.txt").text
         logger.info("Plaintext: {}", PLAINTEXT)
@@ -221,5 +221,23 @@ public class PasswordBasedEncryptorGroovyTest {
                 assert recovered == PLAINTEXT
             }
         }
+    }
+
+    @Test
+    void testShouldDetermineMaxKeySizeForAlgorithms() throws IOException {
+        // Arrange
+        final String AES_ALGORITHM = EncryptionMethod.MD5_256AES.getAlgorithm()
+        final String DES_ALGORITHM = EncryptionMethod.MD5_DES.getAlgorithm()
+
+        final int AES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 128
+        final int DES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 64
+
+        // Act
+        int determinedAESMaxLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(AES_ALGORITHM)
+        int determinedTDESMaxLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(DES_ALGORITHM)
+
+        // Assert
+        assert determinedAESMaxLength == AES_MAX_LENGTH
+        assert determinedTDESMaxLength == DES_MAX_LENGTH
     }
 }
