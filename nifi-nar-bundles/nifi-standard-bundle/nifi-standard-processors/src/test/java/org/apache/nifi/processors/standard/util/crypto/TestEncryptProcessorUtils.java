@@ -17,18 +17,16 @@
 
 package org.apache.nifi.processors.standard.util.crypto;
 
+import java.io.IOException;
+import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.components.ValidationResult;
-import org.apache.nifi.processors.standard.EncryptContent;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.List;
 
 public class TestEncryptProcessorUtils {
 
@@ -85,7 +83,7 @@ public class TestEncryptProcessorUtils {
         logger.info("Testing with password '{}'", "");
 
         List<ValidationResult> results = EncryptProcessorUtils.validatePBE(em, kdf, "", true);
-        String expectedResult = EncryptProcessorUtils.PASSWORD + " is required";
+        String expectedResult = EncryptProcessorUtils.PASSWORD.getDisplayName() + " is required";
         String message = "'" + results.get(0).toString() + "' should contain (" + expectedResult + ")";
         Assert.assertEquals(1, results.size());
         Assert.assertTrue(message, results.get(0).toString().contains(expectedResult));
@@ -103,8 +101,8 @@ public class TestEncryptProcessorUtils {
 
         List<ValidationResult> results = EncryptProcessorUtils.validatePBE(em, kdf, password, true);
         List<String> kdfsForPBECipher = EncryptProcessorUtils.getKDFsForPBECipher(em);
-        ValidationResult expectedResult = new ValidationResult.Builder().subject(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION)
-                .explanation(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION + " is required to be " +
+        ValidationResult expectedResult = new ValidationResult.Builder().subject(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION_PD_NAME)
+                .explanation(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION_PD_DISPLAY_NAME + " is required to be " +
                         StringUtils.join(kdfsForPBECipher, ", ") + " when using algorithm " + em.getAlgorithm() +
                         ". See Admin Guide.").build();
         Assert.assertEquals(1, results.size());
@@ -142,7 +140,7 @@ public class TestEncryptProcessorUtils {
 
         logger.info("Testing with {} and empty hex key", em.name());
         List<ValidationResult> results = EncryptProcessorUtils.validateKeyed(em, kdf, "");
-        String expectedResult = EncryptProcessorUtils.RAW_KEY_HEX + " is required";
+        String expectedResult = EncryptProcessorUtils.RAW_KEY_HEX.getDisplayName() + " is required";
         String message = "'" + results.get(0).toString() + "' should contain (" + expectedResult + ")";
         Assert.assertEquals(1, results.size());
         Assert.assertTrue(message, results.get(0).toString().contains(expectedResult));
@@ -158,7 +156,7 @@ public class TestEncryptProcessorUtils {
 
         logger.info("Testing Keyed Cipher with {}", kdf.name());
         List<ValidationResult> results = EncryptProcessorUtils.validateKeyed(em, kdf, hexKey);
-        String expectedResult = EncryptProcessorUtils.KEY_DERIVATION_FUNCTION + " is required to be ";
+        String expectedResult = EncryptProcessorUtils.KEY_DERIVATION_FUNCTION.getDisplayName() + " is required to be ";
         String message = "'" + results.get(0).toString() + "' should contain (" + expectedResult + ")";
         Assert.assertEquals(1, results.size());
         Assert.assertTrue(message, results.get(0).toString().contains(expectedResult));
@@ -206,9 +204,9 @@ public class TestEncryptProcessorUtils {
         // Assert
         Assert.assertEquals(1, results.size());
         ValidationResult vr = (ValidationResult) results.toArray()[0];
-        String expectedResult = " encryption without a " + EncryptContent.PASSWORD.getName() + " requires both "
-                + EncryptContent.PUBLIC_KEYRING.getName() + " and "
-                + EncryptContent.PUBLIC_KEY_USERID.getName();
+        String expectedResult = " encryption without a " + EncryptProcessorUtils.PASSWORD.getDisplayName() + " requires both "
+                + EncryptProcessorUtils.PUBLIC_KEYRING.getDisplayName() + " and "
+                + EncryptProcessorUtils.PUBLIC_KEY_USERID.getDisplayName();
         String message = "'" + vr.toString() + "' should contain '" + expectedResult + "'";
         Assert.assertTrue(message, vr.toString().contains(expectedResult));
 

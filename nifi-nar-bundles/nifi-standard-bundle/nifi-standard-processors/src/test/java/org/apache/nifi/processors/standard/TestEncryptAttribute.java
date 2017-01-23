@@ -17,6 +17,9 @@
 
 package org.apache.nifi.processors.standard;
 
+import java.security.Security;
+import java.util.HashSet;
+import java.util.Map;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.processor.ProcessSession;
@@ -33,14 +36,9 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+public class TestEncryptAttribute {
 
-import java.security.Security;
-import java.util.HashSet;
-import java.util.Map;
-
-public class TestEncryptAttributes {
-
-    private static final Logger logger = LoggerFactory.getLogger(TestEncryptAttributes.class);
+    private static final Logger logger = LoggerFactory.getLogger(TestEncryptAttribute.class);
 
     // Initialize some common property values which will be used for setting up processor
     private static final EncryptionMethod[] ENCRYPTION_METHODS = EncryptionMethod.values();
@@ -56,23 +54,23 @@ public class TestEncryptAttributes {
 
     @Test
     public void testRoundTrip() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptAttributes());
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptAttribute());
 
         for (final EncryptionMethod encryptionMethod : ENCRYPTION_METHODS) {
             if (encryptionMethod.isUnlimitedStrength())
                 continue;
             if (encryptionMethod.isKeyedCipher()){
-                testRunner.setProperty(EncryptAttributes.RAW_KEY_HEX, RAW_KEY_HEX);
-                testRunner.setProperty(EncryptAttributes.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.BCRYPT.name());
+                testRunner.setProperty(EncryptAttribute.RAW_KEY_HEX, RAW_KEY_HEX);
+                testRunner.setProperty(EncryptAttribute.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.BCRYPT.name());
             } else {
-                testRunner.setProperty(EncryptAttributes.PASSWORD, "short");
-                testRunner.setProperty(EncryptAttributes.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.OPENSSL_EVP_BYTES_TO_KEY.name());
-                testRunner.setProperty(EncryptAttributes.ALLOW_WEAK_CRYPTO, EncryptAttributes.WEAK_CRYPTO_ALLOWED_NAME);
+                testRunner.setProperty(EncryptAttribute.PASSWORD, "short");
+                testRunner.setProperty(EncryptAttribute.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.OPENSSL_EVP_BYTES_TO_KEY.name());
+                testRunner.setProperty(EncryptAttribute.ALLOW_WEAK_CRYPTO, EncryptProcessorUtils.WEAK_CRYPTO_ALLOWED_NAME);
             }
 
             logger.info("Attempting {}", encryptionMethod.name());
-            testRunner.setProperty(EncryptAttributes.ENCRYPTION_ALGORITHM, encryptionMethod.name());
-            testRunner.setProperty(EncryptAttributes.MODE, EncryptAttributes.ENCRYPT_MODE);
+            testRunner.setProperty(EncryptAttribute.ENCRYPTION_ALGORITHM, encryptionMethod.name());
+            testRunner.setProperty(EncryptAttribute.MODE, EncryptAttribute.ENCRYPT_MODE);
 
             //create FlowFile and pass it to processor
             ProcessSession session = testRunner.getProcessSessionFactory().createSession();
@@ -83,10 +81,10 @@ public class TestEncryptAttributes {
             testRunner.enqueue(ff);
             testRunner.clearTransferState();
             testRunner.run();
-            testRunner.assertAllFlowFilesTransferred(EncryptAttributes.REL_SUCCESS, 1);
+            testRunner.assertAllFlowFilesTransferred(EncryptAttribute.REL_SUCCESS, 1);
 
             //get new attributes
-            MockFlowFile encryptedAttributesFlowFile = testRunner.getFlowFilesForRelationship(EncryptAttributes.REL_SUCCESS).get(0);
+            MockFlowFile encryptedAttributesFlowFile = testRunner.getFlowFilesForRelationship(EncryptAttribute.REL_SUCCESS).get(0);
             final Map<String, String> encryptedAttrs = encryptedAttributesFlowFile.getAttributes();
 
             //Check for each attributes
@@ -106,13 +104,13 @@ public class TestEncryptAttributes {
             //perform decryption
             testRunner.assertQueueEmpty();
             testRunner.clearTransferState();
-            testRunner.setProperty(EncryptAttributes.MODE, EncryptAttributes.DECRYPT_MODE);
+            testRunner.setProperty(EncryptAttribute.MODE, EncryptAttribute.DECRYPT_MODE);
             testRunner.enqueue(encryptedAttributesFlowFile);
             testRunner.run();
-            testRunner.assertAllFlowFilesTransferred(EncryptAttributes.REL_SUCCESS, 1);
+            testRunner.assertAllFlowFilesTransferred(EncryptAttribute.REL_SUCCESS, 1);
 
             //get Decrypted Attributes
-            MockFlowFile decryptedAttributesFlowFile = testRunner.getFlowFilesForRelationship(EncryptAttributes.REL_SUCCESS).get(0);
+            MockFlowFile decryptedAttributesFlowFile = testRunner.getFlowFilesForRelationship(EncryptAttribute.REL_SUCCESS).get(0);
             final Map<String, String> decryptedAttrs = decryptedAttributesFlowFile.getAttributes();
 
             for (String attr : decryptedAttrs.keySet()) {
@@ -136,21 +134,24 @@ public class TestEncryptAttributes {
 
     @Test
     public void testEncryptWithDifferentAttrOptions() {
-        final TestRunner runner = TestRunners.newTestRunner(new EncryptAttributes());
+        final TestRunner runner = TestRunners.newTestRunner(new EncryptAttribute());
         HashSet<String> CoreAttrSet = new HashSet<>();
 
-        final String[] attrSelectOptions = {EncryptAttributes.ALL_ATTR, EncryptAttributes.ALL_EXCEPT_CORE_ATTR,
-            EncryptAttributes.CORE_ATTR, EncryptAttributes.CUSTOM_ATTR};
+        final String[] attrSelectOptions = {EncryptAttribute.ALL_ATTR, EncryptAttribute.ALL_EXCEPT_CORE_ATTR,
+            EncryptAttribute.CORE_ATTR, EncryptAttribute.CUSTOM_ATTR};
 
         for(CoreAttributes attr: CoreAttributes.values()){
             CoreAttrSet.add(attr.key());
         }
 
+        runner.setProperty(EncryptAttribute.MODE, EncryptAttribute.ENCRYPT_MODE);
+        runner.setProperty(EncryptAttribute.PASSWORD, "helloworld");
+        runner.setProperty(EncryptAttribute.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.NIFI_LEGACY.name());
+
         for(String attrOption: attrSelectOptions) {
             logger.info("Testing {}", attrOption);
-            runner.setProperty(EncryptAttributes.ATTRS_TO_ENCRYPT, attrOption);
-            runner.setProperty(EncryptAttributes.MODE, EncryptAttributes.ENCRYPT_MODE);
-            runner.setProperty(EncryptAttributes.PASSWORD, "helloworld");
+            runner.setProperty(EncryptAttribute.ATTRS_TO_ENCRYPT, attrOption);
+
 
             ProcessSession session = runner.getProcessSessionFactory().createSession();
             FlowFile ff = session.create();
@@ -158,8 +159,8 @@ public class TestEncryptAttributes {
             ff = session.putAttribute(ff, "attr.2","dummy Value");
             Map<String,String> initAttrs = ff.getAttributes();
 
-            if (attrOption.equals(EncryptAttributes.CUSTOM_ATTR)) {
-                runner.setProperty(EncryptAttributes.ATTR_SELECT_REGEX,"attr\\.\\d|filename");
+            if (attrOption.equals(EncryptAttribute.CUSTOM_ATTR)) {
+                runner.setProperty(EncryptAttribute.ATTR_SELECT_REGEX,"attr\\.\\d|filename");
                 runner.setProperty("attr.1","${attr.1:notNull()}");
                 runner.setProperty("filename","${filename:notNull()}");
             }
@@ -169,18 +170,18 @@ public class TestEncryptAttributes {
             runner.assertQueueEmpty();
             runner.enqueue(ff);
             runner.run();
-            runner.assertAllFlowFilesTransferred(EncryptAttributes.REL_SUCCESS, 1);
+            runner.assertAllFlowFilesTransferred(EncryptAttribute.REL_SUCCESS, 1);
 
-            MockFlowFile mockFlowFile = runner.getFlowFilesForRelationship(EncryptAttributes.REL_SUCCESS).get(0);
+            MockFlowFile mockFlowFile = runner.getFlowFilesForRelationship(EncryptAttribute.REL_SUCCESS).get(0);
             Map<String, String> finalAttrs = mockFlowFile.getAttributes();
 
             Assert.assertNotEquals("Initial and Final Attribute should not be the same", initAttrs, finalAttrs);
-            Assert.assertEquals("UUID mustn't change",
+            Assert.assertEquals("The UUID cannot change",
                     initAttrs.get(UUID_ATTR_KEY), finalAttrs.get(UUID_ATTR_KEY));
 
             switch (attrOption) {
 
-                case EncryptAttributes.CORE_ATTR:
+                case EncryptAttribute.CORE_ATTR:
                     for(String attr: initAttrs.keySet()) {
                         if (!attr.equals(CoreAttributes.UUID.key()) && CoreAttrSet.contains(attr))
                             Assert.assertNotEquals("Values shouldn't be same for : " + attr,
@@ -191,7 +192,7 @@ public class TestEncryptAttributes {
                     }
                     break;
 
-                case EncryptAttributes.ALL_EXCEPT_CORE_ATTR:
+                case EncryptAttribute.ALL_EXCEPT_CORE_ATTR:
                     for(String attr: initAttrs.keySet()) {
                         if (CoreAttrSet.contains(attr))
                             Assert.assertEquals("Values shouldn't be same for : " + attr,
@@ -202,7 +203,7 @@ public class TestEncryptAttributes {
                     }
                     break;
 
-                case EncryptAttributes.CUSTOM_ATTR:
+                case EncryptAttribute.CUSTOM_ATTR:
                     for(String attr:initAttrs.keySet()) {
                         if (attr.equals("attr.1") || attr.equals("filename"))
                             Assert.assertNotEquals("Values shouldn't be same for : " + attr,

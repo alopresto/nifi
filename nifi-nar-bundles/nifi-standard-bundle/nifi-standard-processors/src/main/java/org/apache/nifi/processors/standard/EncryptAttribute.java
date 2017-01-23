@@ -17,6 +17,22 @@
 
 package org.apache.nifi.processors.standard;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.Security;
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
@@ -53,23 +69,6 @@ import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.security.Security;
-import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Pattern;
-
 /**
  * Provides functionality of encrypting attributes with various algorithms.
  * The {@code uuid} attribute will never be encrypted as it is necessary for provenance repository operation.
@@ -89,45 +88,45 @@ import java.util.regex.Pattern;
         "can be combined for advanced filtering of the attribute list.")
 @DynamicProperty(name = "Attribute Name", value = "Attribute Expression Language", description = "Evaluates expression language " +
         "as boolean expression; if an attribute exists and the boolean condition evaluates to true, the attribute will be encrypted/decrypted")
-public class EncryptAttributes extends AbstractProcessor {
+public class EncryptAttribute extends AbstractProcessor {
 
     public static final String ENCRYPT_MODE = "Encrypt";
     public static final String DECRYPT_MODE = "Decrypt";
 
-    private static final String ALL_ATTR = "All Attributes";
-    private static final String CORE_ATTR = "Core Attributes";
-    private static final String ALL_EXCEPT_CORE_ATTR = "All Except Core Attributes";
-    private static final String CUSTOM_ATTR = "Custom Attributes";
+    static final String ALL_ATTR = "All Attributes";
+    static final String CORE_ATTR = "Core Attributes";
+    static final String ALL_EXCEPT_CORE_ATTR = "All Except Core Attributes";
+    static final String CUSTOM_ATTR = "Custom Attributes";
 
-    private static final String ATTRS_TO_ENCRYPT_PD_NAME = "attributes-to-encrypt";
-    private static final String ATTR_SELECT_REGEX_PD_NAME = "attribute-select-regex";
+    static final String ATTRS_TO_ENCRYPT_PD_NAME = "attributes-to-encrypt";
+    static final String ATTR_SELECT_REGEX_PD_NAME = "attribute-select-regex";
 
-    private static final AllowableValue ALL_ATTR_ALLOWABLE_VALUE = new AllowableValue(ALL_ATTR, ALL_ATTR,
+    static final AllowableValue ALL_ATTR_ALLOWABLE_VALUE = new AllowableValue(ALL_ATTR, ALL_ATTR,
             "All attributes will be considered for encryption/decryption. Note: \'uuid\' attribute will be ignored. " +
                     "If using PGP algo for encryption/decryption then \'filename\' will be ignored");
-    private static final AllowableValue CORE_ATTR_ALLOWABLE_VALUE = new AllowableValue(CORE_ATTR, CORE_ATTR,
+    static final AllowableValue CORE_ATTR_ALLOWABLE_VALUE = new AllowableValue(CORE_ATTR, CORE_ATTR,
             "Core attributes will be considered for encryption/decryption. Note: \'uuid\' attribute will be ignored.");
-    private static final AllowableValue ALL_EXCEPT_CORE_ATTR_ALLOWABLE_VALUE = new AllowableValue(ALL_EXCEPT_CORE_ATTR,
+    static final AllowableValue ALL_EXCEPT_CORE_ATTR_ALLOWABLE_VALUE = new AllowableValue(ALL_EXCEPT_CORE_ATTR,
             CORE_ATTR, "All attributes except core attributes will be considered for encryption/decryption.");
-    private static final AllowableValue CUSTOM_ATTR_ALLOWABLE_VALUE = new AllowableValue(CUSTOM_ATTR, CUSTOM_ATTR,
+    static final AllowableValue CUSTOM_ATTR_ALLOWABLE_VALUE = new AllowableValue(CUSTOM_ATTR, CUSTOM_ATTR,
             "Custom filters can applied on attribute list via providing RegEx in provied property or can add " +
                     "Custom Expression Language conditions which will consider only those attributes to which it evaluates " +
                     "to true. Note: \'uuid\' ignored and if using PGP encryption/decryption the \'filename\' will also be ignored");
 
     // PropertyDescriptors defined in EncryptProcessorUtils
-    private static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
-    private static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
-    private static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
-    private static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
-    private static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
-    private static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
-    private static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
-    private static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
-    private static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
-    private static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
+    static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
+    static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
+    static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
+    static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
+    static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
+    static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
+    static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
+    static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
+    static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
+    static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
 
     // Custom PropertyDescriptors for this processor
-    private static final PropertyDescriptor ATTRS_TO_ENCRYPT = new PropertyDescriptor.Builder()
+    static final PropertyDescriptor ATTRS_TO_ENCRYPT = new PropertyDescriptor.Builder()
             .name(ATTRS_TO_ENCRYPT_PD_NAME)
             .displayName("Attributes to Encrypt")
             .description("Choose the attributes you would like to encrypt. You can also dynamic properties " +
@@ -137,7 +136,7 @@ public class EncryptAttributes extends AbstractProcessor {
                     CUSTOM_ATTR_ALLOWABLE_VALUE)
             .defaultValue(ALL_ATTR_ALLOWABLE_VALUE.getValue())
             .build();
-    private static final PropertyDescriptor ATTR_SELECT_REGEX = new PropertyDescriptor.Builder()
+    static final PropertyDescriptor ATTR_SELECT_REGEX = new PropertyDescriptor.Builder()
             .name(ATTR_SELECT_REGEX_PD_NAME)
             .displayName("Attributes Selection RegEx")
             .description("If " + CUSTOM_ATTR_ALLOWABLE_VALUE.getDisplayName() + " is selected then provide a regular expression to select " +

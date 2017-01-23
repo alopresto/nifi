@@ -16,6 +16,15 @@
  */
 package org.apache.nifi.processors.standard;
 
+import java.security.Security;
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
@@ -37,7 +46,6 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
-import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.standard.util.crypto.EncryptProcessorUtils;
 import org.apache.nifi.processors.standard.util.crypto.EncryptProcessorUtils.Encryptor;
 import org.apache.nifi.processors.standard.util.crypto.KeyedEncryptor;
@@ -48,16 +56,6 @@ import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.apache.nifi.util.StopWatch;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-
-import java.security.Security;
-import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 @EventDriven
 @SideEffectFree
@@ -74,16 +72,16 @@ public class EncryptContent extends AbstractProcessor {
     private static final String WEAK_CRYPTO_NOT_ALLOWED_NAME = "not-allowed";
 
     // PropertyDescriptors defined in EncryptProcessorUtils
-    private static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
-    private static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
-    private static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
-    private static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
-    private static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
-    private static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
-    private static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
-    private static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
-    private static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
-    private static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
+    static final PropertyDescriptor MODE = copy(EncryptProcessorUtils.MODE);
+    static final PropertyDescriptor KEY_DERIVATION_FUNCTION = copy(EncryptProcessorUtils.KEY_DERIVATION_FUNCTION);
+    static final PropertyDescriptor ENCRYPTION_ALGORITHM = copy(EncryptProcessorUtils.ENCRYPTION_ALGORITHM);
+    static final PropertyDescriptor PASSWORD = copy(EncryptProcessorUtils.PASSWORD);
+    static final PropertyDescriptor PUBLIC_KEYRING = copy(EncryptProcessorUtils.PUBLIC_KEYRING);
+    static final PropertyDescriptor PUBLIC_KEY_USERID = copy(EncryptProcessorUtils.PUBLIC_KEY_USERID);
+    static final PropertyDescriptor PRIVATE_KEYRING = copy(EncryptProcessorUtils.PRIVATE_KEYRING);
+    static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = copy(EncryptProcessorUtils.PRIVATE_KEYRING_PASSPHRASE);
+    static final PropertyDescriptor RAW_KEY_HEX = copy(EncryptProcessorUtils.RAW_KEY_HEX);
+    static final PropertyDescriptor ALLOW_WEAK_CRYPTO = copy(EncryptProcessorUtils.ALLOW_WEAK_CRYPTO);
 
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")

@@ -16,6 +16,11 @@
  */
 package org.apache.nifi.processors.standard;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.security.Security;
+import java.util.Collection;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.processors.standard.util.crypto.CipherUtility;
@@ -33,12 +38,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Paths;
-import java.security.Security;
-import java.util.Collection;
 
 public class TestEncryptContent {
 
@@ -91,24 +90,6 @@ public class TestEncryptContent {
             flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0);
             flowFile.assertContentEquals(new File("src/test/resources/hello.txt"));
         }
-    }
-
-    @Test
-    public void testShouldDetermineMaxKeySizeForAlgorithms() throws IOException {
-        // Arrange
-        final String AES_ALGORITHM = EncryptionMethod.MD5_256AES.getAlgorithm();
-        final String DES_ALGORITHM = EncryptionMethod.MD5_DES.getAlgorithm();
-
-        final int AES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 128;
-        final int DES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 64;
-
-        // Act
-        int determinedAESMaxLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(AES_ALGORITHM);
-        int determinedTDESMaxLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(DES_ALGORITHM);
-
-        // Assert
-        assert determinedAESMaxLength == AES_MAX_LENGTH;
-        assert determinedTDESMaxLength == DES_MAX_LENGTH;
     }
 
     @Test
@@ -185,8 +166,8 @@ public class TestEncryptContent {
         final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent());
 
         // Assert
-        Assert.assertEquals("Decrypt should default to Legacy KDF", testRunner.getProcessor().getPropertyDescriptor(EncryptContent.KEY_DERIVATION_FUNCTION
-                .getName()).getDefaultValue(), KeyDerivationFunction.BCRYPT.name());
+        Assert.assertEquals("Decrypt should not default to Legacy KDF", KeyDerivationFunction.BCRYPT.name(), testRunner.getProcessor().getPropertyDescriptor(EncryptContent.KEY_DERIVATION_FUNCTION
+                .getName()).getDefaultValue());
     }
 
     @Test
@@ -227,7 +208,7 @@ public class TestEncryptContent {
         Assert.assertEquals(results.toString(), 1, results.size());
         for (final ValidationResult vr : results) {
             Assert.assertTrue(vr.toString()
-                    .contains(EncryptContent.PASSWORD.getName() + " is required when using algorithm"));
+                    .contains(EncryptContent.PASSWORD.getDisplayName() + " is required when using algorithm"));
         }
 
         runner.enqueue(new byte[0]);
@@ -259,9 +240,9 @@ public class TestEncryptContent {
         Assert.assertEquals(1, results.size());
         for (final ValidationResult vr : results) {
             Assert.assertTrue(vr.toString().contains(
-                    " encryption without a " + EncryptContent.PASSWORD.getName() + " requires both "
-                            + EncryptContent.PUBLIC_KEYRING.getName() + " and "
-                            + EncryptContent.PUBLIC_KEY_USERID.getName()));
+                    " encryption without a " + EncryptContent.PASSWORD.getDisplayName() + " requires both "
+                            + EncryptContent.PUBLIC_KEYRING.getDisplayName() + " and "
+                            + EncryptContent.PUBLIC_KEY_USERID.getDisplayName()));
         }
 
         // Legacy tests moved to individual tests to comply with new library
@@ -279,9 +260,9 @@ public class TestEncryptContent {
         Assert.assertEquals(1, results.size());
         for (final ValidationResult vr : results) {
             Assert.assertTrue(vr.toString().contains(
-                    " decryption without a " + EncryptContent.PASSWORD.getName() + " requires both "
-                            + EncryptContent.PRIVATE_KEYRING.getName() + " and "
-                            + EncryptContent.PRIVATE_KEYRING_PASSPHRASE.getName()));
+                    " decryption without a " + EncryptContent.PASSWORD.getDisplayName() + " requires both "
+                            + EncryptContent.PRIVATE_KEYRING.getDisplayName() + " and "
+                            + EncryptContent.PRIVATE_KEYRING_PASSPHRASE.getDisplayName()));
 
         }
 
@@ -292,7 +273,7 @@ public class TestEncryptContent {
         Assert.assertEquals(1, results.size());
         for (final ValidationResult vr : results) {
             Assert.assertTrue(vr.toString().contains(
-                    " could not be opened with the provided " + EncryptContent.PRIVATE_KEYRING_PASSPHRASE.getName()));
+                    " could not be opened with the provided " + EncryptContent.PRIVATE_KEYRING_PASSPHRASE.getDisplayName()));
 
         }
     }

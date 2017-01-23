@@ -17,7 +17,10 @@
 package org.apache.nifi.processors.standard.util.crypto;
 
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
@@ -30,19 +33,18 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-
 public class EncryptProcessorUtils {
 
     public static final String ENCRYPT_MODE = "Encrypt";
     public static final String DECRYPT_MODE = "Decrypt";
 
-    public static final String ALLOW_WEAK_CRYPTO_PD_NAME = "allow-weak-crypto";
-    public static final String MODE_PD_NAME = "mode";
     public static final String WEAK_CRYPTO_ALLOWED_NAME = "allowed";
     public static final String WEAK_CRYPTO_NOT_ALLOWED_NAME = "not-allowed";
+    public static final String WEAK_CRYPTO_ALLOWED_DISPLAY_NAME = "Allowed";
+    public static final String WEAK_CRYPTO_NOT_ALLOWED_DISPLAY_NAME = "Not Allowed";
+
+    public static final String ALLOW_WEAK_CRYPTO_PD_NAME = "allow-weak-crypto";
+    public static final String MODE_PD_NAME = "mode";
     public static final String PUBLIC_KEYRING_PD_NAME = "public-keyring-file";
     public static final String PUBLIC_KEY_USERID_PD_NAME = "public-key-user-id";
     public static final String PRIVATE_KEYRING_PD_NAME = "private-keyring-file";
@@ -52,9 +54,20 @@ public class EncryptProcessorUtils {
     public static final String ENCRYPTION_ALGORITHM_PD_NAME = "encryption-algorithm";
     public static final String KEY_DERIVATION_FUNCTION_PD_NAME = "key-derivation-function";
 
+    public static final String ALLOW_WEAK_CRYPTO_PD_DISPLAY_NAME = "Allow insecure cryptographic modes";
+    public static final String MODE_PD_DISPLAY_NAME = "Mode";
+    public static final String PUBLIC_KEYRING_PD_DISPLAY_NAME = "Public Keyring File";
+    public static final String PUBLIC_KEY_USERID_PD_DISPLAY_NAME = "Public Key User Id";
+    public static final String PRIVATE_KEYRING_PD_DISPLAY_NAME = "Private Keyring File";
+    public static final String PRIVATE_KEYRING_PASSPHRASE_PD_DISPLAY_NAME = "Private Keyring Passphrase";
+    public static final String RAW_KEY_HEX_PD_DISPLAY_NAME = "Raw Key (hexadecimal)";
+    public static final String PASSWORD_PD_DISPLAY_NAME = "Password";
+    public static final String ENCRYPTION_ALGORITHM_PD_DISPLAY_NAME = "Encryption Algorithm";
+    public static final String KEY_DERIVATION_FUNCTION_PD_DISPLAY_NAME = "Key Derivation Function";
+
     public static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
             .name(MODE_PD_NAME)
-            .displayName("Mode")
+            .displayName(MODE_PD_DISPLAY_NAME)
             .description("Specifies whether the content should be encrypted or decrypted")
             .required(true)
             .allowableValues(ENCRYPT_MODE, DECRYPT_MODE)
@@ -62,15 +75,15 @@ public class EncryptProcessorUtils {
             .build();
     public static final PropertyDescriptor KEY_DERIVATION_FUNCTION = new PropertyDescriptor.Builder()
             .name(KEY_DERIVATION_FUNCTION_PD_NAME)
-            .displayName("Key Derivation Function")
+            .displayName(KEY_DERIVATION_FUNCTION_PD_DISPLAY_NAME)
             .description("Specifies the key derivation function to generate the key from the password (and salt)")
             .required(true)
             .allowableValues(EncryptProcessorUtils.buildKeyDerivationFunctionAllowableValues())
-            .defaultValue(KeyDerivationFunction.OPENSSL_EVP_BYTES_TO_KEY.name())
+            .defaultValue(KeyDerivationFunction.BCRYPT.name())
             .build();
     public static final PropertyDescriptor ENCRYPTION_ALGORITHM = new PropertyDescriptor.Builder()
             .name(ENCRYPTION_ALGORITHM_PD_NAME)
-            .displayName("Encryption Algorithm")
+            .displayName(ENCRYPTION_ALGORITHM_PD_DISPLAY_NAME)
             .description("The Encryption Algorithm to use")
             .required(true)
             .allowableValues(EncryptProcessorUtils.buildEncryptionMethodAllowableValues())
@@ -78,7 +91,7 @@ public class EncryptProcessorUtils {
             .build();
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
             .name(PASSWORD_PD_NAME)
-            .displayName("Password")
+            .displayName(PASSWORD_PD_DISPLAY_NAME)
             .description("The Password to use for encrypting or decrypting the data")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -86,28 +99,28 @@ public class EncryptProcessorUtils {
             .build();
     public static final PropertyDescriptor PUBLIC_KEYRING = new PropertyDescriptor.Builder()
             .name(PUBLIC_KEYRING_PD_NAME)
-            .displayName("Public Keyring File")
+            .displayName(PUBLIC_KEYRING_PD_DISPLAY_NAME)
             .description("In a PGP encrypt mode, this keyring contains the public key of the recipient")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor PUBLIC_KEY_USERID = new PropertyDescriptor.Builder()
             .name(PUBLIC_KEY_USERID_PD_NAME)
-            .displayName("Public Key User Id")
+            .displayName(PUBLIC_KEY_USERID_PD_DISPLAY_NAME)
             .description("In a PGP encrypt mode, this user id of the recipient")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor PRIVATE_KEYRING = new PropertyDescriptor.Builder()
             .name(PRIVATE_KEYRING_PD_NAME)
-            .displayName("Private Keyring File")
+            .displayName(PRIVATE_KEYRING_PD_DISPLAY_NAME)
             .description("In a PGP decrypt mode, this keyring contains the private key of the recipient")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor PRIVATE_KEYRING_PASSPHRASE = new PropertyDescriptor.Builder()
             .name(PRIVATE_KEYRING_PASSPHRASE_PD_NAME)
-            .displayName("Private Keyring Passphrase")
+            .displayName(PRIVATE_KEYRING_PASSPHRASE_PD_DISPLAY_NAME)
             .description("In a PGP decrypt mode, this is the private keyring passphrase")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -115,7 +128,7 @@ public class EncryptProcessorUtils {
             .build();
     public static final PropertyDescriptor RAW_KEY_HEX = new PropertyDescriptor.Builder()
             .name(RAW_KEY_HEX_PD_NAME)
-            .displayName("Raw Key (hexadecimal)")
+            .displayName(RAW_KEY_HEX_PD_DISPLAY_NAME)
             .description("In keyed encryption, this is the raw key, encoded in hexadecimal")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -123,7 +136,7 @@ public class EncryptProcessorUtils {
             .build();
     public static final PropertyDescriptor ALLOW_WEAK_CRYPTO = new PropertyDescriptor.Builder()
             .name(ALLOW_WEAK_CRYPTO_PD_NAME)
-            .displayName("Allow insecure cryptographic modes")
+            .displayName(ALLOW_WEAK_CRYPTO_PD_DISPLAY_NAME)
             .description("Overrides the default behavior to prevent unsafe combinations of encryption algorithms and short passwords on JVMs with limited strength cryptographic jurisdiction policies")
             .required(true)
             .allowableValues(buildWeakCryptoAllowableValues())
@@ -161,14 +174,14 @@ public class EncryptProcessorUtils {
 
     public static AllowableValue[] buildWeakCryptoAllowableValues() {
         List<AllowableValue> allowableValues = new ArrayList<>();
-        allowableValues.add(new AllowableValue(WEAK_CRYPTO_ALLOWED_NAME, "Allowed", "Operation will not be blocked and no alerts will be presented " +
+        allowableValues.add(new AllowableValue(WEAK_CRYPTO_ALLOWED_NAME, WEAK_CRYPTO_ALLOWED_DISPLAY_NAME, "Operation will not be blocked and no alerts will be presented " +
                 "when unsafe combinations of encryption algorithms and passwords are provided"));
         allowableValues.add(buildDefaultWeakCryptoAllowableValue());
         return allowableValues.toArray(new AllowableValue[0]);
     }
 
     public static AllowableValue buildDefaultWeakCryptoAllowableValue() {
-        return new AllowableValue(WEAK_CRYPTO_NOT_ALLOWED_NAME, "Not Allowed", "When set, operation will be blocked and alerts will be presented to the user " +
+        return new AllowableValue(WEAK_CRYPTO_NOT_ALLOWED_NAME, WEAK_CRYPTO_NOT_ALLOWED_DISPLAY_NAME, "When set, operation will be blocked and alerts will be presented to the user " +
                 "if unsafe combinations of encryption algorithms and passwords are provided on a JVM with limited strength crypto. To fix this, see the Admin Guide.");
     }
 
@@ -181,21 +194,21 @@ public class EncryptProcessorUtils {
                 // If encrypting without a password, require both public-keyring-file and public-key-user-id
                 if (publicKeyring == null || publicUserId == null) {
                     validationResults.add(new ValidationResult.Builder().subject(PUBLIC_KEYRING_PD_NAME)
-                            .explanation(encryptionMethod.getAlgorithm() + " encryption without a " + PASSWORD_PD_NAME + " requires both "
-                                    + PUBLIC_KEYRING_PD_NAME + " and " + PUBLIC_KEY_USERID_PD_NAME)
+                            .explanation(encryptionMethod.getAlgorithm() + " encryption without a " + PASSWORD_PD_DISPLAY_NAME + " requires both "
+                                    + PUBLIC_KEYRING_PD_DISPLAY_NAME + " and " + PUBLIC_KEY_USERID_PD_DISPLAY_NAME)
                             .build());
                 } else {
                     // Verify the public keyring contains the user id
                     try {
                         if (OpenPGPKeyBasedEncryptor.getPublicKey(publicUserId, publicKeyring) == null) {
                             validationResults.add(new ValidationResult.Builder().subject(PUBLIC_KEYRING_PD_NAME)
-                                    .explanation(PUBLIC_KEYRING_PD_NAME + " " + publicKeyring
+                                    .explanation(PUBLIC_KEYRING_PD_DISPLAY_NAME + " " + publicKeyring
                                             + " does not contain user id " + publicUserId)
                                     .build());
                         }
                     } catch (final Exception e) {
                         validationResults.add(new ValidationResult.Builder().subject(PUBLIC_KEYRING_PD_NAME)
-                                .explanation("Invalid " + PUBLIC_KEYRING_PD_NAME + " " + publicKeyring
+                                .explanation("Invalid " + PUBLIC_KEYRING_PD_DISPLAY_NAME + " " + publicKeyring
                                         + " because " + e.toString())
                                 .build());
                     }
@@ -204,8 +217,8 @@ public class EncryptProcessorUtils {
                 // Require both private-keyring-file and private-keyring-passphrase
                 if (privateKeyring == null || privateKeyringPassphrase == null) {
                     validationResults.add(new ValidationResult.Builder().subject(PRIVATE_KEYRING_PD_NAME)
-                            .explanation(encryptionMethod.getAlgorithm() + " decryption without a " + PASSWORD_PD_NAME + " requires both "
-                                    + PRIVATE_KEYRING_PD_NAME + " and " + PRIVATE_KEYRING_PASSPHRASE_PD_NAME)
+                            .explanation(encryptionMethod.getAlgorithm() + " decryption without a " + PASSWORD_PD_DISPLAY_NAME + " requires both "
+                                    + PRIVATE_KEYRING_PD_DISPLAY_NAME + " and " + PRIVATE_KEYRING_PASSPHRASE_PD_DISPLAY_NAME)
                             .build());
                 } else {
                     final String providerName = encryptionMethod.getProvider();
@@ -213,13 +226,13 @@ public class EncryptProcessorUtils {
                     try {
                         if (!OpenPGPKeyBasedEncryptor.validateKeyring(providerName, privateKeyring, privateKeyringPassphrase.toCharArray())) {
                             validationResults.add(new ValidationResult.Builder().subject(PRIVATE_KEYRING_PD_NAME)
-                                    .explanation(PRIVATE_KEYRING_PD_NAME + " " + privateKeyring
-                                            + " could not be opened with the provided " + PRIVATE_KEYRING_PASSPHRASE_PD_NAME)
+                                    .explanation(PRIVATE_KEYRING_PD_DISPLAY_NAME + " " + privateKeyring
+                                            + " could not be opened with the provided " + PRIVATE_KEYRING_PASSPHRASE_PD_DISPLAY_NAME)
                                     .build());
                         }
                     } catch (final Exception e) {
                         validationResults.add(new ValidationResult.Builder().subject(PRIVATE_KEYRING_PD_NAME)
-                                .explanation("Invalid " + PRIVATE_KEYRING_PD_NAME + " " + privateKeyring
+                                .explanation("Invalid " + PRIVATE_KEYRING_PD_DISPLAY_NAME + " " + privateKeyring
                                         + " because " + e.toString())
                                 .build());
                     }
@@ -237,7 +250,7 @@ public class EncryptProcessorUtils {
         // Password required (short circuits validation because other conditions depend on password presence)
         if (StringUtils.isEmpty(password)) {
             validationResults.add(new ValidationResult.Builder().subject(PASSWORD_PD_NAME)
-                    .explanation(PASSWORD_PD_NAME + " is required when using algorithm " + encryptionMethod.getAlgorithm()).build());
+                    .explanation(PASSWORD_PD_DISPLAY_NAME + " is required when using algorithm " + encryptionMethod.getAlgorithm()).build());
             return validationResults;
         }
 
@@ -273,10 +286,8 @@ public class EncryptProcessorUtils {
         // Check the KDF for compatibility with this algorithm
         List<String> kdfsForPBECipher = getKDFsForPBECipher(encryptionMethod);
         if (kdf == null || !kdfsForPBECipher.contains(kdf.name())) {
-            // TODO: Get displayName
-            final String displayName = KEY_DERIVATION_FUNCTION_PD_NAME;
-            validationResults.add(new ValidationResult.Builder().subject(displayName)
-                    .explanation(displayName + " is required to be " + StringUtils.join(kdfsForPBECipher,
+            validationResults.add(new ValidationResult.Builder().subject(KEY_DERIVATION_FUNCTION_PD_NAME)
+                    .explanation(KEY_DERIVATION_FUNCTION_PD_DISPLAY_NAME + " is required to be " + StringUtils.join(kdfsForPBECipher,
                             ", ") + " when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
         }
 
@@ -298,7 +309,7 @@ public class EncryptProcessorUtils {
 
         if (StringUtils.isEmpty(keyHex)) {
             validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX_PD_NAME)
-                    .explanation(RAW_KEY_HEX_PD_NAME + " is required when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
+                    .explanation(RAW_KEY_HEX_PD_DISPLAY_NAME + " is required when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
         } else {
             byte[] keyBytes = new byte[0];
             try {
@@ -324,7 +335,7 @@ public class EncryptProcessorUtils {
         List<String> kdfsForKeyedCipher = getKDFsForKeyedCipher();
         if (kdf == null || !kdfsForKeyedCipher.contains(kdf.name())) {
             validationResults.add(new ValidationResult.Builder().subject(KEY_DERIVATION_FUNCTION_PD_NAME)
-                    .explanation(KEY_DERIVATION_FUNCTION_PD_NAME + " is required to be " + StringUtils.join(kdfsForKeyedCipher, ", ") + " when using algorithm " +
+                    .explanation(KEY_DERIVATION_FUNCTION_PD_DISPLAY_NAME + " is required to be " + StringUtils.join(kdfsForKeyedCipher, ", ") + " when using algorithm " +
                             encryptionMethod.getAlgorithm()).build());
         }
 

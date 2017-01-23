@@ -217,7 +217,7 @@ public class TestEncryptContentGroovy {
                 logger.expected(results)
                 ValidationResult keyLengthInvalidVR = results.first()
 
-                String expectedResult = "'${EncryptContent.KEY_DERIVATION_FUNCTION.getName()}' is invalid because ${EncryptContent.KEY_DERIVATION_FUNCTION.getName()} is required to be NONE, BCRYPT, SCRYPT, PBKDF2 when using " +
+                String expectedResult = "'${EncryptContent.KEY_DERIVATION_FUNCTION.getName()}' is invalid because ${EncryptContent.KEY_DERIVATION_FUNCTION.getDisplayName()} is required to be NONE, BCRYPT, SCRYPT, PBKDF2 when using " +
                         "algorithm ${encryptionMethod.algorithm}"
                 String message = "'" + keyLengthInvalidVR.toString() + "' contains '" + expectedResult + "'"
                 Assert.assertTrue(message, keyLengthInvalidVR.toString().contains(expectedResult))
@@ -280,7 +280,7 @@ public class TestEncryptContentGroovy {
                 Assert.assertEquals(1, results.size())
                 ValidationResult keyLengthInvalidVR = results.first()
 
-                String expectedResult = "'${EncryptContent.KEY_DERIVATION_FUNCTION.getName()}' is invalid because ${EncryptContent.KEY_DERIVATION_FUNCTION.getName()} is required to be NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using " +
+                String expectedResult = "'${EncryptContent.KEY_DERIVATION_FUNCTION.getName()}' is invalid because ${EncryptContent.KEY_DERIVATION_FUNCTION.getDisplayName()} is required to be NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using " +
                         "algorithm ${encryptionMethod.algorithm}"
                 String message = "'" + keyLengthInvalidVR.toString() + "' contains '" + expectedResult + "'"
                 Assert.assertTrue(message, keyLengthInvalidVR.toString().contains(expectedResult))
