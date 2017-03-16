@@ -50,6 +50,7 @@ import javax.net.SocketFactory
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
@@ -82,17 +83,24 @@ class TestGetHTTPGroovy extends GroovyTestCase {
 
     private static final String KEYSTORE_PATH = "src/test/resources/localhost-ks.jks"
     private static final String TRUSTSTORE_PATH = "src/test/resources/localhost-ts.jks"
-    private static final String CACERTS_PATH = "/Library/Java/JavaVirtualMachines/jdk1.8.0_101.jdk/Contents/Home/jre/lib/security/cacerts"
+    private static
+    final String CACERTS_PATH = "/Library/Java/JavaVirtualMachines/jdk1.8.0_101.jdk/Contents/Home/jre/lib/security/cacerts"
 
     private static final String KEYSTORE_PASSWORD = "localtest"
     private static final String TRUSTSTORE_PASSWORD = "localtest"
     private static final String CACERTS_PASSWORD = "changeit"
+
+    private static final long DEFAULT_OPENSSL_TIMEOUT = 5000L
+    private static final String KEY_PATH = "src/test/resources/localhost.key"
+    private static final String CERT_PATH = "src/test/resources/localhost.pem"
 
     private static Server server
     private static X509TrustManager nullTrustManager
     private static HostnameVerifier nullHostnameVerifier
 
     private static TestRunner runner
+
+    private boolean serverStop = false
 
     private
     static Server createServer(List supportedProtocols = DEFAULT_PROTOCOLS, List supportedCipherSuites = DEFAULT_CIPHER_SUITES) {
@@ -356,7 +364,8 @@ class TestGetHTTPGroovy extends GroovyTestCase {
         assert selectedProtocol == TLSv1_2
     }
 
-    private static void enableContextServiceProtocol(TestRunner runner, String protocol, String truststorePath = TRUSTSTORE_PATH, String truststorePassword = TRUSTSTORE_PASSWORD) {
+    private
+    static void enableContextServiceProtocol(TestRunner runner, String protocol, String truststorePath = TRUSTSTORE_PATH, String truststorePassword = TRUSTSTORE_PASSWORD) {
         final SSLContextService sslContextService = new StandardSSLContextService()
         runner.addControllerService("ssl-context", sslContextService)
         runner.setProperty(sslContextService, StandardSSLContextService.TRUSTSTORE, truststorePath)
@@ -394,20 +403,52 @@ class TestGetHTTPGroovy extends GroovyTestCase {
         }
     }
 
+    private
+    def runOpenSSLServer(String protocol = "", long timeout = DEFAULT_OPENSSL_TIMEOUT, String keyPath = KEY_PATH, String certPath = CERT_PATH, int port = DEFAULT_TLS_PORT, StringBuffer output = new StringBuffer(), StringBuffer error = new StringBuffer()) {
+
+        String protocolArg = ""
+
+        switch (protocol) {
+            case TLSv1:
+                protocolArg = "-tls1"
+                break
+            case TLSv1_1:
+                protocolArg = "-tls1_1"
+                break
+            case TLSv1_2:
+                protocolArg = "-tls1_2"
+                break
+            default:
+                break
+        }
+
+        final String OPENSSL_CMD = "openssl s_server ${protocolArg} -key ${keyPath} -cert ${certPath} -accept ${port} -debug -www"
+
+        def proc
+        Thread.start("OPENSSL") {
+            proc = OPENSSL_CMD.execute()
+            while (!serverStop) {
+                proc.waitForOrKill(timeout)
+            }
+//        proc.waitForProcessOutput(output, error)
+
+            proc.destroyForcibly()
+        }
+
+        proc
+    }
+
     /**
-     * This test creates a server that supports TLSv1.1. It iterates over an {@link SSLContextService} with TLSv1, TLSv1.1, and TLSv1.2 support. The context service with TLSv1 should not be able to communicate with a server that does not support it, but TLSv1.1 and TLSv1.2 should be able to communicate successfully.
+     * This test creates a server that supports TLSv1.1. It iterates over an {@link SSLContextService} with TLSv1 and TLSv1.1 support. The context service with TLSv1 should not be able to communicate with a server that does not support it, but TLSv1.1 should be able to communicate successfully.
      */
     @Test
-    @Ignore("Ignore until embeddable test HTTPS server that only supports TLSv1.1 is available")
+//    @Ignore("Ignore until embeddable test HTTPS server that only supports TLSv1.1 is available")
     void testGetHTTPShouldConnectToServerWithTLSv1_1() {
         // Arrange
         final String MSG = "This is a test message"
 
-        // Configure server with TLSv1.1 only
-        server = createServer([TLSv1_1])
-
-        // Start server
-        server.start()
+        // Starts an OpenSSL s_server process running TLSv1.1 only
+        Process s_serverProc = runOpenSSLServer(TLSv1_1, 5000L)
 
         // Act
         logger.info("Set context service protocol to ${TLSv1}")
@@ -422,11 +463,12 @@ class TestGetHTTPGroovy extends GroovyTestCase {
         logger.expected("Original cause: ${ae.cause?.cause?.class?.name}")
 
         // Assert
-        assert ae.cause.cause instanceof SSLHandshakeException
+        assert ae.cause.cause instanceof SSLException
+        assert ae.cause.cause.message =~ "protocol_version"
         runner.clearTransferState()
         logger.expected("Unable to connect")
 
-        [TLSv1_1, TLSv1_2].each { String tlsVersion ->
+        [TLSv1_1].each { String tlsVersion ->
             logger.info("Set context service protocol to ${tlsVersion}")
             enableContextServiceProtocol(runner, tlsVersion)
             runner.enqueue(MSG.getBytes())
@@ -437,6 +479,10 @@ class TestGetHTTPGroovy extends GroovyTestCase {
             runner.clearTransferState()
             logger.info("Ran successfully")
         }
+
+        serverStop = true
+
+//        s_serverProc.destroyForcibly()
     }
 
     /**
