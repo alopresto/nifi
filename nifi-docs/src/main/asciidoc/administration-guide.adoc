@@ -180,35 +180,35 @@ Standalone
 ^^^^^^^^^^
 Standalone mode is invoked by running `./bin/tls-toolkit.sh standalone -h` which prints the usage information along with descriptions of options that can be specified.
 
-You can use the following command line options with the `tls-toolkit` in Standalone mode:
+You can use the following command line options with the `tls-toolkit` in standalone mode:
 
-* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys. (default: RSA)
-* `-B`,`--clientCertPassword <arg>`             Password for client certificate.  Must either be one value or one for each client DN. (autogenerate if not specified)
-* `-c`,`--certificateAuthorityHostname <arg>`   Hostname of NiFi Certificate Authority (default: localhost)
-* `-C`,`--clientCertDn <arg>`                   Generate client certificate suitable for use in browser with specified DN. (Can be specified multiple times.)
-* `-d`,`--days <arg>`                           Number of days issued certificate should be valid for. (default: 1095)
-* `-f`,`--nifiPropertiesFile <arg>`             Base nifi.properties file to update. (Embedded file identical to the one in a default NiFi install will be used if not specified.)
-* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keyStore.
-* `-G`,`--globalPortSequence <arg>`             Use sequential ports that are calculated for all hosts according to the provided hostname expressions. (Can be specified multiple times, MUST BE SAME FROM RUN TO RUN.)
-* `-h`,`--help`                                 Print help and exit.
-* `-k`,`--keySize <arg>`                        Number of bits for generated keys. (default: 2048)
-* `-K`,`--keyPassword <arg>`                    Key password to use.  Must either be one value or one for each host. (autogenerate if not specified)
-* `-n`,`--hostnames <arg>`                      Comma separated list of hostnames.
-* `--nifiDnPrefix <arg>`                        String to prepend to hostname(s) when determining DN. (default: CN=)
-* `--nifiDnSuffix <arg>`                        String to append to hostname(s) when determining DN. (default: , OU=NIFI)
-* `-o`,`--outputDirectory <arg>`                The directory to output keystores, truststore, config files. (default: ../bin)
-* `-O`,`--isOverwrite`                          Overwrite existing host output.
-* `-P`,`--trustStorePassword <arg>`             Keystore password to use.  Must either be one value or one for each host. (autogenerate if not specified)
-* `-s`,`--signingAlgorithm <arg>`               Algorithm to use for signing certificates. (default: SHA256WITHRSA)
-* `-S`,`--keyStorePassword <arg>`               Keystore password to use.  Must either be one value or one for each host. (autogenerate if not specified)
+* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys (default: `RSA`)
+* `-B`,`--clientCertPassword <arg>`             Password for client certificate. Must either be one value or one for each client DN (auto-generate if not specified)
+* `-c`,`--certificateAuthorityHostname <arg>`   Hostname of NiFi Certificate Authority (default: `localhost`)
+* `-C`,`--clientCertDn <arg>`                   Generate client certificate suitable for use in browser with specified DN (Can be specified multiple times)
+* `-d`,`--days <arg>`                           Number of days issued certificate should be valid for (default: `1095`)
+* `-f`,`--nifiPropertiesFile <arg>`             Base `nifi.properties` file to update (Embedded file identical to the one in a default NiFi install will be used if not specified)
+* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keystore
+* `-G`,`--globalPortSequence <arg>`             Use sequential ports that are calculated for all hosts according to the provided hostname expressions (Can be specified multiple times, MUST BE SAME FROM RUN TO RUN)
+* `-h`,`--help`                                 Print help and exit
+* `-k`,`--keySize <arg>`                        Number of bits for generated keys (default: `2048`)
+* `-K`,`--keyPassword <arg>`                    Key password to use. Must either be one value or one for each host (auto-generate if not specified)
+* `-n`,`--hostnames <arg>`                      Comma separated list of hostnames
+* `--nifiDnPrefix <arg>`                        String to prepend to hostname(s) when determining DN (default: `CN=`)
+* `--nifiDnSuffix <arg>`                        String to append to hostname(s) when determining DN (default: `, OU=NIFI`)
+* `-o`,`--outputDirectory <arg>`                The directory to output keystores, truststore, config files (default: `../bin`)
+* `-O`,`--isOverwrite`                          Overwrite existing host output
+* `-P`,`--trustStorePassword <arg>`             Keystore password to use. Must either be one value or one for each host (auto-generate if not specified)
+* `-s`,`--signingAlgorithm <arg>`               Algorithm to use for signing certificates (default: `SHA256WITHRSA`)
+* `-S`,`--keyStorePassword <arg>`               Keystore password to use. Must either be one value or one for each host (auto-generate if not specified)
 * `--subjectAlternativeNames <arg>`             Comma-separated list of domains to use as Subject Alternative Names in the certificate
-* `-T`,`--keyStoreType <arg>`                   The type of keyStores to generate. (default: jks)
+* `-T`,`--keyStoreType <arg>`                   The type of keystores to generate (default: `jks`)
 
 
 Hostname Patterns:
 
-* Square brackets can be used in order to easily specify a range of hostnames. Example: [01-20]
-* Parentheses can be used in order to specify that more than one NiFi instance will run on the given host(s). Example: (5)
+* Square brackets can be used in order to easily specify a range of hostnames. Example: `[01-20]`
+* Parentheses can be used in order to specify that more than one NiFi instance will run on the given host(s). Example: `(5)`
 
 Examples:
 
@@ -230,51 +230,51 @@ bin/tls-toolkit.sh standalone -n 'nifi[01-10].subdomain[1-4].domain(2)' -C 'CN=u
 
 Client/Server
 ^^^^^^^^^^^^^
-Client/Server mode relies on a long-running Certificate Authority (CA) to issue certificates.  The CA can be stopped when you’re not bringing nodes online.
+Client/Server mode relies on a long-running Certificate Authority (CA) to issue certificates. The CA can be stopped when you’re not bringing nodes online.
 
 
 ===== Server
 
 The CA server is invoked by running `./bin/tls-toolkit.sh server -h` which prints the usage information along with descriptions of options that can be specified.
 
-You can use the following command line options with the `tls-toolkit` in Server mode:
+You can use the following command line options with the `tls-toolkit` in server mode:
 
-* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys. (default: RSA)
-* `--configJsonIn <arg>`                        The place to read configuration info from (defaults to the value of configJson), implies useConfigJson if set. (default: configJson value)
-* `-d`,`--days <arg>`                           Number of days issued certificate should be valid for. (default: 1095)
-* `-D`,`--dn <arg>`                             The dn to use for the CA certificate (default: CN=YOUR_CA_HOSTNAME,OU=NIFI)
-* `-f`,`--configJson <arg>`                     The place to write configuration info (default: config.json)
-* `-F`,`--useConfigJson`                        Flag specifying that all configuration is read from configJson to facilitate automated use (otherwise configJson will only be written to.
-* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keyStore.
-* `-h`,`--help`                                 Print help and exit.
-* `-k`,`--keySize <arg>`                        Number of bits for generated keys. (default: 2048)
-* `-p`,`--PORT <arg>`                           The port for the Certificate Authority to listen on (default: 8443)
-* `-s`,`--signingAlgorithm <arg>`               Algorithm to use for signing certificates. (default: SHA256WITHRSA)
-* `-T`,`--keyStoreType <arg>`                   The type of keyStores to generate. (default: jks)
+* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys (default: `RSA`)
+* `--configJsonIn <arg>`                        The place to read configuration info from (defaults to the value of configJson), implies useConfigJson if set (default: `configJson` value)
+* `-d`,`--days <arg>`                           Number of days issued certificate should be valid for (default: `1095`)
+* `-D`,`--dn <arg>`                             The dn to use for the CA certificate (default: `CN=YOUR_CA_HOSTNAME,OU=NIFI`)
+* `-f`,`--configJson <arg>`                     The place to write configuration info (default: `config.json`)
+* `-F`,`--useConfigJson`                        Flag specifying that all configuration is read from `configJson` to facilitate automated use (otherwise `configJson` will only be written to)
+* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keystore
+* `-h`,`--help`                                 Print help and exit
+* `-k`,`--keySize <arg>`                        Number of bits for generated keys (default: `2048`)
+* `-p`,`--PORT <arg>`                           The port for the Certificate Authority to listen on (default: `8443`)
+* `-s`,`--signingAlgorithm <arg>`               Algorithm to use for signing certificates (default: `SHA256WITHRSA`)
+* `-T`,`--keyStoreType <arg>`                   The type of keystores to generate (default: `jks`)
 * `-t`,`--token <arg>`                          The token to use to prevent MITM (required and must be same as one used by clients)
 
 ===== Client
 
-The client can be used to request new Certificates from the CA.  The client utility generates a keypair and Certificate Signing Request (CSR) and sends the CSR to the Certificate Authority.  The client is invoked by running `./bin/tls-toolkit.sh client -h` which prints the usage information along with descriptions of options that can be specified.
+The client can be used to request new Certificates from the CA. The client utility generates a keypair and Certificate Signing Request (CSR) and sends the CSR to the Certificate Authority. The client is invoked by running `./bin/tls-toolkit.sh client -h` which prints the usage information along with descriptions of options that can be specified.
 
-You can use the following command line options with the `tls-toolkit` in Client mode:
+You can use the following command line options with the `tls-toolkit` in client mode:
 
-* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys. (default: RSA)
-* `-c`,`--certificateAuthorityHostname <arg>`   Hostname of NiFi Certificate Authority (default: localhost)
-* `-C`,`--certificateDirectory <arg>`           The file to write the CA certificate to (default: .)
-* `--configJsonIn <arg>`                        The place to read configuration info from (defaults to the value of configJson), implies useConfigJson if set. (default: configJson value)
-* `-D`,`--dn <arg>`                             The dn to use for the client certificate (default: CN=Drew-Lim.local,OU=NIFI)
-* `-f`,`--configJson <arg>`                     The place to write configuration info (default: config.json)
-* `-F`,`--useConfigJson`                        Flag specifying that all configuration is read from configJson to facilitate automated use (otherwise configJson will only be written to.
-* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keyStore.
-* `-h`,`--help`                                 Print help and exit.
-* `-k`,`--keySize <arg>`                        Number of bits for generated keys. (default: 2048)
-* `-p`,`--PORT <arg>`                           The port to use to communicate with the Certificate Authority (default: 8443)
+* `-a`,`--keyAlgorithm <arg>`                   Algorithm to use for generated keys (default: `RSA`)
+* `-c`,`--certificateAuthorityHostname <arg>`   Hostname of NiFi Certificate Authority (default: `localhost`)
+* `-C`,`--certificateDirectory <arg>`           The directory to write the CA certificate (default: `.`)
+* `--configJsonIn <arg>`                        The place to read configuration info from, implies `useConfigJson` if set (default: `configJson` value)
+* `-D`,`--dn <arg>`                             The DN to use for the client certificate (default: `CN=<localhost name>,OU=NIFI`) (this is auto-populated by the tool)
+* `-f`,`--configJson <arg>`                     The place to write configuration info (default: `config.json`)
+* `-F`,`--useConfigJson`                        Flag specifying that all configuration is read from `configJson` to facilitate automated use (otherwise `configJson` will only be written to)
+* `-g`,`--differentKeyAndKeystorePasswords`     Use different generated password for the key and the keystore
+* `-h`,`--help`                                 Print help and exit
+* `-k`,`--keySize <arg>`                        Number of bits for generated keys (default: `2048`)
+* `-p`,`--PORT <arg>`                           The port to use to communicate with the Certificate Authority (default: `8443`)
 * `--subjectAlternativeNames <arg>`             Comma-separated list of domains to use as Subject Alternative Names in the certificate
-* `-T`,`--keyStoreType <arg>`                   The type of keyStores to generate. (default: jks)
+* `-T`,`--keyStoreType <arg>`                   The type of keystores to generate (default: `jks`)
 * `-t`,`--token <arg>`                          The token to use to prevent MITM (required and must be same as one used by CA)
 
-After running the client you will have the CA’s certificate, a keystore, a truststore, and a config.json with information about them as well as their passwords.
+After running the client you will have the CA’s certificate, a keystore, a truststore, and a `config.json` with information about them as well as their passwords.
 
 For a client certificate that can be easily imported into the browser, specify: `-T PKCS12`
 
