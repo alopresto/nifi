@@ -89,7 +89,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     private final String DEFAULT_LEGACY_SENSITIVE_PROPS_KEY = "nififtw!"
 
     @BeforeClass
-    public static void setUpOnce() throws Exception {
+    static void setUpOnce() throws Exception {
         Security.addProvider(new BouncyCastleProvider())
 
         logger.metaClass.methodMissing = { String name, args ->
@@ -100,17 +100,17 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @AfterClass
-    public static void tearDownOnce() throws Exception {
+    static void tearDownOnce() throws Exception {
         File tmpDir = new File("target/tmp/")
         tmpDir.delete()
     }
 
     @Before
-    public void setUp() throws Exception {
+    void setUp() throws Exception {
     }
 
     @After
-    public void tearDown() throws Exception {
+    void tearDown() throws Exception {
         TestAppender.reset()
     }
 
@@ -347,11 +347,12 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
 
         // Act
         flags.each { String arg ->
-            tool.parse([arg, authorizersPath, "-a", authorizersPath] as String[])
+            final outputAuthorizersPath = authorizersPath.reverse()
+            tool.parse([arg, outputAuthorizersPath, "-a", authorizersPath] as String[])
             logger.info("Parsed output authorizers.xml location: ${tool.outputAuthorizersPath}")
 
             // Assert
-            assert tool.outputAuthorizersPath == authorizersPath
+            assert tool.outputAuthorizersPath == outputAuthorizersPath
         }
     }
 
@@ -1517,7 +1518,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String[] args = ["-n", inputPropertiesFile.path, "-b", bootstrapFile.path, "-o", outputPropertiesFile.path, "-k", KEY_HEX]
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -1549,7 +1550,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -1599,7 +1600,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String[] args = ["-n", inputPropertiesFile.path, "-b", bootstrapFile.path, "-o", outputPropertiesFile.path, "-p", PASSWORD]
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -1631,7 +1632,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -1693,7 +1694,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         outputPropertiesFile.text = outputPropertiesFile.text.replace("nifi.sensitive.props.additional.keys=", "nifi.sensitive.props.additional.keys=nifi.ui.banner.text")
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -1725,7 +1726,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         logger.info("Invoked #main second time with ${args.join(" ")}")
         ConfigEncryptionTool.main(args)
@@ -1812,7 +1813,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         logger.info("Running [${scenario}] with args: ${localArgs}")
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 assert outputPropertiesFile.exists()
                 final List<String> updatedPropertiesLines = outputPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
@@ -1845,7 +1846,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         logger.info("Migrating key (${scenario}) with ${localArgs.join(" ")}")
         ConfigEncryptionTool.main(localArgs as String[])
@@ -1859,7 +1860,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
      * Ideally all of the combination tests would be a single test with iterative argument lists, but due to the System.exit(), it can only be captured once per test.
      */
     @Test
-    public void testShouldMigrateFromPasswordToPassword() {
+    void testShouldMigrateFromPasswordToPassword() {
         // Arrange
         String scenario = "password to password"
         def args = ["-w", PASSWORD, "-p", PASSWORD.reverse()]
@@ -1873,7 +1874,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldMigrateFromPasswordToKey() {
+    void testShouldMigrateFromPasswordToKey() {
         // Arrange
         String scenario = "password to key"
         def args = ["-w", PASSWORD, "-k", KEY_HEX]
@@ -1887,7 +1888,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldMigrateFromKeyToPassword() {
+    void testShouldMigrateFromKeyToPassword() {
         // Arrange
         String scenario = "key to password"
         def args = ["-e", PASSWORD_KEY_HEX, "-p", PASSWORD.reverse()]
@@ -1901,7 +1902,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldMigrateFromKeyToKey() {
+    void testShouldMigrateFromKeyToKey() {
         // Arrange
         String scenario = "key to key"
         def args = ["-e", PASSWORD_KEY_HEX, "-k", KEY_HEX]
@@ -2442,6 +2443,52 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     }
 
     @Test
+    void testWriteLoginIdentityProvidersShouldHandleUnreadableFile() {
+        // Arrange
+        String providersPath = "src/test/resources/login-identity-providers-populated.xml"
+        File providersFile = new File(providersPath)
+
+        setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-login-identity-providers.xml")
+        workingFile.delete()
+        Files.copy(providersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        tool.loginIdentityProvidersPath = workingFile.path
+        String writtenPath = "target/tmp/tmp-login-identity-providers-written.xml"
+        tool.outputLoginIdentityProvidersPath = writtenPath
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        String plainXml = workingFile.text
+        String encryptedXml = tool.encryptLoginIdentityProviders(plainXml, KEY_HEX)
+        logger.info("Encrypted XML: \n${encryptedXml}")
+
+        tool.loginIdentityProviders = encryptedXml
+
+        // Remove the working file (simulating an external process)
+        workingFile.delete()
+
+        // Act
+        tool.writeLoginIdentityProviders()
+
+        // Assert
+        File writtenFile = new File(writtenPath)
+        List<String> writtenLines = writtenFile.readLines()
+        logger.info("Written lines: \n${writtenLines.join("\n")}")
+
+        // The output should contain only what was explicitly serialized in this operation (no pre-existing content)
+        assert writtenLines.join("\n") == encryptedXml.trim()
+
+        // Ensure the replacement actually occurred
+        assert writtenLines.findAll { it =~ "encryption=" }.size() == LIP_PASSWORD_LINE_COUNT
+    }
+
+    @Test
     void testShouldPerformFullOperationForLoginIdentityProviders() {
         // Arrange
         exit.expectSystemExitWithStatus(0)
@@ -2474,7 +2521,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final String updatedXmlContent = outputLIPFile.text
                 logger.info("Updated XML content: ${updatedXmlContent}")
 
@@ -2511,7 +2558,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -2557,7 +2604,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(PASSWORD_KEY_HEX)
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final String updatedXmlContent = outputLIPFile.text
                 logger.info("Updated XML content: ${updatedXmlContent}")
 
@@ -2592,7 +2639,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3040,7 +3087,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         ConfigEncryptionTool tool = new ConfigEncryptionTool()
         tool.isVerbose = true
 
-        tool.keyHex = KEY_HEX_128
+        tool.keyHex = KEY_HEX
 
         def lines = workingFile.readLines()
         logger.info("Read lines: \n${lines.join("\n")}")
@@ -3073,7 +3120,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         ConfigEncryptionTool tool = new ConfigEncryptionTool()
         tool.isVerbose = true
 
-        tool.keyHex = KEY_HEX_128
+        tool.keyHex = KEY_HEX
 
         def lines = workingFile.readLines()
         logger.info("Read lines: \n${lines.join("\n")}")
@@ -3092,6 +3139,52 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
             it.renderedMessage =~ "No provider element with class org.apache.nifi.ldap.tenants.LdapUserGroupProvider found in XML content; " +
                     "the file could be empty or the element may be missing or commented out"
         }
+    }
+
+    @Test
+    void testWriteAuthorizersShouldHandleUnreadableFile() {
+        // Arrange
+        String authorizersPath = "src/test/resources/authorizers-populated.xml"
+        File authorizersFile = new File(authorizersPath)
+
+        setupTmpDir()
+
+        File workingFile = new File("target/tmp/tmp-authorizers.xml")
+        workingFile.delete()
+        Files.copy(authorizersFile.toPath(), workingFile.toPath())
+        ConfigEncryptionTool tool = new ConfigEncryptionTool()
+        tool.isVerbose = true
+
+        tool.keyHex = KEY_HEX
+        tool.authorizersPath = workingFile.path
+        String writtenPath = "target/tmp/tmp-authorizers-written.xml"
+        tool.outputAuthorizersPath = writtenPath
+
+        def lines = workingFile.readLines()
+        logger.info("Read lines: \n${lines.join("\n")}")
+
+        String plainXml = workingFile.text
+        String encryptedXml = tool.encryptAuthorizers(plainXml, KEY_HEX)
+        logger.info("Encrypted XML: \n${encryptedXml}")
+
+        tool.authorizers = encryptedXml
+
+        // Remove the working file (simulating an external process)
+        workingFile.delete()
+
+        // Act
+        tool.writeAuthorizers()
+
+        // Assert
+        File writtenFile = new File(writtenPath)
+        List<String> writtenLines = writtenFile.readLines()
+        logger.info("Written lines: \n${writtenLines.join("\n")}")
+
+        // The output should contain only what was explicitly serialized in this operation (no pre-existing content)
+        assert writtenLines.join("\n") == encryptedXml.trim()
+
+        // Ensure the replacement actually occurred
+        assert writtenLines.findAll { it =~ "encryption=" }.size() == AUTHORIZERS_PASSWORD_LINE_COUNT
     }
 
     @Test
@@ -3127,7 +3220,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final String updatedXmlContent = outputAuthorizersFile.text
                 logger.info("Updated XML content: ${updatedXmlContent}")
 
@@ -3164,7 +3257,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3210,7 +3303,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(PASSWORD_KEY_HEX)
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final String updatedXmlContent = outputAuthorizersFile.text
                 logger.info("Updated XML content: ${updatedXmlContent}")
 
@@ -3245,7 +3338,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3318,7 +3411,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         AESSensitivePropertyProvider spp = new AESSensitivePropertyProvider(KEY_HEX)
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
 
                 /*** NiFi Properties Assertions ***/
 
@@ -3405,7 +3498,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                 bootstrapFile.deleteOnExit()
                 tmpDir.deleteOnExit()
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3522,7 +3615,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String[] args = ["-n", workingNiFiPropertiesFile.path, "-f", workingFlowXmlFile.path, "-x", "-v", "-s", newFlowPassword]
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = workingNiFiPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -3565,7 +3658,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                     assert ConfigEncryptionTool.decryptFlowElement(it, newFlowPassword) == "thisIsABadPassword"
                 }
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3630,7 +3723,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String[] args = ["-n", workingNiFiPropertiesFile.path, "-f", workingFlowXmlFile.path, "-x", "-v", "-s", newFlowPassword]
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = workingNiFiPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -3670,7 +3763,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                     assert ConfigEncryptionTool.decryptFlowElement(it, newFlowPassword) == "thisIsABadPassword"
                 }
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -3746,7 +3839,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
         String[] args = ["-n", workingNiFiPropertiesFile.path, "-f", workingFlowXmlFile.path, "-b", bootstrapFile.path, "-x", "-v", "-s", newFlowPassword]
 
         exit.checkAssertionAfterwards(new Assertion() {
-            public void checkAssertion() {
+            void checkAssertion() {
                 final List<String> updatedPropertiesLines = workingNiFiPropertiesFile.readLines()
                 logger.info("Updated nifi.properties:")
                 logger.info("\n" * 2 + updatedPropertiesLines.join("\n"))
@@ -3811,7 +3904,7 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
                     assert ConfigEncryptionTool.decryptFlowElement(it, newFlowPassword) == "thisIsABadPassword"
                 }
             }
-        });
+        })
 
         // Act
         ConfigEncryptionTool.main(args)
@@ -4346,19 +4439,19 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
     // TODO: Test with 128/256-bit available
 }
 
-public class TestAppender extends AppenderSkeleton {
-    static final List<LoggingEvent> events = new ArrayList<>();
+class TestAppender extends AppenderSkeleton {
+    static final List<LoggingEvent> events = new ArrayList<>()
 
     @Override
     protected void append(LoggingEvent e) {
         synchronized (events) {
-            events.add(e);
+            events.add(e)
         }
     }
 
-    public static void reset() {
+    static void reset() {
         synchronized (events) {
-            events.clear();
+            events.clear()
         }
     }
 

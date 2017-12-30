@@ -189,11 +189,11 @@ class ConfigEncryptionTool {
     private final String header
 
 
-    public ConfigEncryptionTool() {
+    ConfigEncryptionTool() {
         this(DEFAULT_DESCRIPTION)
     }
 
-    public ConfigEncryptionTool(String description) {
+    ConfigEncryptionTool(String description) {
         this.header = buildHeader(description)
         this.options = new Options()
         options.addOption("h", HELP_ARG, false, "Prints this usage message")
@@ -224,7 +224,7 @@ class ConfigEncryptionTool {
      *
      * @param errorMessage the optional error message
      */
-    public void printUsage(String errorMessage) {
+    void printUsage(String errorMessage) {
         if (errorMessage) {
             System.out.println(errorMessage)
             System.out.println()
@@ -236,8 +236,8 @@ class ConfigEncryptionTool {
     }
 
     protected void printUsageAndThrow(String errorMessage, ExitCode exitCode) throws CommandLineParseException {
-        printUsage(errorMessage);
-        throw new CommandLineParseException(errorMessage, exitCode);
+        printUsage(errorMessage)
+        throw new CommandLineParseException(errorMessage, exitCode)
     }
 
     // TODO: Refactor component steps into methods
@@ -479,7 +479,7 @@ class ConfigEncryptionTool {
      *
      * @return 128 , [192, 256]
      */
-    public static List<Integer> getValidKeyLengths() {
+    static List<Integer> getValidKeyLengths() {
         Cipher.getMaxAllowedKeyLength("AES") > 128 ? [128, 192, 256] : [128]
     }
 
@@ -520,19 +520,19 @@ class ConfigEncryptionTool {
         File loginIdentityProvidersFile
         if (loginIdentityProvidersPath && (loginIdentityProvidersFile = new File(loginIdentityProvidersPath)).exists()) {
             try {
-                String xmlContent = loginIdentityProvidersFile.text
                 List<String> lines = loginIdentityProvidersFile.readLines()
-                logger.info("Loaded LoginIdentityProviders content (${lines.size()} lines)")
+                String xmlContent = lines.join("\n")
+                logger.info("Loaded login identity providers content (${lines.size()} lines)")
                 String decryptedXmlContent = decryptLoginIdentityProviders(xmlContent, existingKeyHex)
                 return decryptedXmlContent
             } catch (RuntimeException e) {
                 if (isVerbose) {
                     logger.error("Encountered an error", e)
                 }
-                throw new IOException("Cannot load LoginIdentityProviders from [${loginIdentityProvidersPath}]", e)
+                throw new IOException("Cannot load login identity providers from [${loginIdentityProvidersPath}]", e)
             }
         } else {
-            printUsageAndThrow("Cannot load LoginIdentityProviders from [${loginIdentityProvidersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+            printUsageAndThrow("Cannot load login identity providers from [${loginIdentityProvidersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
         }
     }
 
@@ -548,19 +548,19 @@ class ConfigEncryptionTool {
         File authorizersFile
         if (authorizersPath && (authorizersFile = new File(authorizersPath)).exists()) {
             try {
-                String xmlContent = authorizersFile.text
                 List<String> lines = authorizersFile.readLines()
-                logger.info("Loaded Authroizers content (${lines.size()} lines)")
+                String xmlContent = lines.join("\n")
+                logger.info("Loaded authorizers content (${lines.size()} lines)")
                 String decryptedXmlContent = decryptAuthorizers(xmlContent, existingKeyHex)
                 return decryptedXmlContent
             } catch (RuntimeException e) {
                 if (isVerbose) {
                     logger.error("Encountered an error", e)
                 }
-                throw new IOException("Cannot load Authorizers from [${authorizersPath}]", e)
+                throw new IOException("Cannot load authorizers from [${authorizersPath}]", e)
             }
         } else {
-            printUsageAndThrow("Cannot load Authorizers from [${authorizersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
+            printUsageAndThrow("Cannot load authorizers from [${authorizersPath}]", ExitCode.ERROR_READING_NIFI_PROPERTIES)
         }
     }
 
@@ -571,8 +571,7 @@ class ConfigEncryptionTool {
      * @throw IOException if the flow.xml.gz file cannot be read
      */
     private String loadFlowXml() throws IOException {
-        File flowXmlFile
-        if (flowXmlPath && (flowXmlFile = new File(flowXmlPath)).exists()) {
+        if (flowXmlPath && (new File(flowXmlPath)).exists()) {
             try {
                 new FileInputStream(flowXmlPath).withCloseable {
                     new GZIPInputStream(it).withCloseable {
@@ -839,6 +838,7 @@ class ConfigEncryptionTool {
             }
 
             passwords.each { password ->
+                // TODO: Capture the raw password, and only display it in the log if the decrypted value is different (to avoid possibly printing an incorrectly provided plaintext password)
                 if (isVerbose) {
                     logger.info("Attempting to decrypt ${password.text()}")
                 }
@@ -914,7 +914,7 @@ class ConfigEncryptionTool {
 
             if (passwords.isEmpty()) {
                 if (isVerbose) {
-                    logger.info("No unencrypted password property elements found in login-identity-providers.xml")
+                    logger.info("No unencrypted password property elements found in authorizers.xml")
                 }
                 return plainXml
             }
@@ -937,7 +937,7 @@ class ConfigEncryptionTool {
             if (isVerbose) {
                 logger.error("Encountered exception", e)
             }
-            printUsageAndThrow("Cannot encrypt login identity providers XML content", ExitCode.SERVICE_ERROR)
+            printUsageAndThrow("Cannot encrypt authorizers XML content", ExitCode.SERVICE_ERROR)
         }
     }
 
@@ -1076,6 +1076,8 @@ class ConfigEncryptionTool {
                 if (loginIdentityProvidersFile.exists() && loginIdentityProvidersFile.canRead()) {
                     // Instead of just writing the XML content to a file, this method attempts to maintain the structure of the original file and preserves comments
                     updatedXmlContent = serializeLoginIdentityProvidersAndPreserveFormat(loginIdentityProviders, loginIdentityProvidersFile).join("\n")
+                } else {
+                    updatedXmlContent = loginIdentityProviders
                 }
 
                 // Write the updated values back to the file
@@ -1109,6 +1111,8 @@ class ConfigEncryptionTool {
                 if (authorizersFile.exists() && authorizersFile.canRead()) {
                     // Instead of just writing the XML content to a file, this method attempts to maintain the structure of the original file and preserves comments
                     updatedXmlContent = serializeAuthorizersAndPreserveFormat(authorizers, authorizersFile).join("\n")
+                } else {
+                    updatedXmlContent = authorizers
                 }
 
                 // Write the updated values back to the file
@@ -1312,7 +1316,7 @@ class ConfigEncryptionTool {
      *
      * @param args the command-line arguments
      */
-    public static void main(String[] args) {
+    static void main(String[] args) {
         Security.addProvider(new BouncyCastleProvider())
 
         ConfigEncryptionTool tool = new ConfigEncryptionTool()
