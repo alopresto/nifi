@@ -30,6 +30,9 @@ import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
 import org.apache.nifi.util.NiFiProperties
 import org.apache.nifi.util.console.TextDevice
 import org.apache.nifi.util.console.TextDevices
+import org.bouncycastle.crypto.digests.SHA256Digest
+import org.bouncycastle.crypto.macs.HMac
+import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.util.encoders.Hex
 import org.junit.After
@@ -53,9 +56,11 @@ import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.PBEParameterSpec
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.security.KeyException
+import java.security.MessageDigest
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -5770,6 +5775,67 @@ class ConfigEncryptionToolTest extends GroovyTestCase {
             assert msg == "When '-c'/'--translateCli' is specified, '-n'/'--niFiProperties' is required (and '-b'/'--bootstrapConf' is required if the properties are encrypted)"
             assert systemOutRule.getLog().contains("usage: org.apache.nifi.properties.ConfigEncryptionTool [")
         }
+    }
+
+    @Test
+    void testShouldProvideReferenceImplementationForAmbariHashing() {
+        // Arrange
+        String oldMasterKeyHex = "0123456789ABCDEFFEDCBA9876543210"
+        String keystorePassword = "passwordpassword"
+        logger.info("Old master key: ${oldMasterKeyHex}")
+        logger.info("Keystore password: ${keystorePassword}")
+
+        // Act
+        String oldDerivedKeyHex = deriveHmacKeyFromMasterKey(oldMasterKeyHex)
+        logger.info("Old derived key: ${oldDerivedKeyHex}")
+
+        String oldHashedKeystorePassword = hmacSha256(oldMasterKeyHex, keystorePassword)
+        logger.info("Old hashed keystore password: ${oldHashedKeystorePassword}")
+
+        String newMasterKeyHex = "00" * 16
+        logger.info("New master key: ${newMasterKeyHex}")
+
+        String newDerivedKeyHex = deriveHmacKeyFromMasterKey(newMasterKeyHex)
+        logger.info("New derived key: ${newDerivedKeyHex}")
+
+        String newHashedKeystorePassword = hmacSha256(newMasterKeyHex, keystorePassword)
+        logger.info("New hashed keystore password: ${newHashedKeystorePassword}")
+
+        // Assert
+        assert oldDerivedKeyHex == "4582725b4e904c9fb7c4072b2e4665fb"
+        assert newDerivedKeyHex == "0b6cbac838dfe7f47ea1bd0df00ec282"
+
+        assert oldHashedKeystorePassword == "f0f20ecc877528309e936d637a595af70b3b82ed6283764ecfad57e8b1f3a609"
+        assert newHashedKeystorePassword == "4d3bc6f390fdfe0020da2dee51efbed02219b6e6905a5d82bad9515f4cbce117"
+    }
+
+    /**
+     * Returns the {@code HMAC/SHA-256(SHA-512(MK)[0:32], value)} result in hex. Reference implementation for Ambari work to ensure compatibility.
+     *
+     * @param masterKeyHex the master key value encoded in hexadecimal
+     * @param value the value to protect
+     * @return the hashed value
+     */
+    private String hmacSha256(String masterKeyHex, String value) {
+        String derivedKeyHex = deriveHmacKeyFromMasterKey(masterKeyHex)
+
+        byte[] output = new byte[32]
+        HMac hmacSha256 = new HMac(new SHA256Digest())
+        hmacSha256.init(new KeyParameter(Hex.decode(derivedKeyHex)))
+        hmacSha256.update(value.getBytes(StandardCharsets.UTF_8), 0, value.size())
+        hmacSha256.doFinal(output, 0)
+        Hex.toHexString(output)
+    }
+
+    /**
+     * Returns a derived key from the master key. The master key is hashed using SHA-512, and the first 32 hex characters (16 bytes, 128 bits) are returned.
+     * @param masterKeyHex the master key in hex
+     * @return the derived key in hex
+     */
+    private static String deriveHmacKeyFromMasterKey(String masterKeyHex) {
+        MessageDigest sha512 = MessageDigest.getInstance("SHA-512")
+        sha512.update(Hex.decode(masterKeyHex))
+        Hex.toHexString(sha512.digest())[0..31]
     }
 
 // TODO: Test with 128/256-bit available
