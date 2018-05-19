@@ -194,11 +194,6 @@
             <version>1.16.0</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>at.favre.lib</groupId>
-            <artifactId>hkdf</artifactId>
-            <version>1.0.0</version>
-        </dependency>
     </dependencies>
 
     <build>
