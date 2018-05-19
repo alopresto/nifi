@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-
 import org.apache.nifi.controller.queue.DropFlowFileStatus;
 import org.apache.nifi.controller.queue.FlowFileQueue;
 import org.apache.nifi.controller.queue.ListFlowFileStatus;
@@ -58,6 +57,11 @@ public class DummyFlowFileQueue implements FlowFileQueue {
     @Override
     public void purgeSwapFiles() {
 
+    }
+
+    @Override
+    public int getSwapFileCount() {
+        return 0;
     }
 
     @Override
@@ -106,6 +110,16 @@ public class DummyFlowFileQueue implements FlowFileQueue {
     }
 
     @Override
+    public QueueSize getActiveQueueSize() {
+        return null;
+    }
+
+    @Override
+    public QueueSize getSwapQueueSize() {
+        return null;
+    }
+
+    @Override
     public void acknowledge(FlowFileRecord flowFile) {
 
     }
@@ -117,6 +131,16 @@ public class DummyFlowFileQueue implements FlowFileQueue {
 
     @Override
     public boolean isFull() {
+        return false;
+    }
+
+    @Override
+    public boolean isAnyActiveFlowFilePenalized() {
+        return false;
+    }
+
+    @Override
+    public boolean isAllActiveFlowFilesPenalized() {
         return false;
     }
 

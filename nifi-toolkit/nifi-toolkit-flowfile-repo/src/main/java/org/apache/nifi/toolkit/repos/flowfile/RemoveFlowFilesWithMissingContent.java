@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
 import org.apache.nifi.controller.FileSystemSwapManager;
 import org.apache.nifi.controller.queue.FlowFileQueue;
 import org.apache.nifi.controller.repository.FlowFileRecord;
@@ -81,12 +80,15 @@ public class RemoveFlowFilesWithMissingContent {
             return;
         }
 
-        final NiFiProperties nifiProps = new NiFiPropertiesLoader().load(propsFile);
+        // Reads the master key from the bootstrap.conf file and uses it to decrypt any protected properties
+        final String dirContainingNiFiProperties = propsFile.getParent();
+        final String MASTER_KEY_HEX = NiFiPropertiesLoader.extractKeyFromBootstrapFile(dirContainingNiFiProperties + "/bootstrap.conf");
+        final NiFiProperties nifiProps = NiFiPropertiesLoader.withKey(MASTER_KEY_HEX).load(propsFile);
 
         // Verify Directories specified
         final File originalDir = new File(nifiProps.getProperty("nifi.flowfile.repository.directory"));
         final Map<String, File> contentDirs = nifiProps.getPropertyKeys().stream()
-            .map(key -> key)
+            // .map(key -> key)
             .filter(key -> key.startsWith("nifi.content.repository.directory."))
             .collect(Collectors.toMap(
                 key -> substringAfter(key, "nifi.content.repository.directory."),
