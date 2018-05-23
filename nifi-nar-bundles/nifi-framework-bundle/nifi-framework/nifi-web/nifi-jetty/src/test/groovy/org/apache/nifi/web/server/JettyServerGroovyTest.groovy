@@ -21,6 +21,7 @@ import org.apache.log4j.spi.LoggingEvent
 import org.apache.nifi.bundle.Bundle
 import org.apache.nifi.properties.StandardNiFiProperties
 import org.apache.nifi.util.NiFiProperties
+import org.apache.nifi.web.server.tls.DefaultTlsConfiguration
 import org.apache.nifi.web.server.tls.TlsConfiguration
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.eclipse.jetty.server.Connector
@@ -185,6 +186,64 @@ class JettyServerGroovyTest extends GroovyTestCase {
     final int EXPECTED_CS_COUNT = EXPECTED_CS.size()
     final List<String> EXPECTED_PROTOCOLS = ["TLSv1", "TLSv1.1", "TLSv1.2"]
     final int EXPECTED_PROTOCOLS_COUNT = EXPECTED_PROTOCOLS.size()
+    final List<String> EXPECTED_DISABLED_CS = [
+            "SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
+            "SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
+            "SSL_DHE_DSS_WITH_DES_CBC_SHA",
+            "SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+            "SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+            "SSL_DHE_RSA_WITH_DES_CBC_SHA",
+            "SSL_DH_anon_EXPORT_WITH_DES40_CBC_SHA",
+            "SSL_DH_anon_WITH_3DES_EDE_CBC_SHA",
+            "SSL_DH_anon_WITH_DES_CBC_SHA",
+            "SSL_RSA_EXPORT_WITH_DES40_CBC_SHA",
+            "SSL_RSA_WITH_3DES_EDE_CBC_SHA",
+            "SSL_RSA_WITH_DES_CBC_SHA",
+            "SSL_RSA_WITH_NULL_MD5",
+            "SSL_RSA_WITH_NULL_SHA",
+            "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
+            "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
+            "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+            "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+            "TLS_DH_anon_WITH_AES_128_CBC_SHA",
+            "TLS_DH_anon_WITH_AES_128_CBC_SHA256",
+            "TLS_DH_anon_WITH_AES_128_GCM_SHA256",
+            "TLS_DH_anon_WITH_AES_256_CBC_SHA",
+            "TLS_DH_anon_WITH_AES_256_CBC_SHA256",
+            "TLS_DH_anon_WITH_AES_256_GCM_SHA384",
+            "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+            "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+            "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
+            "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+            "TLS_ECDHE_RSA_WITH_NULL_SHA",
+            "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
+            "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
+            "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
+            "TLS_ECDH_ECDSA_WITH_NULL_SHA",
+            "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
+            "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
+            "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
+            "TLS_ECDH_RSA_WITH_NULL_SHA",
+            "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
+            "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
+            "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
+            "TLS_ECDH_anon_WITH_NULL_SHA",
+            "TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5",
+            "TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA",
+            "TLS_KRB5_WITH_3DES_EDE_CBC_MD5",
+            "TLS_KRB5_WITH_3DES_EDE_CBC_SHA",
+            "TLS_KRB5_WITH_DES_CBC_MD5",
+            "TLS_KRB5_WITH_DES_CBC_SHA",
+            "TLS_RSA_WITH_AES_128_CBC_SHA",
+            "TLS_RSA_WITH_AES_256_CBC_SHA",
+            "TLS_RSA_WITH_NULL_SHA256",
+    ]
+    final int EXPECTED_DISABLED_CS_COUNT = EXPECTED_DISABLED_CS.size()
+    final List<String> EXPECTED_DISABLED_PROTOCOLS = ["SSLv2Hello", "SSLv3"]
+    final int EXPECTED_DISABLED_PROTOCOLS_COUNT = EXPECTED_DISABLED_PROTOCOLS.size()
 
     @BeforeClass
     static void setUpOnce() throws Exception {
@@ -344,7 +403,7 @@ class JettyServerGroovyTest extends GroovyTestCase {
         JettyServer jetty = new JettyServer(internalServer, httpsProps)
 
         // Act
-        jetty.configureHttpsConnector(internalServer, new HttpConfiguration())
+        jetty.configureHttpsConnector(internalServer, new HttpConfiguration(), new DefaultTlsConfiguration())
         List<Connector> connectors = Arrays.asList(internalServer.connectors)
 
         // Assert
@@ -367,21 +426,46 @@ class JettyServerGroovyTest extends GroovyTestCase {
         Server internalServer = new Server()
         JettyServer jetty = new JettyServer(internalServer, httpsProps)
 
-        // Mock and inject the TLS configuration
+        // Mock and inject the TLS configuration and provider
+        final def ENABLED_CIPHER_SUITES = ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]
+        final def ENABLED_PROTOCOLS = ["TLSv1.2"]
         TlsConfiguration mockTls = [
-                getCipherSuites: { -> ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"] },
-                getProtocols   : { -> ["TLSv1.2"] }
+                getCipherSuites        : { -> ENABLED_CIPHER_SUITES },
+                getCipherSuitesForJetty: { -> ENABLED_CIPHER_SUITES.toArray(new String[0]) },
+                getProtocols           : { -> ENABLED_PROTOCOLS },
+                getProtocolsForJetty   : { -> ENABLED_PROTOCOLS.toArray(new String[0]) }
         ] as TlsConfiguration
-        jetty.tlsConfiguration = mockTls
+//        TlsConfigurationProvider mockTlsProvider = [
+//                getConfiguration: { -> mockTls }
+//        ] as DefaultTlsConfigurationProvider
+//
+//        jetty.tlsConfigurationProvider = mockTlsProvider
 
         // Act
-        jetty.configureHttpsConnector(internalServer, new HttpConfiguration())
+        jetty.configureHttpsConnector(internalServer, new HttpConfiguration(), mockTls)
         List<Connector> connectors = Arrays.asList(internalServer.connectors)
 
         // Assert
         ServerConnector connector = connectors.first() as ServerConnector
         assert connector.host == "secure.host.com"
-        // TODO: Determine how to get cipher suites from connector or server
+
+        List<String> enabledCipherSuites = getEnabledCipherSuitesFromConnectorDump(getConnectorDump(connector))
+        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(",")}")
+        assert enabledCipherSuites == ENABLED_CIPHER_SUITES
+
+        List<String> enabledProtocols = getEnabledProtocolsFromConnectorDump(getConnectorDump(connector))
+        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(",")}")
+        assert enabledProtocols == ENABLED_PROTOCOLS
+    }
+
+    /**
+     * Returns the internal properties of the Connector > SslConnectionFactory > SslContextFactory (the cipher suites and protocols).
+     *
+     * @param connector the {@code ServerConnector} to examine
+     * @return a List<String> of the output
+     */
+    private List<String> getConnectorDump(ServerConnector connector) {
+        connector.getDefaultConnectionFactory()._sslContextFactory.dump().split("\n")
     }
 
     private static ServerConnector createDefaultServerConnector() {
@@ -438,32 +522,150 @@ class JettyServerGroovyTest extends GroovyTestCase {
         assert enabledProtocols.size() == protocolCount
     }
 
-    List<String> getCipherSuitesFromConnectorDump(ServerConnector sc) {
-        def dump = sc?.dump()
+    @Test
+    void testShouldExtractDisabledCipherSuitesFromConnectorDump() {
+        // Arrange
+        List<String> dump = EXAMPLE_SC_DUMP.split("\n")
+        List<String> cipherSuites = EXPECTED_DISABLED_CS
+        int csCount = EXPECTED_DISABLED_CS_COUNT
 
-        return []
+//        ServerConnector sc = createDefaultServerConnector()
 
+        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
+
+        // Act
+        List<String> disabledCipherSuites = getDisabledCipherSuitesFromConnectorDump(dump)
+        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.join(",")}")
+
+        // Assert
+        assert disabledCipherSuites == cipherSuites
+        assert disabledCipherSuites.size() == csCount
+    }
+
+    @Test
+    void testShouldExtractDisabledProtocolsFromConnectorDump() {
+        // Arrange
+        List<String> dump = EXAMPLE_SC_DUMP.split("\n")
+        List<String> protocols = EXPECTED_DISABLED_PROTOCOLS
+        int protocolCount = EXPECTED_DISABLED_PROTOCOLS_COUNT
+
+//        ServerConnector sc = createDefaultServerConnector()
+
+        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
+
+        // Act
+        List<String> disabledProtocols = getDisabledProtocolsFromConnectorDump(dump)
+        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.join(",")}")
+
+        // Assert
+        assert disabledProtocols == protocols
+        assert disabledProtocols.size() == protocolCount
+    }
+
+    @Test
+    void testShouldExtractDisabledCipherSuitesWithReasonFromConnectorDump() {
+        // Arrange
+        List<String> dump = EXAMPLE_SC_DUMP.split("\n")
+        List<String> cipherSuites = EXPECTED_DISABLED_CS
+        int csCount = EXPECTED_DISABLED_CS_COUNT
+
+//        ServerConnector sc = createDefaultServerConnector()
+
+        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
+
+        // Act
+        Map<String, String> disabledCipherSuites = getDisabledCipherSuitesWithReasonFromConnectorDump(dump)
+        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.entrySet() join(",")}")
+
+        // Assert
+        assert disabledCipherSuites.keySet() == cipherSuites as Set
+        assert disabledCipherSuites.size() == csCount
+    }
+
+    @Test
+    void testShouldExtractDisabledProtocolsWithReasonFromConnectorDump() {
+        // Arrange
+        List<String> dump = EXAMPLE_SC_DUMP.split("\n")
+        List<String> protocols = EXPECTED_DISABLED_PROTOCOLS
+        int protocolCount = EXPECTED_DISABLED_PROTOCOLS_COUNT
+
+//        ServerConnector sc = createDefaultServerConnector()
+
+        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
+
+        // Act
+        Map<String, String> disabledProtocols = getDisabledProtocolsWithReasonFromConnectorDump(dump)
+        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.entrySet() join(",")}")
+
+        // Assert
+        assert disabledProtocols.keySet() == protocols as Set
+        assert disabledProtocols.size() == protocolCount
     }
 
     List<String> getEnabledCipherSuitesFromConnectorDump(List<String> dump) {
-        int indexOfCipherSuites = dump.findIndexOf { it =~ "Cipher Suite" }
-        int indexOfEnabledCipherSuites = dump.findIndexOf(indexOfCipherSuites) {
-            it =~ /Enabled \(size=/
-        }
-        int enabledCSCount = (dump[indexOfEnabledCipherSuites] =~ /size=(\d+)/)[0][1] as Integer
-        def enabledCS = dump[(indexOfEnabledCipherSuites + 1)..(indexOfEnabledCipherSuites + enabledCSCount)]
-        enabledCS.collect { it.replaceAll(/[\s\|\-\+]+/, '') }
+        getEnabledElements(dump, "Cipher Suite")
     }
 
-
     List<String> getEnabledProtocolsFromConnectorDump(List<String> dump) {
-        int indexOfProtocols = dump.findIndexOf { it =~ "Protocol Selections" }
-        int indexOfEnabledProtocols = dump.findIndexOf(indexOfProtocols) {
-            it =~ /Enabled \(size=/
+        getEnabledElements(dump, "Protocol Selections")
+    }
+
+    List<String> getDisabledCipherSuitesFromConnectorDump(List<String> dump) {
+        new ArrayList<>(getDisabledElements(dump, "Cipher Suite").keySet())
+    }
+
+    List<String> getDisabledProtocolsFromConnectorDump(List<String> dump) {
+        new ArrayList<>(getDisabledElements(dump, "Protocol Selections").keySet())
+    }
+
+    Map<String, String> getDisabledCipherSuitesWithReasonFromConnectorDump(List<String> dump) {
+        getDisabledElements(dump, "Cipher Suite")
+    }
+
+    Map<String, String> getDisabledProtocolsWithReasonFromConnectorDump(List<String> dump) {
+        getDisabledElements(dump, "Protocol Selections")
+    }
+
+    List<String> getEnabledElements(List<String> dump, String elementName) {
+        getElements(dump, elementName, true)
+    }
+
+    /**
+     * Returns a map of the disabled element and the "reason" it is disabled.
+     *
+     * Example:
+     *
+     * {@code ["SSLv3": "JreDisabled:java.security, ConfigExcluded:'SSLv3'"]}
+     * @param dump the output of {@code object.dump ( ) .split ( " \ n " )}
+     * @param elementName the elements requested (i.e. "Cipher Suite Selections" or "Protocol Selections")
+     * @return the map of requested elements (stripped of the hierarchy character indicators) and their reasons
+     */
+    Map<String, String> getDisabledElements(List<String> dump, String elementName) {
+        def strippedElements = getElements(dump, elementName, false)
+        def splitElements = strippedElements.collectEntries {
+            def e = it.split(" - ")
+            [(e[0]): e[1]]
         }
-        int enabledProtocolCount = (dump[indexOfEnabledProtocols] =~ /size=(\d+)/)[0][1] as Integer
-        def enabledProtocols = dump[(indexOfEnabledProtocols + 1)..(indexOfEnabledProtocols + enabledProtocolCount)]
-        enabledProtocols.collect { it.replaceAll(/[\s\|\-\+]+/, '') }
+        splitElements
+    }
+
+    /**
+     * Returns a list of the {@code elementName}s that are in the specified state ({@code Enabled} or {@code Disabled}).
+     *
+     * @param dump the output of {@code object.dump ( ) .split ( " \ n " )}
+     * @param elementName the elements requested (i.e. "Cipher Suite Selections" or "Protocol Selections")
+     * @param enabled true for enabled elements; false for disabled
+     * @return the list of requested elements (stripped of the hierarchy character indicators)
+     */
+    List<String> getElements(List<String> dump, String elementName, boolean enabled) {
+        String state = enabled ? "Enabled" : "Disabled"
+        int indexOfElements = dump.findIndexOf { it =~ elementName }
+        int indexOfSelectedElements = dump.findIndexOf(indexOfElements) {
+            it =~ /${state} \(size=/
+        }
+        int selectedElementCount = (dump[indexOfSelectedElements] =~ /size=(\d+)/)[0][1] as Integer
+        def selectedElements = dump[(indexOfSelectedElements + 1)..(indexOfSelectedElements + selectedElementCount)]
+        selectedElements.collect { it.replaceAll(/^[\s\|\-\+]+/, '') }
     }
 }
 

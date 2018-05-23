@@ -72,6 +72,10 @@ import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.NiFiWebConfigurationContext;
 import org.apache.nifi.web.UiExtensionType;
+import org.apache.nifi.web.server.tls.DefaultTlsConfigurationProvider;
+import org.apache.nifi.web.server.tls.TlsConfiguration;
+import org.apache.nifi.web.server.tls.TlsConfigurationException;
+import org.apache.nifi.web.server.tls.TlsConfigurationProvider;
 import org.eclipse.jetty.annotations.AnnotationConfiguration;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Handler;
@@ -121,6 +125,7 @@ public class JettyServer implements NiFiServer {
 
     private final Server server;
     private final NiFiProperties props;
+    private TlsConfigurationProvider tlsConfigurationProvider;
 
     private Bundle systemBundle;
     private Set<Bundle> bundles;
@@ -145,9 +150,28 @@ public class JettyServer implements NiFiServer {
         this.server = new Server(threadPool);
         this.props = props;
 
+        configureServer(props, bundles);
+    }
+
+    /**
+     * Instantiates this object but does not perform any configuration. Used for unit testing.
+     */
+    JettyServer(Server server, NiFiProperties properties) {
+        this.server = server;
+        this.props = properties;
+    }
+
+    private void configureServer(NiFiProperties props, Set<Bundle> bundles) {
         // enable the annotation based configuration to ensure the jsp container is initialized properly
         final Configuration.ClassList classlist = Configuration.ClassList.setServerDefault(server);
         classlist.addBefore(JettyWebXmlConfiguration.class.getName(), AnnotationConfiguration.class.getName());
+
+        try {
+            this.tlsConfigurationProvider = loadTlsConfigurationProvider();
+        } catch (TlsConfigurationException e) {
+            logger.error("Encountered an error configuring the TLS configuration provider: ", e);
+            startUpFailure(new IllegalStateException("The TLS configuration provider is not configured correctly"));
+        }
 
         // configure server
         configureConnectors(server);
@@ -173,12 +197,14 @@ public class JettyServer implements NiFiServer {
         server.setHandler(allHandlers);
     }
 
-    /**
-     * Instantiates this object but does not perform any configuration. Used for unit testing.
-     */
-     JettyServer(Server server, NiFiProperties properties) {
-        this.server = server;
-        this.props = properties;
+    private TlsConfigurationProvider loadTlsConfigurationProvider() throws TlsConfigurationException {
+        // TODO: Implement properties reading
+        // If the properties do not specify a custom provider, return a default implementation
+        // if (props.getProperty(NiFiProperties.TLS_CONFIGURATION_PROVIDER_CLASS_NAME)) {
+        //
+        // } else {
+        return new DefaultTlsConfigurationProvider();
+        // }
     }
 
     private Handler loadWars(final Set<Bundle> bundles) {
@@ -617,7 +643,13 @@ public class JettyServer implements NiFiServer {
         }
 
         if (props.getSslPort() != null) {
-            configureHttpsConnector(server, httpConfiguration);
+            try {
+                TlsConfiguration tlsConfiguration = tlsConfigurationProvider.getConfiguration();
+                configureHttpsConnector(server, httpConfiguration, tlsConfiguration);
+            } catch (TlsConfigurationException e) {
+                logger.error("There was an error retrieving the TLS configuration. Check the nifi.properties file", e);
+                startUpFailure(new IllegalStateException("The TLS configuration is incorrect or unavailable"));
+            }
         } else if (props.getPort() != null) {
             configureHttpConnector(server, httpConfiguration);
         } else {
@@ -631,13 +663,14 @@ public class JettyServer implements NiFiServer {
      *
      * @param server            the Jetty server instance
      * @param httpConfiguration the configuration object for the HTTPS protocol settings
+     * @param tlsConfiguration  the {@link TlsConfiguration} object containing the enabled cipher suites and protocol versions
      */
-    private void configureHttpsConnector(Server server, HttpConfiguration httpConfiguration) {
+    private void configureHttpsConnector(Server server, HttpConfiguration httpConfiguration, TlsConfiguration tlsConfiguration) {
         String hostname = props.getProperty(NiFiProperties.WEB_HTTPS_HOST);
         final Integer port = props.getSslPort();
         String connectorLabel = "HTTPS";
         final Map<String, String> httpsNetworkInterfaces = props.getHttpsNetworkInterfaces();
-        ServerConnectorCreator<Server, HttpConfiguration, ServerConnector> scc = (s, c) -> createUnconfiguredSslServerConnector(s, c, port);
+        ServerConnectorCreator<Server, HttpConfiguration, ServerConnector> scc = (s, c) -> createConfiguredSslServerConnector(s, c, port, tlsConfiguration);
 
         configureGenericConnector(server, httpConfiguration, hostname, port, connectorLabel, httpsNetworkInterfaces, scc);
     }
@@ -754,12 +787,58 @@ public class JettyServer implements NiFiServer {
                 new HttpConnectionFactory(httpsConfiguration));
     }
 
+    private ServerConnector createConfiguredSslServerConnector(Server server, HttpConfiguration httpConfiguration, int port, TlsConfiguration tlsConfiguration) {
+        // Configure the scheme, host, and port
+        final HttpConfiguration httpsConfiguration = new HttpConfiguration(httpConfiguration);
+        httpsConfiguration.setSecureScheme("https");
+        httpsConfiguration.setSecurePort(port);
+        httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
+
+        // Build the SslContextFactory
+        SslContextFactory sslContextFactory = createSslContextFactory();
+
+        // Read the standard keystore and truststore settings from the properties into this SSLCF
+        configureSslContextFactory(sslContextFactory, props);
+
+        // Configure the custom cipher suites and protocol versions
+        configureCipherSuitesAndProtocols(sslContextFactory, tlsConfiguration);
+
+        // build the connector
+        return new ServerConnector(server,
+                new SslConnectionFactory(sslContextFactory, "http/1.1"),
+                new HttpConnectionFactory(httpsConfiguration));
+    }
+
+    /**
+     * Enables the cipher suites and protocols specified by the provided {@link TlsConfiguration}. If any conflict with the exclude list or {@code java.tls.disabledAlgorithms}, these will *not* be enabled.
+     *
+     * @param sslContextFactory the {@link SslContextFactory}
+     * @param tlsConfiguration the {@link TlsConfiguration}
+     */
+    private void configureCipherSuitesAndProtocols(SslContextFactory sslContextFactory, TlsConfiguration tlsConfiguration) {
+        sslContextFactory.setIncludeCipherSuites(tlsConfiguration.getCipherSuitesForJetty());
+        sslContextFactory.setIncludeProtocols(tlsConfiguration.getProtocolsForJetty());
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("Configuring custom cipher suites for Jetty...");
+            logger.debug("Setting included cipher suites to: \n\t" + StringUtils.join(tlsConfiguration.getCipherSuites(), "\n\t"));
+            logger.debug("Setting included protocols to: \n\t" + StringUtils.join(tlsConfiguration.getCipherSuites(), "\n\t"));
+            logger.debug("After setting cipher suites and protocols (exclude lists and java.tls.disabledAlgorithms may have been applied)...");
+            logger.debug("Included cipher suites: \n\t" + StringUtils.join(sslContextFactory.getIncludeCipherSuites(), "\n\t"));
+            logger.debug("Included protocols: \n\t" + StringUtils.join(sslContextFactory.getIncludeProtocols(), "\n\t"));
+        }
+    }
+
+    // TODO: Add method to wrap retrieval of protocols and cipher suites and populate them into configured SslContextFactory
+
+    // TODO: Add method to do this with custom TLS protocol versions and cipher suites
     private SslContextFactory createSslContextFactory() {
         final SslContextFactory contextFactory = new SslContextFactory();
         configureSslContextFactory(contextFactory, props);
         return contextFactory;
     }
 
+    // TODO: Add method to do this with custom TLS protocol versions and cipher suites
     protected static void configureSslContextFactory(SslContextFactory contextFactory, NiFiProperties props) {
         // require client auth when not supporting login, Kerberos service, or anonymous access
         if (props.isClientAuthRequiredForRestApi()) {
@@ -808,6 +887,66 @@ public class JettyServer implements NiFiServer {
         if (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD))) {
             contextFactory.setTrustStorePassword(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD));
         }
+    }
+
+    /**
+     * Returns the list of enabled TLS protocols (i.e. {@code ["TLSv1", "TLSv1.1", "TLSv1.2"]}) for this {@code JettyServer} instance.
+     * <p>
+     * This method is used to provide display output describing the configuration of this instance.
+     *
+     * @return the list of TLS protocol identifier strings
+     * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#SSLContext">Java Security Guide -- Standard Names -- SSLContext</a>
+     */
+    List<String> getEnabledTlsProtocols() {
+        return new ArrayList<String>();
+    }
+
+    /**
+     * Returns the list of enabled TLS cipher suites (i.e. {@code ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]}) for this {@code JettyServer} instance.
+     * <p>
+     * This method is used to provide display output describing the configuration of this instance.
+     *
+     * @return the list of TLS cipher suite identifier strings
+     * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites">Java Security Guide -- Standard Names -- Cipher Suites</a>
+     */
+    List<String> getEnabledTlsCipherSuites() {
+        return new ArrayList<String>();
+    }
+
+    /**
+     * Returns the list of available TLS protocols (i.e. {@code ["TLSv1", "TLSv1.1", "TLSv1.2"]}) for this {@code JettyServer} instance.
+     * <p>
+     * This method is used to retrieve the protocols to enable from an external configuration location in order to configure the JettyServer.
+     * If the external configuration is unavailable, a default, hard-coded list is returned.
+     * This list is taken from the *Modern Compatibility* <a href="https://wiki.mozilla.org/Security/Server_Side_TLS#Recommended_configurations">recommendation of the Mozilla TLS Observatory</a> as of May 2018.
+     *
+     * @return the list of TLS protocol identifier strings
+     * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#SSLContext">Java Security Guide -- Standard Names -- SSLContext</a>
+     */
+    private List<String> getAvailableTlsProtocols() {
+        /*
+        Load a TLS configuration instance (check cache)
+        Get the cipher suites
+         */
+        return new ArrayList<String>();
+    }
+
+    /**
+     * Returns the list of available TLS cipher suites (i.e. {@code ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]}) for this {@code JettyServer} instance.
+     * <p>
+     * This method is used to retrieve the cipher suites to enable from an external configuration location in order to configure the JettyServer.
+     * If the external configuration is unavailable, a default, hard-coded list is returned.
+     * This list is taken from the *Modern Compatibility* <a href="https://wiki.mozilla.org/Security/Server_Side_TLS#Recommended_configurations">recommendation of the Mozilla TLS Observatory</a> as of May 2018.
+     *
+     * @return the list of TLS cipher suite identifier strings
+     * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites">Java Security Guide -- Standard Names -- Cipher Suites</a>
+     */
+    private List<String> getAvailableTlsCipherSuites() {
+        /*
+        Load a TLS configuration instance (check cache)
+        Get the cipher suites
+         */
+        return new ArrayList<String>();
     }
 
     @Override
