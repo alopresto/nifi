@@ -23,15 +23,18 @@ import org.apache.nifi.properties.StandardNiFiProperties
 import org.apache.nifi.util.NiFiProperties
 import org.apache.nifi.web.server.tls.DefaultTlsConfiguration
 import org.apache.nifi.web.server.tls.TlsConfiguration
+import org.apache.nifi.web.server.tls.TlsConfigurationProvider
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.eclipse.jetty.server.Connector
 import org.eclipse.jetty.server.HttpConfiguration
 import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.server.ServerConnector
+import org.eclipse.jetty.server.SslConnectionFactory
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.contrib.java.lang.system.Assertion
@@ -393,10 +396,8 @@ class JettyServerGroovyTest extends GroovyTestCase {
     void testShouldConfigureHTTPSConnector() {
         // Arrange
         NiFiProperties httpsProps = new StandardNiFiProperties(rawProperties: new Properties([
-//               (NiFiProperties.WEB_HTTP_PORT): null,
-//               (NiFiProperties.WEB_HTTP_HOST): null,
-(NiFiProperties.WEB_HTTPS_PORT): "8443",
-(NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
+                (NiFiProperties.WEB_HTTPS_PORT): "8443",
+                (NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
         ]))
 
         Server internalServer = new Server()
@@ -417,10 +418,8 @@ class JettyServerGroovyTest extends GroovyTestCase {
     void testShouldConfigureHTTPSConnectorWithTlsConfiguration() {
         // Arrange
         NiFiProperties httpsProps = new StandardNiFiProperties(rawProperties: new Properties([
-//               (NiFiProperties.WEB_HTTP_PORT): null,
-//               (NiFiProperties.WEB_HTTP_HOST): null,
-(NiFiProperties.WEB_HTTPS_PORT): "8443",
-(NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
+                (NiFiProperties.WEB_HTTPS_PORT): "8443",
+                (NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
         ]))
 
         Server internalServer = new Server()
@@ -435,11 +434,6 @@ class JettyServerGroovyTest extends GroovyTestCase {
                 getProtocols           : { -> ENABLED_PROTOCOLS },
                 getProtocolsForJetty   : { -> ENABLED_PROTOCOLS.toArray(new String[0]) }
         ] as TlsConfiguration
-//        TlsConfigurationProvider mockTlsProvider = [
-//                getConfiguration: { -> mockTls }
-//        ] as DefaultTlsConfigurationProvider
-//
-//        jetty.tlsConfigurationProvider = mockTlsProvider
 
         // Act
         jetty.configureHttpsConnector(internalServer, new HttpConfiguration(), mockTls)
@@ -450,25 +444,17 @@ class JettyServerGroovyTest extends GroovyTestCase {
         assert connector.host == "secure.host.com"
 
         List<String> enabledCipherSuites = getEnabledCipherSuitesFromConnectorDump(getConnectorDump(connector))
-        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(",")}")
+        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
         assert enabledCipherSuites == ENABLED_CIPHER_SUITES
 
         List<String> enabledProtocols = getEnabledProtocolsFromConnectorDump(getConnectorDump(connector))
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(",")}")
+        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
         assert enabledProtocols == ENABLED_PROTOCOLS
     }
 
-    /**
-     * Returns the internal properties of the Connector > SslConnectionFactory > SslContextFactory (the cipher suites and protocols).
-     *
-     * @param connector the {@code ServerConnector} to examine
-     * @return a List<String> of the output
-     */
-    private List<String> getConnectorDump(ServerConnector connector) {
-        connector.getDefaultConnectionFactory()._sslContextFactory.dump().split("\n")
-    }
-
-    private static ServerConnector createDefaultServerConnector() {
+    @Test
+    void testConfigureConnectorsShouldUseTlsConfigurationProvider() {
+        // Arrange
         NiFiProperties httpsProps = new StandardNiFiProperties(rawProperties: new Properties([
                 (NiFiProperties.WEB_HTTPS_PORT): "8443",
                 (NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
@@ -477,9 +463,66 @@ class JettyServerGroovyTest extends GroovyTestCase {
         Server internalServer = new Server()
         JettyServer jetty = new JettyServer(internalServer, httpsProps)
 
-        jetty.configureHttpsConnector(internalServer, new HttpConfiguration())
-        List<Connector> connectors = Arrays.asList(internalServer.connectors)
-        connectors.first() as ServerConnector
+        // Mock and inject the TLS configuration and provider
+        final def ENABLED_CIPHER_SUITES = ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]
+        final def ENABLED_PROTOCOLS = ["TLSv1.2"]
+        TlsConfiguration mockTls = [
+                getCipherSuites        : { -> ENABLED_CIPHER_SUITES },
+                getCipherSuitesForJetty: { -> ENABLED_CIPHER_SUITES.toArray(new String[0]) },
+                getProtocols           : { -> ENABLED_PROTOCOLS },
+                getProtocolsForJetty   : { -> ENABLED_PROTOCOLS.toArray(new String[0]) }
+        ] as TlsConfiguration
+        TlsConfigurationProvider mockTlsProvider = [
+                getConfiguration: { -> mockTls }
+        ] as TlsConfigurationProvider
+
+        jetty.tlsConfigurationProvider = mockTlsProvider
+
+        // Act
+        jetty.configureConnectors(internalServer)
+        List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
+        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
+        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+
+        // Assert
+        assert enabledCipherSuites == ENABLED_CIPHER_SUITES
+        assert enabledProtocols == ENABLED_PROTOCOLS
+    }
+
+    // TODO: Move to integration test because of WAR loading in #configureServer()
+    @Ignore("Needs to be in IT")
+    @Test
+    void testConstructorShouldLoadDefaultTlsConfigurationProvider() {
+        // Arrange
+        NiFiProperties httpsProps = new StandardNiFiProperties(rawProperties: new Properties([
+                (NiFiProperties.WEB_HTTPS_PORT): "8443",
+                (NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
+        ]))
+
+        final DefaultTlsConfiguration DEFAULT_TLS_CONF = new DefaultTlsConfiguration()
+
+        // Act
+        JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
+        List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
+        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
+        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+
+        // Assert
+        assert enabledCipherSuites == DEFAULT_TLS_CONF.cipherSuites
+        assert enabledProtocols == DEFAULT_TLS_CONF.protocols
+    }
+
+    /**
+     * Returns the internal properties of the Connector > SslConnectionFactory > SslContextFactory (the cipher suites and protocols).
+     *
+     * @param connector the {@code ServerConnector} to examine
+     * @return a List<String> of the output
+     */
+    private static List<String> getConnectorDump(ServerConnector connector) {
+        // TODO: Now that access to the SslContextFactory is available, the #dump() parsing is unnecessary
+        (connector.getDefaultConnectionFactory() as SslConnectionFactory).getSslContextFactory().dump().split("\n")
     }
 
     @Test
@@ -488,10 +531,6 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> dump = EXAMPLE_SC_DUMP.split("\n")
         List<String> cipherSuites = EXPECTED_CS
         int csCount = EXPECTED_CS_COUNT
-
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
 
         // Act
         List<String> enabledCipherSuites = getEnabledCipherSuitesFromConnectorDump(dump)
@@ -509,13 +548,9 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> protocols = EXPECTED_PROTOCOLS
         int protocolCount = EXPECTED_PROTOCOLS_COUNT
 
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
-
         // Act
         List<String> enabledProtocols = getEnabledProtocolsFromConnectorDump(dump)
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(",")}")
+        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
 
         // Assert
         assert enabledProtocols == protocols
@@ -529,13 +564,9 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> cipherSuites = EXPECTED_DISABLED_CS
         int csCount = EXPECTED_DISABLED_CS_COUNT
 
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
-
         // Act
         List<String> disabledCipherSuites = getDisabledCipherSuitesFromConnectorDump(dump)
-        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.join(",")}")
+        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.join(", ")}")
 
         // Assert
         assert disabledCipherSuites == cipherSuites
@@ -549,13 +580,9 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> protocols = EXPECTED_DISABLED_PROTOCOLS
         int protocolCount = EXPECTED_DISABLED_PROTOCOLS_COUNT
 
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
-
         // Act
         List<String> disabledProtocols = getDisabledProtocolsFromConnectorDump(dump)
-        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.join(",")}")
+        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.join(", ")}")
 
         // Assert
         assert disabledProtocols == protocols
@@ -569,13 +596,9 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> cipherSuites = EXPECTED_DISABLED_CS
         int csCount = EXPECTED_DISABLED_CS_COUNT
 
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
-
         // Act
         Map<String, String> disabledCipherSuites = getDisabledCipherSuitesWithReasonFromConnectorDump(dump)
-        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.entrySet() join(",")}")
+        logger.info("Disabled cipher suites (${disabledCipherSuites.size()}): ${disabledCipherSuites.entrySet() join(", ")}")
 
         // Assert
         assert disabledCipherSuites.keySet() == cipherSuites as Set
@@ -589,13 +612,9 @@ class JettyServerGroovyTest extends GroovyTestCase {
         List<String> protocols = EXPECTED_DISABLED_PROTOCOLS
         int protocolCount = EXPECTED_DISABLED_PROTOCOLS_COUNT
 
-//        ServerConnector sc = createDefaultServerConnector()
-
-        // List<String> dump = sc?.getDefaultConnectionFactory()?._sslContextFactory?.dump().split("\n")
-
         // Act
         Map<String, String> disabledProtocols = getDisabledProtocolsWithReasonFromConnectorDump(dump)
-        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.entrySet() join(",")}")
+        logger.info("Disabled protocols (${disabledProtocols.size()}): ${disabledProtocols.entrySet() join(", ")}")
 
         // Assert
         assert disabledProtocols.keySet() == protocols as Set

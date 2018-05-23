@@ -813,7 +813,7 @@ public class JettyServer implements NiFiServer {
      * Enables the cipher suites and protocols specified by the provided {@link TlsConfiguration}. If any conflict with the exclude list or {@code java.tls.disabledAlgorithms}, these will *not* be enabled.
      *
      * @param sslContextFactory the {@link SslContextFactory}
-     * @param tlsConfiguration the {@link TlsConfiguration}
+     * @param tlsConfiguration  the {@link TlsConfiguration}
      */
     private void configureCipherSuitesAndProtocols(SslContextFactory sslContextFactory, TlsConfiguration tlsConfiguration) {
         sslContextFactory.setIncludeCipherSuites(tlsConfiguration.getCipherSuitesForJetty());
@@ -822,7 +822,7 @@ public class JettyServer implements NiFiServer {
         if (logger.isDebugEnabled()) {
             logger.debug("Configuring custom cipher suites for Jetty...");
             logger.debug("Setting included cipher suites to: \n\t" + StringUtils.join(tlsConfiguration.getCipherSuites(), "\n\t"));
-            logger.debug("Setting included protocols to: \n\t" + StringUtils.join(tlsConfiguration.getCipherSuites(), "\n\t"));
+            logger.debug("Setting included protocols to: \n\t" + StringUtils.join(tlsConfiguration.getProtocols(), "\n\t"));
             logger.debug("After setting cipher suites and protocols (exclude lists and java.tls.disabledAlgorithms may have been applied)...");
             logger.debug("Included cipher suites: \n\t" + StringUtils.join(sslContextFactory.getIncludeCipherSuites(), "\n\t"));
             logger.debug("Included protocols: \n\t" + StringUtils.join(sslContextFactory.getIncludeProtocols(), "\n\t"));
@@ -898,7 +898,26 @@ public class JettyServer implements NiFiServer {
      * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#SSLContext">Java Security Guide -- Standard Names -- SSLContext</a>
      */
     List<String> getEnabledTlsProtocols() {
-        return new ArrayList<String>();
+        try {
+            SslContextFactory sslContextFactory = getInternalSslContextFactory(server);
+            return Arrays.asList(sslContextFactory.getIncludeProtocols());
+        } catch (Exception e) {
+            logger.warn("Encountered an error retrieving the included protocols for the Jetty server", e);
+            logger.warn("Returning an empty protocol list");
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Returns the {@link SslContextFactory} from the primary {@link ServerConnector} of the provided {@link Server}.
+     *
+     * @param server the Jetty server instance
+     * @return the internal {@code SslContextFactory} instance
+     */
+    private static SslContextFactory getInternalSslContextFactory(Server server) {
+        ServerConnector sc = (ServerConnector) server.getConnectors()[0];
+        SslConnectionFactory sslConnectionFactory = (SslConnectionFactory) sc.getDefaultConnectionFactory();
+        return sslConnectionFactory.getSslContextFactory();
     }
 
     /**
@@ -910,7 +929,14 @@ public class JettyServer implements NiFiServer {
      * @see <a href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites">Java Security Guide -- Standard Names -- Cipher Suites</a>
      */
     List<String> getEnabledTlsCipherSuites() {
-        return new ArrayList<String>();
+        try {
+            SslContextFactory sslContextFactory = getInternalSslContextFactory(server);
+            return Arrays.asList(sslContextFactory.getIncludeCipherSuites());
+        } catch (Exception e) {
+            logger.warn("Encountered an error retrieving the included cipher suites for the Jetty server", e);
+            logger.warn("Returning an empty cipher suite list");
+            return Collections.emptyList();
+        }
     }
 
     /**
