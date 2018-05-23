@@ -175,7 +175,15 @@ public class JettyServer implements NiFiServer {
 
         // configure server
         configureConnectors(server);
+    }
 
+    /**
+     * This method sets up the {@link Handler}s for the server. In this case, these consist of the {@code WAR}s mapped to each {@link Bundle}, and possibly the {@link HostHeaderHandler} if this server is running on HTTPS.
+     *
+     * @param props the {@link NiFiProperties} instance
+     * @param bundles the {@code Set} of {@link Bundle}s which contain necessary details to load the WARs
+     */
+    private void configureHandlers(NiFiProperties props, Set<Bundle> bundles) {
         // load wars from the bundle
         Handler warHandlers = loadWars(bundles);
 
@@ -978,6 +986,9 @@ public class JettyServer implements NiFiServer {
     @Override
     public void start() {
         try {
+            // Moved this from #configureServer so the JettyServer instance can be created without file system interaction
+            configureHandlers(props, bundles);
+
             ExtensionManager.discoverExtensions(systemBundle, bundles);
             ExtensionManager.logClassLoaderMapping();
 
