@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.server.tls;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -69,7 +70,7 @@ public class DefaultTlsConfiguration implements TlsConfiguration {
      */
     @Override
     public List<String> getCipherSuites() {
-        return CIPHER_SUITES;
+        return new ArrayList<>(CIPHER_SUITES);
     }
 
     /**
@@ -94,7 +95,7 @@ public class DefaultTlsConfiguration implements TlsConfiguration {
      */
     @Override
     public List<String> getProtocols() {
-        return PROTOCOLS;
+        return new ArrayList<>(PROTOCOLS);
     }
 
     /**

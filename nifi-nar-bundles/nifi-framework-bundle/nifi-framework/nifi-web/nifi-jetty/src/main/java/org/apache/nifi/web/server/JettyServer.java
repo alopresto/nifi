@@ -35,6 +35,7 @@ import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -824,8 +825,21 @@ public class JettyServer implements NiFiServer {
      * @param tlsConfiguration  the {@link TlsConfiguration}
      */
     private void configureCipherSuitesAndProtocols(SslContextFactory sslContextFactory, TlsConfiguration tlsConfiguration) {
+        // Filter protocols < TLSv1.2 because Jetty 9.4.0+ doesn't support them but doesn't explicitly exclude them
+        List<String> protocolsFromConfiguration = tlsConfiguration.getProtocols();
+        for (Iterator<String> iter = protocolsFromConfiguration.listIterator(); iter.hasNext();) {
+            String p = iter.next();
+            if (!isSupportedProtocol(p)) {
+                iter.remove();
+                logger.warn("Removed unsupported TLS protocol " + p);
+            }
+        }
+        final String[] protocols = protocolsFromConfiguration.toArray(new String[0]);
+        sslContextFactory.setIncludeProtocols(protocols);
+        sslContextFactory.selectProtocols(protocols, protocols);
+
         sslContextFactory.setIncludeCipherSuites(tlsConfiguration.getCipherSuitesForJetty());
-        sslContextFactory.setIncludeProtocols(tlsConfiguration.getProtocolsForJetty());
+        // May not need to explicitly select the cipher suites as newSslSocketChannel() does that
 
         if (logger.isDebugEnabled()) {
             logger.debug("Configuring custom cipher suites for Jetty...");
@@ -834,7 +848,18 @@ public class JettyServer implements NiFiServer {
             logger.debug("After setting cipher suites and protocols (exclude lists and java.tls.disabledAlgorithms may have been applied)...");
             logger.debug("Included cipher suites: \n\t" + StringUtils.join(sslContextFactory.getIncludeCipherSuites(), "\n\t"));
             logger.debug("Included protocols: \n\t" + StringUtils.join(sslContextFactory.getIncludeProtocols(), "\n\t"));
+            logger.debug("Selected protocols: \n\t" + StringUtils.join(sslContextFactory.getSelectedProtocols(), "\n\t"));
         }
+    }
+
+    /**
+     * Returns true if the provided protocol is supported by the server. As of May 2018, only "TLSv1.2" and "TLS" (only can provide TLSv1.2 connections) are supported.
+     *
+     * @param p the protocol version String
+     * @return true if the protocol is supported
+     */
+    private boolean isSupportedProtocol(String p) {
+        return p.equalsIgnoreCase("TLSv1.2") || p.equalsIgnoreCase("TLS");
     }
 
     // TODO: Add method to wrap retrieval of protocols and cipher suites and populate them into configured SslContextFactory
@@ -898,7 +923,9 @@ public class JettyServer implements NiFiServer {
     }
 
     /**
-     * Returns the list of enabled TLS protocols (i.e. {@code ["TLSv1", "TLSv1.1", "TLSv1.2"]}) for this {@code JettyServer} instance.
+     * Returns the list of enabled TLS protocols (i.e. {@code ["TLSv1", "TLSv1.1", "TLSv1.2"]}) for this {@code JettyServer} instance. This corresponds to
+     * {@link SslContextFactory#getSelectedProtocols()} rather than
+     * {@link SslContextFactory#getIncludeProtocols()} which can be restricted by exclude lists.
      * <p>
      * This method is used to provide display output describing the configuration of this instance.
      *
@@ -908,7 +935,7 @@ public class JettyServer implements NiFiServer {
     List<String> getEnabledTlsProtocols() {
         try {
             SslContextFactory sslContextFactory = getInternalSslContextFactory(server);
-            return Arrays.asList(sslContextFactory.getIncludeProtocols());
+            return Arrays.asList(sslContextFactory.getSelectedProtocols());
         } catch (Exception e) {
             logger.warn("Encountered an error retrieving the included protocols for the Jetty server", e);
             logger.warn("Returning an empty protocol list");
@@ -939,6 +966,7 @@ public class JettyServer implements NiFiServer {
     List<String> getEnabledTlsCipherSuites() {
         try {
             SslContextFactory sslContextFactory = getInternalSslContextFactory(server);
+            // TODO: Switch to getSelectedCS and add NPE check
             return Arrays.asList(sslContextFactory.getIncludeCipherSuites());
         } catch (Exception e) {
             logger.warn("Encountered an error retrieving the included cipher suites for the Jetty server", e);

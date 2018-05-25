@@ -34,7 +34,6 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.contrib.java.lang.system.Assertion
@@ -490,29 +489,8 @@ class JettyServerGroovyTest extends GroovyTestCase {
         assert enabledProtocols == ENABLED_PROTOCOLS
     }
 
-    // TODO: Move to integration test because of WAR loading in #configureServer()
-    @Ignore("Needs to be in IT")
-    @Test
-    void testConstructorShouldLoadDefaultTlsConfigurationProvider() {
-        // Arrange
-        NiFiProperties httpsProps = new StandardNiFiProperties(rawProperties: new Properties([
-                (NiFiProperties.WEB_HTTPS_PORT): "8443",
-                (NiFiProperties.WEB_HTTPS_HOST): "secure.host.com",
-        ]))
-
-        final DefaultTlsConfiguration DEFAULT_TLS_CONF = new DefaultTlsConfiguration()
-
-        // Act
-        JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
-        List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
-        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
-        List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
-
-        // Assert
-        assert enabledCipherSuites == DEFAULT_TLS_CONF.cipherSuites
-        assert enabledProtocols == DEFAULT_TLS_CONF.protocols
-    }
+    // TODO: Test setting old protocols
+    // TODO: Test setting old cipher suites
 
     /**
      * Returns the internal properties of the Connector > SslConnectionFactory > SslContextFactory (the cipher suites and protocols).
