@@ -27,6 +27,7 @@ import org.apache.nifi.web.server.tls.DefaultTlsConfiguration
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.AfterClass
+import org.junit.Assume
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -45,7 +46,6 @@ import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.X509TrustManager
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -107,9 +107,9 @@ class JettyServerGroovyIT extends GroovyTestCase {
         // Act
         JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
         List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
-        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        logger.info("Enabled server cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
         List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+        logger.info("Enabled server protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
 
         // Assert
         assert enabledCipherSuites == DEFAULT_TLS_CONF.cipherSuites
@@ -123,21 +123,26 @@ class JettyServerGroovyIT extends GroovyTestCase {
 
         JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
         List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
-        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        logger.info("Enabled server cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
         List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+        logger.info("Enabled server protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
 
         // Manually start the internal server
-        jetty.server.start()
+        try {
+            jetty.server.start()
+        } catch (BindException e) {
+            logger.warn("Cannot run this test because a service is already using port 9443")
+            Assume.assumeTrue("Cannot run this test because a service is already using port 9443", false)
+        }
 
         // Act
         Exception exception = GroovyAssert.shouldFail(SSLHandshakeException) {
             SSLSocket socket = createSslSocket("TLSv1.1", HTTPS_URL)
-            logger.info("Enabled protocols: ${socket.enabledProtocols}")
+            logger.info("Enabled socket protocols: ${socket.enabledProtocols}")
 
             socket.startHandshake()
             String selectedProtocol = socket.getSession().protocol
-            logger.info("Selected protocol: ${selectedProtocol}")
+            logger.info("Selected socket protocol: ${selectedProtocol}")
         }
 
         logger.expected("Error: ${exception}")
@@ -146,6 +151,10 @@ class JettyServerGroovyIT extends GroovyTestCase {
         assert exception.getMessage() =~ "Received fatal alert: handshake_failure"
         // The exception points to itself as the cause but the underlying cause is javax.net.ssl.SSLHandshakeException: Client requested protocol TLSv1.1 not enabled or not supported
 //        assert exception.getCause().getMessage() =~ "Client requested protocol TLSv1.1 not enabled or not supported"
+
+        if (jetty.server.isRunning()) {
+            jetty.server.stop()
+        }
     }
 
     /**
@@ -158,35 +167,116 @@ class JettyServerGroovyIT extends GroovyTestCase {
 
         JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
         List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
-        logger.info("Enabled cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        logger.info("Enabled server cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
         List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
-        logger.info("Enabled protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+        logger.info("Enabled server protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
 
         // Manually start the internal server
-        jetty.server.start()
+        try {
+            jetty.server.start()
+        } catch (BindException e) {
+            logger.warn("Cannot run this test because a service is already using port 9443")
+            Assume.assumeTrue("Cannot run this test because a service is already using port 9443", false)
+        }
 
         SSLSocket socket = createSslSocket("TLSv1.2", HTTPS_URL)
-        logger.info("Enabled protocols: ${socket.enabledProtocols}")
+        logger.info("Enabled socket protocols: ${socket.enabledProtocols}")
 
         // Act
         socket.startHandshake()
         String selectedProtocol = socket.getSession().protocol
-        logger.info("Selected protocol: ${selectedProtocol}")
+        logger.info("Selected socket protocol: ${selectedProtocol}")
 
         // Assert
         assert selectedProtocol == "TLSv1.2"
 
-        jetty.server.stop()
+        if (jetty.server.isRunning()) {
+            jetty.server.stop()
+        }
+    }
+
+    /**
+     * Run with {@code -Djavax.net.debug=ssl,handshake} for debugging if necessary
+     */
+    @Test
+    void testDefaultServerShouldRestrictCipherSuitesFromJavaSecurity() {
+        // Arrange
+
+        // Set to true if you have copied src/test/resources/JettyServerGroovyIntegrationTest/java.security to $JAVA_HOME/jre/lib/security/java.security
+        boolean restrictedJavaSecurityInUse = true
+
+        Assume.assumeTrue("This test requires a custom java.security file to be used", restrictedJavaSecurityInUse)
+
+        /*
+        With the custom java.security file in place, there will be debug output like:
+        18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_128_GCM_SHA256' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_256_GCM_SHA384' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_128_CBC_SHA256' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_256_CBC_SHA256' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_128_CBC_SHA' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_AES_256_CBC_SHA' is supported
+18/05/25 20:51:01 INFO ssl.SslContextFactory: No Cipher matching 'TLS_RSA_WITH_3DES_EDE_CBC_SHA' is supported
+18/05/25 20:51:01 DEBUG ssl.SslContextFactory: Selected Protocols [TLSv1.2] of [SSLv2Hello, SSLv3, TLSv1, TLSv1.1, TLSv1.2]
+18/05/25 20:51:01 DEBUG ssl.SslContextFactory: Selected Ciphers   [TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+TLS_DHE_RSA_WITH_AES_128_GCM_SHA256, TLS_DHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA256, TLS_DHE_RSA_WITH_AES_256_CBC_SHA256] of [TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384, TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384,
+TLS_DHE_RSA_WITH_AES_256_CBC_SHA256, TLS_DHE_DSS_WITH_AES_256_CBC_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA, TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA, TLS_ECDH_RSA_WITH_AES_256_CBC_SHA,
+TLS_DHE_RSA_WITH_AES_256_CBC_SHA, TLS_DHE_DSS_WITH_AES_256_CBC_SHA, TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256, TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256,
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA256, TLS_DHE_DSS_WITH_AES_128_CBC_SHA256, TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA, TLS_ECDH_RSA_WITH_AES_128_CBC_SHA,
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA, TLS_DHE_DSS_WITH_AES_128_CBC_SHA, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384,
+TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384, TLS_DHE_RSA_WITH_AES_256_GCM_SHA384, TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,
+TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256,
+TLS_DHE_RSA_WITH_AES_128_GCM_SHA256, TLS_DHE_DSS_WITH_AES_128_GCM_SHA256, SSL_RSA_WITH_3DES_EDE_CBC_SHA,
+TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA, TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA, SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA,
+SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA, TLS_EMPTY_RENEGOTIATION_INFO_SCSV, TLS_DH_anon_WITH_AES_256_GCM_SHA384,
+TLS_DH_anon_WITH_AES_128_GCM_SHA256, TLS_DH_anon_WITH_AES_256_CBC_SHA256, TLS_ECDH_anon_WITH_AES_256_CBC_SHA,
+TLS_DH_anon_WITH_AES_256_CBC_SHA, TLS_DH_anon_WITH_AES_128_CBC_SHA256, TLS_ECDH_anon_WITH_AES_128_CBC_SHA,
+TLS_DH_anon_WITH_AES_128_CBC_SHA, TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA, SSL_DH_anon_WITH_3DES_EDE_CBC_SHA,
+SSL_RSA_WITH_DES_CBC_SHA, SSL_DHE_RSA_WITH_DES_CBC_SHA, SSL_DHE_DSS_WITH_DES_CBC_SHA, SSL_DH_anon_WITH_DES_CBC_SHA,
+SSL_RSA_EXPORT_WITH_DES40_CBC_SHA, SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA, SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA,
+SSL_DH_anon_EXPORT_WITH_DES40_CBC_SHA, TLS_RSA_WITH_NULL_SHA256, TLS_ECDHE_ECDSA_WITH_NULL_SHA,
+TLS_ECDHE_RSA_WITH_NULL_SHA, SSL_RSA_WITH_NULL_SHA, TLS_ECDH_ECDSA_WITH_NULL_SHA, TLS_ECDH_RSA_WITH_NULL_SHA,
+TLS_ECDH_anon_WITH_NULL_SHA, SSL_RSA_WITH_NULL_MD5, TLS_KRB5_WITH_3DES_EDE_CBC_SHA, TLS_KRB5_WITH_3DES_EDE_CBC_MD5,
+TLS_KRB5_WITH_DES_CBC_SHA, TLS_KRB5_WITH_DES_CBC_MD5, TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA,
+TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5]
+         */
+
+        NiFiProperties httpsProps = new NiFiPropertiesLoader().load("${TEST_RSC_DIR}/nifi.properties")
+
+        // Act
+        JettyServer jetty = new JettyServer(httpsProps, [] as Set<Bundle>)
+        List<String> enabledCipherSuites = jetty.getEnabledTlsCipherSuites()
+        logger.info("Enabled server cipher suites (${enabledCipherSuites.size()}): ${enabledCipherSuites.join(", ")}")
+        List<String> enabledProtocols = jetty.getEnabledTlsProtocols()
+        logger.info("Enabled server protocols (${enabledProtocols.size()}): ${enabledProtocols.join(", ")}")
+
+        // Assert
+        assert enabledProtocols == ["TLSv1.2"]
+        assert enabledCipherSuites == ["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+                                       "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+                                       "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+                                       "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+                                       "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+                                       "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+                                       "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+                                       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+                                       "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+                                       "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+                                       "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+                                       "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256"]
     }
 
     private static SSLSocket createSslSocket(String protocol = "TLS", String url) {
-        // Set the default trust manager for the "default" tests (the outgoing Groovy call) to ignore certificate path verification for localhost
-        X509TrustManager nullTrustManager = [
-                checkClientTrusted: { chain, authType -> },
-                checkServerTrusted: { chain, authType -> },
-                getAcceptedIssuers: { null }
-        ] as X509TrustManager
-
         HostnameVerifier nullHostnameVerifier = [
                 verify: { String hostname, session ->
                     // Will always return true if the hostname is "localhost"

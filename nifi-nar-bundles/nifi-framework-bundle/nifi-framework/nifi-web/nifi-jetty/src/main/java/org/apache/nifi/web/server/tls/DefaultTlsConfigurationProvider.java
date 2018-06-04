@@ -17,7 +17,9 @@
 package org.apache.nifi.web.server.tls;
 
 /**
- * This implementation provides a static {@link DefaultTlsConfiguration} instance which consists of hard-coded TLS protocols and cipher suites as determined by the Mozilla TLS Observatory as "Intermediate" for May 2018.
+ * This implementation provides a static {@link DefaultTlsConfiguration} instance which consists of
+ * hard-coded TLS protocols and cipher suites as determined by the Mozilla TLS Observatory as
+ * "Intermediate" for May 2018.
  *
  * @see <a href="https://wiki.mozilla.org/Security/Server_Side_TLS#Intermediate_compatibility_.28default.29">Mozilla TLS Observatory</a>
  */

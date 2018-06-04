@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -179,7 +180,9 @@ public class JettyServer implements NiFiServer {
     }
 
     /**
-     * This method sets up the {@link Handler}s for the server. In this case, these consist of the {@code WAR}s mapped to each {@link Bundle}, and possibly the {@link HostHeaderHandler} if this server is running on HTTPS.
+     * This method sets up the {@link Handler}s for the server. In this case, these consist of
+     * the {@code WAR}s mapped to each {@link Bundle}, and possibly the {@link HostHeaderHandler}
+     * if this server is running on HTTPS.
      *
      * @param props the {@link NiFiProperties} instance
      * @param bundles the {@code Set} of {@link Bundle}s which contain necessary details to load the WARs
@@ -819,7 +822,9 @@ public class JettyServer implements NiFiServer {
     }
 
     /**
-     * Enables the cipher suites and protocols specified by the provided {@link TlsConfiguration}. If any conflict with the exclude list or {@code java.tls.disabledAlgorithms}, these will *not* be enabled.
+     * Enables the cipher suites and protocols specified by the provided {@link TlsConfiguration}.
+     * If any conflict with the exclude list or {@code java.tls.disabledAlgorithms}, these will
+     * *not* be enabled.
      *
      * @param sslContextFactory the {@link SslContextFactory}
      * @param tlsConfiguration  the {@link TlsConfiguration}
@@ -838,16 +843,23 @@ public class JettyServer implements NiFiServer {
         sslContextFactory.setIncludeProtocols(protocols);
         sslContextFactory.selectProtocols(protocols, protocols);
 
+        // TODO: Possibly move this before protocol setting
+        // java.tls.disabledAlgorithms in java.security can exclude some cipher suites
         sslContextFactory.setIncludeCipherSuites(tlsConfiguration.getCipherSuitesForJetty());
-        // May not need to explicitly select the cipher suites as newSslSocketChannel() does that
+        // "Select" the cipher suites
+        try {
+            sslContextFactory.reload(CIPHER_SUITE_SELECTOR);
+        } catch (Exception e) {
+            logger.error("Encountered an error loading TLS cipher suites and protocols: ", e);
+            startUpFailure(new IllegalStateException("The TLS configuration provider is not configured correctly"));
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("Configuring custom cipher suites for Jetty...");
             logger.debug("Setting included cipher suites to: \n\t" + StringUtils.join(tlsConfiguration.getCipherSuites(), "\n\t"));
             logger.debug("Setting included protocols to: \n\t" + StringUtils.join(tlsConfiguration.getProtocols(), "\n\t"));
             logger.debug("After setting cipher suites and protocols (exclude lists and java.tls.disabledAlgorithms may have been applied)...");
-            logger.debug("Included cipher suites: \n\t" + StringUtils.join(sslContextFactory.getIncludeCipherSuites(), "\n\t"));
-            logger.debug("Included protocols: \n\t" + StringUtils.join(sslContextFactory.getIncludeProtocols(), "\n\t"));
+            logger.debug("Selected cipher suites: \n\t" + StringUtils.join(sslContextFactory.getSelectedCipherSuites(), "\n\t"));
             logger.debug("Selected protocols: \n\t" + StringUtils.join(sslContextFactory.getSelectedProtocols(), "\n\t"));
         }
     }
@@ -923,6 +935,18 @@ public class JettyServer implements NiFiServer {
     }
 
     /**
+     * Returns the {@link SslContextFactory} from the primary {@link ServerConnector} of the provided {@link Server}.
+     *
+     * @param server the Jetty server instance
+     * @return the internal {@code SslContextFactory} instance
+     */
+    private static SslContextFactory getInternalSslContextFactory(Server server) {
+        ServerConnector sc = (ServerConnector) server.getConnectors()[0];
+        SslConnectionFactory sslConnectionFactory = (SslConnectionFactory) sc.getDefaultConnectionFactory();
+        return sslConnectionFactory.getSslContextFactory();
+    }
+
+    /**
      * Returns the list of enabled TLS protocols (i.e. {@code ["TLSv1", "TLSv1.1", "TLSv1.2"]}) for this {@code JettyServer} instance. This corresponds to
      * {@link SslContextFactory#getSelectedProtocols()} rather than
      * {@link SslContextFactory#getIncludeProtocols()} which can be restricted by exclude lists.
@@ -944,19 +968,9 @@ public class JettyServer implements NiFiServer {
     }
 
     /**
-     * Returns the {@link SslContextFactory} from the primary {@link ServerConnector} of the provided {@link Server}.
-     *
-     * @param server the Jetty server instance
-     * @return the internal {@code SslContextFactory} instance
-     */
-    private static SslContextFactory getInternalSslContextFactory(Server server) {
-        ServerConnector sc = (ServerConnector) server.getConnectors()[0];
-        SslConnectionFactory sslConnectionFactory = (SslConnectionFactory) sc.getDefaultConnectionFactory();
-        return sslConnectionFactory.getSslContextFactory();
-    }
-
-    /**
-     * Returns the list of enabled TLS cipher suites (i.e. {@code ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]}) for this {@code JettyServer} instance.
+     * Returns the list of enabled TLS cipher suites (i.e. {@code ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]}) for this {@code JettyServer} instance. This corresponds to
+     * {@link SslContextFactory#getSelectedCipherSuites()} rather than
+     * {@link SslContextFactory#getIncludeCipherSuites()} which can be restricted by exclude lists and {@code java.tls.disabledAlgorithms} settings.
      * <p>
      * This method is used to provide display output describing the configuration of this instance.
      *
@@ -966,8 +980,7 @@ public class JettyServer implements NiFiServer {
     List<String> getEnabledTlsCipherSuites() {
         try {
             SslContextFactory sslContextFactory = getInternalSslContextFactory(server);
-            // TODO: Switch to getSelectedCS and add NPE check
-            return Arrays.asList(sslContextFactory.getIncludeCipherSuites());
+            return Arrays.asList(sslContextFactory.getSelectedCipherSuites());
         } catch (Exception e) {
             logger.warn("Encountered an error retrieving the included cipher suites for the Jetty server", e);
             logger.warn("Returning an empty cipher suite list");
@@ -1237,6 +1250,15 @@ public class JettyServer implements NiFiServer {
         @Override
         public void destroy() {
         }
+    };
+
+    /**
+     * Performs no operation but is required to allow an external caller to invoke {@link SslContextFactory#reload(Consumer)} in order to process the included/selected cipher suites.
+     *
+     * @param sslContextFactory an object that will not be operated on
+     */
+    private static final Consumer<SslContextFactory> CIPHER_SUITE_SELECTOR = sslContextFactory -> {
+            // This is a no-op method
     };
 }
 
