@@ -16,11 +16,9 @@
  */
 package org.apache.nifi.web.filter;
 
-import org.apache.nifi.logging.NiFiLog;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.security.web.firewall.RequestRejectedException;
-
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -28,9 +26,9 @@ import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.web.firewall.RequestRejectedException;
 
 /**
  * A filter to catch exceptions that aren't handled by the Jetty error-page.
@@ -38,7 +36,7 @@ import java.io.StringWriter;
  */
 public class ExceptionFilter implements Filter {
 
-    private static final Logger logger = new NiFiLog(LoggerFactory.getLogger(ExceptionFilter.class));
+    private static final Logger logger = LoggerFactory.getLogger(ExceptionFilter.class);
 
     @Override
     public void doFilter(final ServletRequest req, final ServletResponse resp, final FilterChain filterChain)
@@ -47,6 +45,9 @@ public class ExceptionFilter implements Filter {
         try {
             filterChain.doFilter(req, resp);
         } catch (RequestRejectedException e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("An exception was caught performing the HTTP request security filter check and the stacktrace has been suppressed from the response");
+            }
 
             HttpServletResponse filteredResponse = (HttpServletResponse) resp;
             filteredResponse.setStatus(500);

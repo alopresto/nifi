@@ -330,7 +330,6 @@ public class ITProcessGroupAccessControl {
         final String maliciousErrorMessage = "The request was rejected because the URL contained a potentially malicious String \";\"";
 
         // attempt to update the name
-        final long version = entity.getRevision().getVersion();
         entity.getRevision().setClientId(READ_WRITE_CLIENT_ID);
         entity.getComponent().setName(updatedName);
 
