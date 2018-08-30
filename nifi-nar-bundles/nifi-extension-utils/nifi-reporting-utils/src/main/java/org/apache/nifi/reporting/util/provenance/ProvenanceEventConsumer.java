@@ -16,6 +16,16 @@
  */
 package org.apache.nifi.reporting.util.provenance;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
@@ -29,15 +39,6 @@ import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.provenance.ProvenanceEventType;
 import org.apache.nifi.reporting.EventAccess;
 import org.apache.nifi.reporting.ReportingContext;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.BiConsumer;
-import java.util.regex.Pattern;
 
 public class ProvenanceEventConsumer {
 
@@ -254,9 +255,19 @@ public class ProvenanceEventConsumer {
 
 
     private boolean isFilteringEnabled() {
-        return componentTypeRegex != null || !eventTypes.isEmpty() || !componentIds.isEmpty()
-                || componentTypeRegexExclude != null || !eventTypesExclude.isEmpty() || !componentIdsExclude.isEmpty()
-                || componentNameRegex != null || componentNameRegexExclude != null;
+        // Collect all non-blank patterns
+        boolean anyPatternPresent = Stream.of(componentTypeRegex, componentTypeRegexExclude, componentNameRegex, componentNameRegexExclude)
+                .filter(Objects::nonNull)
+                .map(Pattern::toString)
+                .anyMatch(StringUtils::isNotBlank);
+
+        // Collect all non-empty lists
+        boolean anyListPresent = Stream.of(eventTypes, eventTypesExclude, componentIds, componentIdsExclude)
+                .filter(Objects::nonNull)
+                .anyMatch(list -> !list.isEmpty());
+
+        // If either is present, filtering is enabled
+        return anyPatternPresent || anyListPresent;
     }
 
     private List<ProvenanceEventRecord> filterEvents(ComponentMapHolder componentMapHolder, List<ProvenanceEventRecord> provenanceEvents) {
