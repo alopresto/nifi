@@ -16,7 +16,7 @@
  */
 package org.apache.nifi.processors.standard
 
-
+import org.apache.nifi.security.util.attributes.AttributeMatchingStrategy
 import org.apache.nifi.security.util.crypto.HashAlgorithm
 import org.apache.nifi.security.util.crypto.HashService
 import org.apache.nifi.util.MockFlowFile
@@ -58,6 +58,32 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
     void tearDown() throws Exception {
     }
 
+    /**
+     * Resets the runner to the default state and applies provided configuration values.
+     *
+     * @param runner the test runner
+     * @param algorithm the {@link HashAlgorithm} (default SHA-256)
+     * @param attributeMatchingStrategy the {@link AttributeMatchingStrategy} (default Individual)
+     * @param failWhenEmpty true if the processor should fail when all attributes are missing (default false)
+     * @param allowPartialAttributes true if the processor should succeed when some attributes are missing (default true)
+     */
+    private static void resetRunner(TestRunner runner, HashAlgorithm algorithm = HashAlgorithm.SHA256, AttributeMatchingStrategy attributeMatchingStrategy = AttributeMatchingStrategy.INDIVIDUAL, boolean failWhenEmpty = false, boolean allowPartialAttributes = true) {
+        runner.clearProperties()
+        runner.clearProvenanceEvents()
+        runner.clearTransferState()
+
+        logger.info("Setting hash algorithm to ${algorithm.name}")
+        runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
+
+        // Set the attribute matching strategy
+        logger.info("Setting attribute matching to ${attributeMatchingStrategy.name}")
+        runner.setProperty(CryptographicHashAttribute.ATTRIBUTE_MATCHING_STRATEGY, attributeMatchingStrategy.name)
+
+        // Set the other required properties
+        runner.setProperty(CryptographicHashAttribute.PARTIAL_ATTR_ROUTE_POLICY, allowPartialAttributes ? CryptographicHashAttribute.PartialAttributePolicy.ALLOW.name() : CryptographicHashAttribute.PartialAttributePolicy.PROHIBIT.name())
+        runner.setProperty(CryptographicHashAttribute.FAIL_WHEN_EMPTY, failWhenEmpty.toString())
+    }
+
     @Test
     void testShouldCalculateHashOfPresentAttribute() {
         // Arrange
@@ -70,7 +96,6 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
                 username: "alopresto",
                 date    : new Date().format("YYYY-MM-dd HH:mm:ss.SSS Z")
         ]
-        def attributeKeys = attributes.keySet()
 
         algorithms.each { HashAlgorithm algorithm ->
             final EXPECTED_USERNAME_HASH = HashService.hashValue(algorithm, attributes["username"])
@@ -79,18 +104,10 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             logger.expected("${algorithm.name.padLeft(11)}(${attributes["date"]}) = ${EXPECTED_DATE_HASH}")
 
             // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
-
-            // Set the algorithm
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
+            resetRunner(runner, algorithm)
 
             // Add the desired dynamic properties
-            attributeKeys.each { String attr ->
-                runner.setProperty(attr, "${attr}_${algorithm.name}")
-            }
+            addDynamicPropertiesForHashAttributes(runner, attributes.keySet(), algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -128,7 +145,6 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
                 username: "",
                 date    : null
         ]
-        def attributeKeys = attributes.keySet()
 
         algorithms.each { HashAlgorithm algorithm ->
             final EXPECTED_USERNAME_HASH = HashService.hashValue(algorithm, attributes["username"])
@@ -137,18 +153,10 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             logger.expected("${algorithm.name.padLeft(11)}(${attributes["date"]}) = ${EXPECTED_DATE_HASH}")
 
             // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
-
-            // Set the algorithm
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
+            resetRunner(runner, algorithm)
 
             // Add the desired dynamic properties
-            attributeKeys.each { String attr ->
-                runner.setProperty(attr, "${attr}_${algorithm.name}")
-            }
+            addDynamicPropertiesForHashAttributes(runner, attributes.keySet(), algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -194,22 +202,11 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             final EXPECTED_DATE_HASH = null
             logger.expected("${algorithm.name.padLeft(11)}(${attributes["date"]}) = ${EXPECTED_DATE_HASH}")
 
-            // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
-
-            // Set the algorithm
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
-
-            // Set to fail if there are missing attributes
-            runner.setProperty(CryptographicHashAttribute.PARTIAL_ATTR_ROUTE_POLICY, CryptographicHashAttribute.PartialAttributePolicy.PROHIBIT.name())
+            // Reset the processor (set to fail if there are missing attributes)
+            resetRunner(runner, algorithm, AttributeMatchingStrategy.INDIVIDUAL, false, false)
 
             // Add the desired dynamic properties
-            attributeKeys.each { String attr ->
-                runner.setProperty(attr, "${attr}_${algorithm.name}")
-            }
+            addDynamicPropertiesForHashAttributes(runner, attributeKeys, algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -247,17 +244,10 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
         def attributeKeys = attributes.keySet()
 
         algorithms.each { HashAlgorithm algorithm ->
-            // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
+            // Reset the processor (set to fail when empty)
+            resetRunner(runner, algorithm, AttributeMatchingStrategy.INDIVIDUAL, true, false)
 
-            // Set the algorithm
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
-
-            // Set to fail if all attributes are missing
-            runner.setProperty(CryptographicHashAttribute.FAIL_WHEN_EMPTY, "true")
+            addDynamicPropertiesForHashAttributes(runner, attributeKeys, algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -274,6 +264,48 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             // Extract the generated attributes from the flowfile
             MockFlowFile flowFile = failedFlowFiles.first()
             logger.info("Failed flowfile has attributes ${flowFile.attributes}")
+            attributeKeys.each { String missingAttribute ->
+                flowFile.assertAttributeNotExists("${missingAttribute}_${algorithm.name}")
+            }
+        }
+    }
+
+    /**
+     * If no dynamic properties (i.e. "username_sha256") are defined, the flowfile should not be routed to failure if it doesn't have attributes.
+     */
+    @Test
+    void testShouldNoteRouteToFailureOnEmptyAttributesIfNoDynamicPropertiesSet() {
+        // Arrange
+        def algorithms = HashAlgorithm.values()
+
+        final TestRunner runner = TestRunners.newTestRunner(new CryptographicHashAttribute())
+
+        // Create attributes for username (empty string) and date (null)
+        def attributes = [
+                username: "",
+                date    : null
+        ]
+        def attributeKeys = attributes.keySet()
+
+        algorithms.each { HashAlgorithm algorithm ->
+            // Reset the processor (set to fail when empty)
+            resetRunner(runner, algorithm, AttributeMatchingStrategy.INDIVIDUAL, true, false)
+
+            // Insert the attributes in the mock flowfile
+            runner.enqueue(new byte[0], attributes)
+
+            // Act
+            runner.run(1)
+
+            // Assert
+            runner.assertTransferCount(CryptographicHashAttribute.REL_FAILURE, 0)
+            runner.assertTransferCount(CryptographicHashAttribute.REL_SUCCESS, 1)
+
+            final List<MockFlowFile> successfulFlowfiles = runner.getFlowFilesForRelationship(CryptographicHashAttribute.REL_SUCCESS)
+
+            // Extract the generated attributes from the flowfile
+            MockFlowFile flowFile = successfulFlowfiles.first()
+            logger.info("Successful flowfile has attributes ${flowFile.attributes}")
             attributeKeys.each { String missingAttribute ->
                 flowFile.assertAttributeNotExists("${missingAttribute}_${algorithm.name}")
             }
@@ -299,22 +331,11 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             final EXPECTED_DATE_HASH = null
             logger.expected("${algorithm.name.padLeft(11)}(${attributes["date"]}) = ${EXPECTED_DATE_HASH}")
 
-            // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
-
-            // Set the algorithm
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
-
-            // Set to fail if there are missing attributes
-            runner.setProperty(CryptographicHashAttribute.PARTIAL_ATTR_ROUTE_POLICY, CryptographicHashAttribute.PartialAttributePolicy.ALLOW.name())
+            // Reset the processor (set to allow partial attributes)
+            resetRunner(runner, algorithm, AttributeMatchingStrategy.INDIVIDUAL, false, true)
 
             // Add the desired dynamic properties
-            attributeKeys.each { String attr ->
-                runner.setProperty(attr, "${attr}_${algorithm.name}")
-            }
+            addDynamicPropertiesForHashAttributes(runner, attributeKeys, algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -344,7 +365,6 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
 
         // Create attributes
         def attributes = [test_attribute: "apachenifi"]
-        def attributeKeys = attributes.keySet()
 
         HashAlgorithm algorithm = HashAlgorithm.MD5
 
@@ -369,21 +389,13 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
             assert EXPECTED_HASH == EXPECTED_MD5_HASHES[translateEncodingToMapKey(charset.name())]
 
             // Reset the processor
-            runner.clearProperties()
-            runner.clearProvenanceEvents()
-            runner.clearTransferState()
-
-            // Set the properties
-            logger.info("Setting hash algorithm to ${algorithm.name}")
-            runner.setProperty(CryptographicHashAttribute.HASH_ALGORITHM, algorithm.name)
+            resetRunner(runner, algorithm)
 
             logger.info("Setting character set to ${charset.name()}")
             runner.setProperty(CryptographicHashAttribute.CHARACTER_SET, charset.name())
 
             // Add the desired dynamic properties
-            attributeKeys.each { String attr ->
-                runner.setProperty(attr, "${attr}_${algorithm.name}")
-            }
+            addDynamicPropertiesForHashAttributes(runner, attributes.keySet(), algorithm.name)
 
             // Insert the attributes in the mock flowfile
             runner.enqueue(new byte[0], attributes)
@@ -404,6 +416,230 @@ class CryptographicHashAttributeTest extends GroovyTestCase {
 
             assert hashedAttribute == EXPECTED_HASH
         }
+    }
+
+    private static void addDynamicPropertiesForHashAttributes(TestRunner runner, Set<String> attributeNames, String algorithmName) {
+        attributeNames.each { String attr ->
+            runner.setProperty("${attr}_${algorithmName}", attr)
+        }
+    }
+
+    // TODO: Test setting dynamic property and required property to ensure attribute list is correct
+
+    // Tests to handle legacy behavior of HashAttribute
+
+    /**
+     * Incoming Flowfile
+     * attributes: [username: “alopresto”, role: “security”, email: “alopresto@apache.org”, git_account: “alopresto”]
+     *
+     * @param overrides any attributes to override
+     * @return the attributes map
+     */
+    private static Map<String, String> getLegacyFlowfileAttributes(Map<String, String> overrides = [:]) {
+        def defaults = [username   : "alopresto",
+                        role       : "security",
+                        email      : "alopresto@apache.org",
+                        git_account: "alopresto"
+        ]
+
+        defaults + overrides
+    }
+
+    /**
+     *    CHA Properties (Individual)
+     *
+     *    attribute_enumeration_style: “individual”
+     *    (dynamic) username_sha256: “username”
+     *    (dynamic) git_account_sha256: “git_account”
+     *
+     *    Behavior (Individual)
+     *
+     *    username_sha256 = git_account_sha256 = $(echo -n "alopresto" | shasum -a 256) = 600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23
+     *
+     *    Resulting Flowfile (Individual)
+     *
+     *    attributes: [username: “alopresto”, role: “security”, email: “alopresto@apache.org”, git_account: “alopresto”, username_sha256: “600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23”, git_account_sha256: “600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23"]
+     */
+    @Test
+    void testShouldHandleIndividualAttribute() {
+        // Arrange
+        def algorithm = HashAlgorithm.SHA256
+        def attributeMatching = AttributeMatchingStrategy.INDIVIDUAL
+
+        String usernameHashAttribute = "username_sha256"
+        String gitAccountHashAttribute = "git_account_sha256"
+
+        final TestRunner runner = TestRunners.newTestRunner(new CryptographicHashAttribute())
+
+        // Create attributes with known values
+        def attributes = getLegacyFlowfileAttributes()
+
+        final EXPECTED_USERNAME_HASH = HashService.hashValue(algorithm, attributes["username"])
+        logger.expected("${algorithm.name.padLeft(11)}(${attributes["username"]}) = ${EXPECTED_USERNAME_HASH}")
+        final EXPECTED_GIT_ACCOUNT_HASH = HashService.hashValue(algorithm, attributes["git_account"])
+        logger.expected("${algorithm.name.padLeft(11)}(${attributes["git_account"]}) = ${EXPECTED_GIT_ACCOUNT_HASH}")
+
+        // Set the algorithm
+        resetRunner(runner, algorithm, attributeMatching, false, true)
+
+        // Add the desired dynamic properties
+        runner.setProperty(usernameHashAttribute, "username")
+        runner.setProperty(gitAccountHashAttribute, "git_account")
+
+        // Insert the attributes in the mock flowfile
+        runner.enqueue(new byte[0], attributes)
+
+        // Act
+        runner.run(1)
+
+        // Assert
+        runner.assertTransferCount(CryptographicHashAttribute.REL_FAILURE, 0)
+        runner.assertTransferCount(CryptographicHashAttribute.REL_SUCCESS, 1)
+
+        final List<MockFlowFile> successfulFlowfiles = runner.getFlowFilesForRelationship(CryptographicHashAttribute.REL_SUCCESS)
+
+        // Extract the generated attributes from the flowfile
+        MockFlowFile flowFile = successfulFlowfiles.first()
+        String hashedUsername = flowFile.getAttribute(usernameHashAttribute)
+        logger.info("flowfile.${usernameHashAttribute} = ${hashedUsername}")
+        String hashedGitAccount = flowFile.getAttribute(gitAccountHashAttribute)
+        logger.info("flowfile.${gitAccountHashAttribute} = ${hashedGitAccount}")
+
+        assert hashedUsername == EXPECTED_USERNAME_HASH
+        assert hashedGitAccount == EXPECTED_GIT_ACCOUNT_HASH
+    }
+
+    /**
+     *    CHA Properties (List)
+     *
+     *    attribute_enumeration_style: “list”
+     *    (dynamic) username_and_email_sha256: “username, email”
+     *    (dynamic) git_account_sha256: “git_account”
+     *
+     *    Behavior (List)
+     *
+     *    username_and_email_sha256 = $(echo -n "aloprestoalopresto@apache.org" | shasum -a 256) = 22a11b7b3173f95c23a1f434949ec2a2e66455b9cb26b7ebc90afca25d91333f
+     *    git_account_sha256 = $(echo -n "alopresto" | shasum -a 256) = 600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23
+     *
+     *    Resulting Flowfile (List)
+     *
+     *    attributes: [username: “alopresto”, role: “security”, email: “alopresto@apache.org”, git_account: “alopresto”, username_email_sha256: “ 22a11b7b3173f95c23a1f434949ec2a2e66455b9cb26b7ebc90afca25d91333f”, git_account_sha256: “600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23”]
+     */
+    @Test
+    void testShouldHandleListAttributes() {
+        // Arrange
+        def algorithm = HashAlgorithm.SHA256
+        def attributeMatching = AttributeMatchingStrategy.LIST
+
+        String usernameAndEmailHashAttribute = "username_and_email_sha256"
+        String gitAccountHashAttribute = "git_account_sha256"
+
+        final TestRunner runner = TestRunners.newTestRunner(new CryptographicHashAttribute())
+
+        // Create attributes with known values
+        def attributes = getLegacyFlowfileAttributes()
+
+        def usernameAndEmail = attributes["username"] + attributes["email"]
+        final EXPECTED_USERNAME_AND_EMAIL_HASH = HashService.hashValue(algorithm, usernameAndEmail)
+        logger.expected("${algorithm.name.padLeft(11)}(${usernameAndEmail}) = ${EXPECTED_USERNAME_AND_EMAIL_HASH}")
+        final EXPECTED_GIT_ACCOUNT_HASH = HashService.hashValue(algorithm, attributes["git_account"])
+        logger.expected("${algorithm.name.padLeft(11)}(${attributes["git_account"]}) = ${EXPECTED_GIT_ACCOUNT_HASH}")
+
+        // Set the algorithm
+        resetRunner(runner, algorithm, attributeMatching, false, true)
+
+        // Add the desired dynamic properties
+        runner.setProperty(usernameAndEmailHashAttribute, "username, email")
+        runner.setProperty(gitAccountHashAttribute, "git_account")
+
+        // Insert the attributes in the mock flowfile
+        runner.enqueue(new byte[0], attributes)
+
+        // Act
+        runner.run(1)
+
+        // Assert
+        runner.assertTransferCount(CryptographicHashAttribute.REL_FAILURE, 0)
+        runner.assertTransferCount(CryptographicHashAttribute.REL_SUCCESS, 1)
+
+        final List<MockFlowFile> successfulFlowfiles = runner.getFlowFilesForRelationship(CryptographicHashAttribute.REL_SUCCESS)
+
+        // Extract the generated attributes from the flowfile
+        MockFlowFile flowFile = successfulFlowfiles.first()
+        String hashedUsernameAndEmail = flowFile.getAttribute(usernameAndEmailHashAttribute)
+        logger.info("flowfile.${usernameAndEmailHashAttribute} = ${hashedUsernameAndEmail}")
+        String hashedGitAccount = flowFile.getAttribute(gitAccountHashAttribute)
+        logger.info("flowfile.${gitAccountHashAttribute} = ${hashedGitAccount}")
+
+        assert hashedUsernameAndEmail == EXPECTED_USERNAME_AND_EMAIL_HASH
+        assert hashedGitAccount == EXPECTED_GIT_ACCOUNT_HASH
+    }
+
+    /**
+     * CHA Properties (Regex)
+     *
+     * attribute_enumeration_style: “regex”
+     * (dynamic) all_sha256: “.*”
+     * (dynamic) git_account_sha256: “git_account”
+     *
+     * Behavior (Regex)
+     *
+     * all_sha256 = sort(attributes_that_match_regex) = [email, git_account, role, username] = $(echo -n "alopresto@apache.orgaloprestosecurityalopresto" | shasum -a 256) = b370fdf0132933cea76e3daa3d4a437bb8c571dd0cd0e79ee5d7759cf64efced
+     * git_account_sha256 = $(echo -n "alopresto" | shasum -a 256) = 600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23
+     *
+     * Resulting Flowfile (Regex)
+     *
+     * attributes: [username: “alopresto”, role: “security”, email: “alopresto@apache.org”, git_account: “alopresto”, all_sha256: “ b370fdf0132933cea76e3daa3d4a437bb8c571dd0cd0e79ee5d7759cf64efced”, git_account_sha256: “600973dc8f2b7bb2a20651ebefe4bf91c5295afef19f4d5b9994d581f5a68a23”]
+     */
+    @Test
+    void testShouldHandleRegexAttributes() {
+        // Arrange
+        def algorithm = HashAlgorithm.SHA256
+        def attributeMatching = AttributeMatchingStrategy.REGEX
+
+        String allHashAttribute = "all_sha256"
+        String gitAccountHashAttribute = "git_account_sha256"
+
+        final TestRunner runner = TestRunners.newTestRunner(new CryptographicHashAttribute())
+
+        // Create attributes with known values
+        def attributes = getLegacyFlowfileAttributes()
+
+        def allAttributes = ["email", "git_account", "role", "username"]
+        def all = allAttributes.collect { attributes[it] }.join()
+        final EXPECTED_ALL_HASH = HashService.hashValue(algorithm, all)
+        logger.expected("${algorithm.name.padLeft(11)}(${all}) = ${EXPECTED_ALL_HASH}")
+        final EXPECTED_GIT_ACCOUNT_HASH = HashService.hashValue(algorithm, attributes["git_account"])
+        logger.expected("${algorithm.name.padLeft(11)}(${attributes["git_account"]}) = ${EXPECTED_GIT_ACCOUNT_HASH}")
+
+        // Set the algorithm
+        resetRunner(runner, algorithm, attributeMatching, false, true)
+
+        // Add the desired dynamic properties
+        runner.setProperty(allHashAttribute, allAttributes.join("|"))
+        runner.setProperty(gitAccountHashAttribute, "git_account")
+
+        // Insert the attributes in the mock flowfile
+        runner.enqueue(new byte[0], attributes)
+
+        // Act
+        runner.run(1)
+
+        // Assert
+        runner.assertTransferCount(CryptographicHashAttribute.REL_FAILURE, 0)
+        runner.assertTransferCount(CryptographicHashAttribute.REL_SUCCESS, 1)
+
+        final List<MockFlowFile> successfulFlowfiles = runner.getFlowFilesForRelationship(CryptographicHashAttribute.REL_SUCCESS)
+
+        // Extract the generated attributes from the flowfile
+        MockFlowFile flowFile = successfulFlowfiles.first()
+        String hashedAll = flowFile.getAttribute(allHashAttribute)
+        logger.info("flowfile.${allHashAttribute} = ${hashedAll}")
+        String hashedGitAccount = flowFile.getAttribute(gitAccountHashAttribute)
+        logger.info("flowfile.${gitAccountHashAttribute} = ${hashedGitAccount}")
+
+        assert hashedAll == EXPECTED_ALL_HASH
+        assert hashedGitAccount == EXPECTED_GIT_ACCOUNT_HASH
     }
 
     static String translateEncodingToMapKey(String charsetName) {
