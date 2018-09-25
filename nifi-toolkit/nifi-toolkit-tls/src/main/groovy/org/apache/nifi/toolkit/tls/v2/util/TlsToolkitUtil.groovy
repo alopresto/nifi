@@ -17,17 +17,35 @@
 
 package org.apache.nifi.toolkit.tls.v2.util
 
-
+import org.apache.commons.lang3.StringUtils
+import org.apache.nifi.security.util.CertificateUtils
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
+import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.Extension
 import org.bouncycastle.asn1.x509.Extensions
 import org.bouncycastle.asn1.x509.ExtensionsGenerator
 import org.bouncycastle.asn1.x509.GeneralName
 import org.bouncycastle.asn1.x509.GeneralNames
 import org.bouncycastle.asn1.x509.GeneralNamesBuilder
+import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.operator.OperatorCreationException
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import javax.crypto.Cipher
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import java.nio.charset.StandardCharsets
+import java.security.GeneralSecurityException
+import java.security.KeyPair
+import java.security.NoSuchAlgorithmException
+import java.security.PublicKey
+import java.security.cert.CertificateParsingException
+import java.security.cert.X509Certificate
 
 class TlsToolkitUtil {
     private static final Logger logger = LoggerFactory.getLogger(TlsToolkitUtil.class)
@@ -39,6 +57,39 @@ class TlsToolkitUtil {
      */
     static boolean isUnlimitedStrengthCryptoAvailable() {
         Cipher.getMaxAllowedKeyLength("AES") > 128
+    }
+
+    /**
+     * Returns the HMAC (SHA-256) calculated over the public key using the provided token.
+     *
+     * @param token cannot be null and must be at least 16 bytes
+     * @param publicKey the public key to use as (data) input
+     * @return the HMAC/SHA-256(token, publicKey)
+     * @throws GeneralSecurityException
+     */
+    static byte[] calculateHMac(String token, PublicKey publicKey) throws GeneralSecurityException {
+        if (token == null) {
+            throw new IllegalArgumentException("Token cannot be null")
+        }
+        byte[] tokenBytes = token.getBytes(StandardCharsets.UTF_8)
+        if (tokenBytes.length < 16) {
+            throw new GeneralSecurityException("Token does not meet minimum size of 16 bytes.")
+        }
+        SecretKeySpec keySpec = new SecretKeySpec(tokenBytes, "RAW")
+        Mac mac = Mac.getInstance("Hmac-SHA256", BouncyCastleProvider.PROVIDER_NAME)
+        mac.init(keySpec)
+        return mac.doFinal(getKeyIdentifier(publicKey))
+    }
+
+    /**
+     * Returns the {@code key identifier} of the public key. Used when calculating the HMAC.
+     *
+     * @param publicKey the public key to verify
+     * @return the key identifier attribute of the public key
+     * @throws NoSuchAlgorithmException
+     */
+    static byte[] getKeyIdentifier(PublicKey publicKey) throws NoSuchAlgorithmException {
+        return new JcaX509ExtensionUtils().createSubjectKeyIdentifier(publicKey).getKeyIdentifier()
     }
 
     /**
@@ -58,6 +109,136 @@ class TlsToolkitUtil {
         ExtensionsGenerator extGen = new ExtensionsGenerator()
         extGen.addExtension(Extension.subjectAlternativeName, false, subjectAltGeneralNames)
         return extGen.generate()
+    }
+
+    /**
+     * Returns a String listing the {@code SubjectAlternativeNames} (if any) and their address
+     * types contained in the provided {@link java.security.cert.X509Certificate}. Currently handles
+     * String-formatted address types (see {@link #determineAddressType(int)}.
+     *
+     * @param certificate the X.509 certificate
+     * @return a String listing the SANs or an empty String
+     * @throws java.security.cert.CertificateParsingException if there is a problem parsing the certificate
+     */
+    static String formatSANForDisplay(X509Certificate certificate) throws CertificateParsingException {
+        // The getter returns a Collection of Lists, each List is a GeneralName
+        final Collection<List<?>> subjectAlternativeNames = certificate.getSubjectAlternativeNames()
+
+        // The result can be null if no SAN are present
+        if (subjectAlternativeNames == null) {
+            return ""
+        }
+
+        List<String> stringAddresses = new ArrayList<>()
+        for (List<?> altName : subjectAlternativeNames) {
+            // The List is [0] == Integer representing type; [1] == String name or byte[] address in ASN.1 DER format
+            int addressType = new Integer(altName.get(0).toString())
+            // RFC 822 (1), DNS (2), URI (6), and IP addresses (7) are in String format
+            if (addressType == 1 || addressType == 2 || addressType == 6 || addressType == 7) {
+                stringAddresses.add("[" + determineAddressType(addressType) + "] " + altName.get(1).toString())
+            } else {
+                // TODO: Decode the ASN.1 DER byte[]
+            }
+        }
+        return StringUtils.join(stringAddresses, ",")
+    }
+
+    /**
+     * Returns a String indicating the address type as found in {@code SubjectAlternativeNames} in an X.509 certificate.
+     *
+     * Currently, the supported types are:
+     *
+     * 1 - RFC 822
+     * 2 - DNS
+     * 6 - URI
+     * 7 - IP Address
+     *
+     * @param addressType the integer representation of the address type
+     * @return a String name
+     */
+    static String determineAddressType(int addressType) {
+        switch (addressType) {
+            case 1: return "RFC 822"
+            case 2: return "DNS"
+            case 6: return "URI"
+            case 7: return "IP Address"
+            default: return "Unsupported Address Type"
+        }
+    }
+
+    /**
+     * Returns a {@code Certificate Signing Request} for the specified DN and SANs with the provided key pair.
+     *
+     * @param requestedDn
+     * @param subjectAlternativeNames
+     * @param keyPair
+     * @param signingAlgorithm
+     * @return
+     * @throws OperatorCreationException
+     */
+    static JcaPKCS10CertificationRequest generateCertificateSigningRequest(String requestedDn, List<String> subjectAlternativeNames, KeyPair keyPair, String signingAlgorithm) throws OperatorCreationException {
+        logger.debug("Generating CSR for DN ${requestedDn} with SANs ${subjectAlternativeNames}")
+        JcaPKCS10CertificationRequestBuilder crb = new JcaPKCS10CertificationRequestBuilder(new X500Name(requestedDn), keyPair.getPublic())
+
+        // Add Subject Alternative Name(s) (including the CN)
+        try {
+            crb.addAttribute(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest, generateSubjectAlternativeNamesExtensions(subjectAlternativeNames + CertificateUtils.getCNFromDN(requestedDn)))
+        } catch (IOException e) {
+            throw new OperatorCreationException("Error while adding " + subjectAlternativeNames + " as Subject Alternative Name", e)
+        }
+
+        // Build the signer and the request
+        JcaContentSignerBuilder csb = new JcaContentSignerBuilder(signingAlgorithm)
+        def contentSigner = csb.build(keyPair.getPrivate())
+        def certificationRequest = crb.build(contentSigner)
+        new JcaPKCS10CertificationRequest(certificationRequest)
+    }
+
+    /**
+     * Returns true if the {@code certificate} is signed by one of the {@code signingCertificates}. The list should
+     * include the certificate itself to allow for self-signed certificates. If it does not, a self-signed certificate
+     * will return {@code false}.
+     *
+     * @param certificate the certificate containing the signature being verified
+     * @param signingCertificates a list of certificates which may have signed the certificate
+     * @return true if one of the signing certificates did sign the certificate
+     */
+    static boolean verifyCertificateSignature(X509Certificate certificate, List<X509Certificate> signingCertificates) {
+        String certificateDisplayInfo = getCertificateDisplayInfo(certificate)
+        if (isVerbose()) {
+            logger.info("Verifying the certificate signature for " + certificateDisplayInfo)
+        }
+        boolean signatureMatches = false
+        for (X509Certificate signingCert : signingCertificates) {
+            final String signingCertDisplayInfo = getCertificateDisplayInfo(signingCert)
+            try {
+                if (isVerbose()) {
+                    logger.info("Attempting to verify certificate " + certificateDisplayInfo + " signature with " + signingCertDisplayInfo)
+                }
+                PublicKey pub = signingCert.getPublicKey()
+                certificate.verify(pub)
+                if (isVerbose()) {
+                    logger.info("Certificate was signed by " + signingCertDisplayInfo)
+                }
+                signatureMatches = true
+                break
+            } catch (Exception e) {
+                // Expected if the signature does not match
+                if (isVerbose()) {
+                    logger.warn("Certificate " + certificateDisplayInfo + " not signed by " + signingCertDisplayInfo + " [" + e.getLocalizedMessage() + "]")
+                }
+            }
+        }
+        return signatureMatches
+    }
+
+    private static String getCertificateDisplayInfo(X509Certificate certificate) {
+        return certificate.getSubjectX500Principal().getName()
+    }
+
+    private static boolean isVerbose() {
+        // TODO: When verbose mode is enabled via command-line flag, this will read the variable
+        return true
     }
 //
 //    /**
