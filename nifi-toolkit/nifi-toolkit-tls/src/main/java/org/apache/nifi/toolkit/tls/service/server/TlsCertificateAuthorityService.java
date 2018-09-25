@@ -60,6 +60,7 @@ public class TlsCertificateAuthorityService {
     }
 
     private static Server createServer(Handler handler, int port, KeyStore keyStore, String keyPassword) throws Exception {
+        // TODO: Add verbose mode debugging
         Server server = new Server();
 
         SslContextFactory sslContextFactory = new SslContextFactory();
@@ -89,7 +90,7 @@ public class TlsCertificateAuthorityService {
             tlsManager = new TlsCertificateAuthorityManager(tlsConfig);
             tlsManager.setDifferentKeyAndKeyStorePassword(differentPasswordsForKeyAndKeystore);
         } catch (IOException e) {
-            logger.error("Unable to open existing keystore, it can be reused by specifiying both " + BaseCertificateAuthorityCommandLine.CONFIG_JSON_ARG + " and " +
+            logger.error("Unable to open existing keystore, it can be reused by specifying both " + BaseCertificateAuthorityCommandLine.CONFIG_JSON_ARG + " and " +
                     BaseCertificateAuthorityCommandLine.USE_CONFIG_JSON_ARG);
             throw e;
         }
@@ -99,14 +100,14 @@ public class TlsCertificateAuthorityService {
         KeyPair keyPair = new KeyPair(privateKeyEntry.getCertificate().getPublicKey(), privateKeyEntry.getPrivateKey());
         Certificate[] certificateChain = privateKeyEntry.getCertificateChain();
         if (certificateChain.length != 1) {
-            throw new IOException("Expected root ca cert to be only certificate in chain");
+            throw new IOException("Expected root CA cert to be only certificate in chain");
         }
         Certificate certificate = certificateChain[0];
         X509Certificate caCert;
         if (certificate instanceof X509Certificate) {
             caCert = (X509Certificate) certificate;
         } else {
-            throw new IOException("Expected " + X509Certificate.class + " as root ca cert");
+            throw new IOException("Expected " + X509Certificate.class + " as root CA cert");
         }
         tlsManager.write(outputStreamFactory);
         String signingAlgorithm = tlsConfig.getSigningAlgorithm();

@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 public class TlsCertificateAuthorityServiceCommandLine extends BaseCertificateAuthorityCommandLine {
     private static final Logger logger = LoggerFactory.getLogger(TlsCertificateAuthorityServiceCommandLine.class);
 
-    public static final String DESCRIPTION = "Acts as a Certificate Authority that can be used by clients to get Certificates";
+    public static final String DESCRIPTION = "Acts as a Certificate Authority that can be used by clients to get certificates";
     public static final String NIFI_CA_KEYSTORE = "nifi-ca-" + KEYSTORE;
     private static final int TOKEN_MIN_LENGTH = 16;
 
@@ -60,11 +60,17 @@ public class TlsCertificateAuthorityServiceCommandLine extends BaseCertificateAu
         TlsCertificateAuthorityServiceCommandLine commandLine = new TlsCertificateAuthorityServiceCommandLine();
         try {
             commandLine.parse(args);
+            // As of now, the configJson has not been read
         } catch (CommandLineParseException e) {
             System.exit(e.getExitCode().ordinal());
         }
         if (commandLine.isVerbose()) {
             logger.info("Completed parsing command-line arguments");
+        }
+
+        // TODO: Read the configJson because parameters cannot be validated if they are in the config.json
+        if (commandLine.shouldReadFromConfigJson()) {
+            // commandLine.readAdditionalValuesFromConfigJson();
         }
 
         try {
@@ -76,6 +82,10 @@ public class TlsCertificateAuthorityServiceCommandLine extends BaseCertificateAu
         commandLine.configureCAService(new TlsCertificateAuthorityService());
 
         commandLine.startCAService();
+    }
+
+    private boolean shouldReadFromConfigJson() {
+        return !StringUtils.isBlank(super.getConfigJsonIn());
     }
 
     /**
@@ -99,7 +109,7 @@ public class TlsCertificateAuthorityServiceCommandLine extends BaseCertificateAu
     /**
      * Starts the CA service.
      *
-     * @throws Exception
+     * @throws Exception if there was a problem starting the CA service
      */
     private void startCAService() throws Exception {
         caService.start(createConfig(), getConfigJsonOut(),

@@ -64,6 +64,8 @@ public class TlsCertificateSigningRequestPerformer {
     private final ObjectMapper objectMapper;
     private final String signingAlgorithm;
 
+    private boolean isVerbose;
+
     public TlsCertificateSigningRequestPerformer(TlsClientConfig tlsClientConfig) throws NoSuchAlgorithmException {
         this(HttpClientBuilder::create, tlsClientConfig.getCaHostname(), tlsClientConfig.getDn(), tlsClientConfig.getDomainAlternativeNames(),
                 tlsClientConfig.getToken(), tlsClientConfig.getPort(), tlsClientConfig.getSigningAlgorithm());
@@ -95,6 +97,7 @@ public class TlsCertificateSigningRequestPerformer {
      */
     public X509Certificate[] perform(KeyPair keyPair) throws IOException {
         try {
+            // TODO: Add debug information
             List<X509Certificate> certificates = new ArrayList<>();
 
             HttpClientBuilder httpClientBuilder = httpClientBuilderSupplier.get();
@@ -158,5 +161,12 @@ public class TlsCertificateSigningRequestPerformer {
         } catch (Exception e) {
             throw new IOException(e);
         }
+    }
+
+
+    // TODO: Add meaningful #toString()
+
+    public boolean isVerbose() {
+        return isVerbose;
     }
 }

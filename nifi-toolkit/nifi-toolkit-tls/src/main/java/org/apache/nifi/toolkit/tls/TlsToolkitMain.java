@@ -104,6 +104,7 @@ public class TlsToolkitMain {
         }
 
         String service = args[0].toLowerCase();
+        System.out.println("Invoking service: " + service);
 
         try {
             getMain(service).invoke(null, (Object) Arrays.copyOfRange(args, 1, args.length, String[].class));

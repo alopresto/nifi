@@ -51,12 +51,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TlsToolkitStandalone {
+    // TODO: Move to common base class as these are used in client/server model too
     public static final String NIFI_KEY = "nifi-key";
     public static final String NIFI_CERT = "nifi-cert";
     public static final String NIFI_PROPERTIES = "nifi.properties";
 
     private final Logger logger = LoggerFactory.getLogger(TlsToolkitStandalone.class);
     private final OutputStreamFactory outputStreamFactory;
+
+    private boolean isVerbose = false;
 
     public TlsToolkitStandalone() {
         this(FileOutputStream::new);
@@ -68,6 +71,11 @@ public class TlsToolkitStandalone {
 
     public void createNifiKeystoresAndTrustStores(StandaloneConfig standaloneConfig) throws GeneralSecurityException, IOException {
         // TODO: This 200 line method should be refactored, as it is difficult to test the various validations separately from the filesystem interaction and generation logic
+        this.isVerbose = standaloneConfig.isVerbose();
+
+        // Set the verbose mode for the static helper methods for the remainder of this execution
+        TlsHelper.setVerbose(this.isVerbose);
+
         File baseDir = standaloneConfig.getBaseDir();
         if (!baseDir.exists() && !baseDir.mkdirs()) {
             throw new IOException(baseDir + " doesn't exist and unable to create it.");
@@ -88,7 +96,7 @@ public class TlsToolkitStandalone {
         X509Certificate certificate;
         KeyPair caKeyPair;
 
-        if (logger.isInfoEnabled()) {
+        if (isVerbose()) {
             logger.info("Running standalone certificate generation with output directory " + baseDir);
         }
         if (nifiCert.exists()) {
@@ -132,7 +140,7 @@ public class TlsToolkitStandalone {
                 throw new IOException("Expected " + nifiKey + " to correspond to CA certificate at " + nifiCert);
             }
 
-            if (logger.isInfoEnabled()) {
+            if (isVerbose()) {
                 logger.info("Using existing CA certificate " + nifiCert + " and key " + nifiKey);
             }
         } else if (nifiKey.exists()) {
@@ -151,7 +159,7 @@ public class TlsToolkitStandalone {
                 pemWriter.writeObject(new JcaMiscPEMGenerator(caKeyPair));
             }
 
-            if (logger.isInfoEnabled()) {
+            if (isVerbose()) {
                 logger.info("Generated new CA certificate " + nifiCert + " and key " + nifiKey);
             }
         }
@@ -160,7 +168,7 @@ public class TlsToolkitStandalone {
         boolean overwrite = standaloneConfig.isOverwrite();
 
         List<InstanceDefinition> instanceDefinitions = standaloneConfig.getInstanceDefinitions();
-        if (instanceDefinitions.isEmpty() && logger.isInfoEnabled()) {
+        if (instanceDefinitions.isEmpty() && isVerbose()) {
             logger.info("No " + TlsToolkitStandaloneCommandLine.HOSTNAMES_ARG + " specified, not generating any host certificates or configuration.");
         }
         for (InstanceDefinition instanceDefinition : instanceDefinitions) {
@@ -173,6 +181,7 @@ public class TlsToolkitStandalone {
                 hostDir = new File(baseDir, hostname + "_" + hostIdentifierNumber);
             }
 
+            // TODO: Refactor client configs from each instance?
             TlsClientConfig tlsClientConfig = new TlsClientConfig(standaloneConfig);
             File keystore = new File(hostDir, "keystore." + tlsClientConfig.getKeyStoreType().toLowerCase());
             File truststore = new File(hostDir, "truststore." + tlsClientConfig.getTrustStoreType().toLowerCase());
@@ -181,7 +190,7 @@ public class TlsToolkitStandalone {
                 if (!hostDir.isDirectory()) {
                     throw new IOException(hostDir + " exists but is not a directory.");
                 } else if (overwrite) {
-                    if (logger.isInfoEnabled()) {
+                    if (isVerbose()) {
                         logger.info("Overwriting any existing ssl configuration in " + hostDir);
                     }
                     keystore.delete();
@@ -197,7 +206,7 @@ public class TlsToolkitStandalone {
                 }
             } else if (!hostDir.mkdirs()) {
                 throw new IOException("Unable to make directory: " + hostDir.getAbsolutePath());
-            } else if (logger.isInfoEnabled()) {
+            } else if (isVerbose()) {
                 logger.info("Writing new ssl configuration to " + hostDir);
             }
 
@@ -215,13 +224,13 @@ public class TlsToolkitStandalone {
             tlsClientManager.addClientConfigurationWriter(new NifiPropertiesTlsClientConfigWriter(niFiPropertiesWriterFactory, new File(hostDir, "nifi.properties"),
                     hostname, instanceDefinition.getNumber()));
             tlsClientManager.write(outputStreamFactory);
-            if (logger.isInfoEnabled()) {
+            if (isVerbose()) {
                 logger.info("Successfully generated TLS configuration for " + hostname + " " + hostIdentifierNumber + " in " + hostDir);
             }
         }
 
         List<String> clientDns = standaloneConfig.getClientDns();
-        if (standaloneConfig.getClientDns().isEmpty() && logger.isInfoEnabled()) {
+        if (standaloneConfig.getClientDns().isEmpty() && isVerbose()) {
             logger.info("No " + TlsToolkitStandaloneCommandLine.CLIENT_CERT_DN_ARG + " specified, not generating any client certificates.");
         }
 
@@ -233,13 +242,13 @@ public class TlsToolkitStandalone {
 
             if (clientCertFile.exists()) {
                 if (overwrite) {
-                    if (logger.isInfoEnabled()) {
+                    if (isVerbose()) {
                         logger.info("Overwriting existing client cert " + clientCertFile);
                     }
                 } else {
                     throw new IOException(clientCertFile + " exists and overwrite is not set.");
                 }
-            } else if (logger.isInfoEnabled()) {
+            } else if (isVerbose()) {
                 logger.info("Generating new client certificate " + clientCertFile);
             }
             KeyPair keyPair = TlsHelper.generateKeyPair(keyPairAlgorithm, keySize);
@@ -253,14 +262,17 @@ public class TlsToolkitStandalone {
                 fileWriter.write(password);
             }
 
-            if (logger.isInfoEnabled()) {
+            if (isVerbose()) {
                 logger.info("Successfully generated client certificate " + clientCertFile);
             }
         }
 
-        if (logger.isInfoEnabled()) {
+        if (isVerbose()) {
             logger.info("tls-toolkit standalone completed successfully");
         }
     }
 
+    public boolean isVerbose() {
+        return isVerbose;
+    }
 }

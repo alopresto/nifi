@@ -31,8 +31,10 @@ import java.security.KeyStore;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -78,7 +80,7 @@ public class TlsHelper {
     public static final String JCE_URL = "http://www.oracle.com/technetwork/java/javase/downloads/jce8-download-2133166.html";
     public static final String ILLEGAL_KEY_SIZE = "illegal key size";
     private static boolean isUnlimitedStrengthCryptographyEnabled;
-    private static boolean isVerbose = true;
+    private static boolean isVerbose = false;
 
     // Evaluate an unlimited strength algorithm to determine if we support the capability we have on the system
     static {
@@ -312,6 +314,61 @@ public class TlsHelper {
         return extGen.generate();
     }
 
+    /**
+     * Returns a String listing the {@code SubjectAlternativeNames} (if any) and their address
+     * types contained in the provided {@link X509Certificate}. Currently handles
+     * String-formatted address types (see {@link #determineAddressType(int)}.
+     *
+     * @param certificate the X.509 certificate
+     * @return a String listing the SANs or an empty String
+     * @throws CertificateParsingException if there is a problem parsing the certificate
+     */
+    public static String formatSANForDisplay(X509Certificate certificate) throws CertificateParsingException {
+        // The getter returns a Collection of Lists, each List is a GeneralName
+        final Collection<List<?>> subjectAlternativeNames = certificate.getSubjectAlternativeNames();
+
+        // The result can be null if no SAN are present
+        if (subjectAlternativeNames == null) {
+            return "";
+        }
+
+        List<String> stringAddresses = new ArrayList<>();
+        for (List<?> altName : subjectAlternativeNames) {
+            // The List is [0] == Integer representing type; [1] == String name or byte[] address in ASN.1 DER format
+            int addressType = new Integer(altName.get(0).toString());
+            // RFC 822 (1), DNS (2), URI (6), and IP addresses (7) are in String format
+            if (addressType == 1 || addressType == 2 || addressType == 6 || addressType == 7) {
+                stringAddresses.add("[" + determineAddressType(addressType) + "] " + altName.get(1).toString());
+            } else {
+                // TODO: Decode the ASN.1 DER byte[]
+            }
+        }
+        return StringUtils.join(stringAddresses, ",");
+    }
+
+    /**
+     * Returns a String indicating the address type as found in {@code SubjectAlternativeNames} in an X.509 certificate.
+     *
+     * Currently, the supported types are:
+     *
+     * 1 - RFC 822
+     * 2 - DNS
+     * 6 - URI
+     * 7 - IP Address
+     *
+     * @param addressType the integer representation of the address type
+     * @return a String name
+     */
+    public static String determineAddressType(int addressType) {
+        switch (addressType) {
+            case 1: return "RFC 822";
+            case 2: return "DNS";
+            case 6: return "URI";
+            case 7: return "IP Address";
+            default: return "Unsupported Address Type";
+        }
+    }
+
 
     /**
      * Removes special characters (particularly forward and back slashes) from strings that become file names.
@@ -363,6 +420,15 @@ public class TlsHelper {
 
     private static String getCertificateDisplayInfo(X509Certificate certificate) {
         return certificate.getSubjectX500Principal().getName();
+    }
+
+    /**
+     * Can be called at any time to enable/disable the {@code verbose} mode for static helper methods on this class.
+     *
+     * @param isVerbose true for verbose mode
+     */
+    public static void setVerbose(boolean isVerbose) {
+        TlsHelper.isVerbose = isVerbose;
     }
 
     private static boolean isVerbose() {

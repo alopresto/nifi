@@ -54,6 +54,8 @@ public class TlsConfig {
     private boolean reorderDn = DEFAULT_REORDER_DN;
     private String additionalCACertificate = "";
 
+    private boolean isVerbose = false;
+
     public String calcDefaultDn(String hostname) {
         String dn = dnPrefix + hostname + dnSuffix;
         if (reorderDn) {
@@ -247,5 +249,23 @@ public class TlsConfig {
      */
     public void setAdditionalCACertificate(String additionalCACertificate) {
         this.additionalCACertificate = additionalCACertificate;
+    }
+
+    /**
+     * Returns true if {@code verbose} mode is enabled and more descriptive/frequent log messages should be output. Default is {@code false}.
+     *
+     * @return true if verbose mode is on
+     */
+    public boolean isVerbose() {
+        return this.isVerbose;
+    }
+
+    /**
+     * Set the verbose option.
+     *
+     * @param verbose true to enable verbose mode
+     */
+    public void setVerbose(boolean verbose) {
+        isVerbose = verbose;
     }
 }
