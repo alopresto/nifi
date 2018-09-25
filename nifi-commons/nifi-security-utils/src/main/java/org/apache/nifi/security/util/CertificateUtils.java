@@ -596,7 +596,7 @@ public final class CertificateUtils {
      * @return the CN
      * @throws IOException if there is a problem parsing the CN
      */
-    private static String getCNFromDN(String dn) throws IOException {
+    public static String getCNFromDN(String dn) throws IOException {
         try {
             final String cn = IETFUtils.valueToString(new X500Name(dn).getRDNs(BCStyle.CN)[0].getFirst().getValue());
             logger.debug("Extracted CN ## {} ## from DN ## {} ##", new Object[]{cn, dn});

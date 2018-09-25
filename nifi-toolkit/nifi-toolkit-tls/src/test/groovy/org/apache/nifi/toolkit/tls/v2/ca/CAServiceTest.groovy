@@ -18,7 +18,10 @@
 package org.apache.nifi.toolkit.tls.v2.ca
 
 import org.apache.nifi.security.util.CertificateUtils
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
+import org.bouncycastle.util.encoders.Hex
 import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
@@ -28,6 +31,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.security.GeneralSecurityException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.NoSuchAlgorithmException
@@ -194,5 +198,113 @@ class CAServiceTest extends GroovyTestCase {
             caCertificate.checkValidity(new Date() + DEFAULT_CERT_AGE_DAYS + 1) // right after expiry
         }
         logger.expected(msg)
+    }
+
+    /**
+     * Generate CA certificate, generate CSR, and sign CSR.
+     */
+    @Test
+    void testShouldGenerateCSR() {
+        // Arrange
+
+        // Generate the CSR
+        String csrDn = "CN=node1.nifi.apache.org"
+        KeyPair nodeKeyPair = generateKeyPair()
+
+        // Act
+        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        logger.info("Generated CSR: ${csr.subject}")
+
+        // Assert
+        assert csr.publicKey == nodeKeyPair.public
+        assert csr.subject.toString() == csrDn
+    }
+
+    /**
+     * Generate CA certificate, generate CSR, and sign CSR.
+     */
+    @Test
+    void testShouldSignCSR() {
+        // Arrange
+        final String CA_CN = "nifi-ca.nifi.apache.org"
+        final String CA_DN = "CN=" + CA_CN
+
+        KeyPair caKeyPair = generateKeyPair()
+
+        // Generate the CA
+        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
+
+        final String TOKEN = "token" * 4
+        logger.info("Using token: ${TOKEN}")
+
+        // Create the CAService
+        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created CAService: ${cas}")
+
+        // Generate the (mock) CSR
+        String csrDn = "CN=node1.nifi.apache.org"
+        KeyPair nodeKeyPair = generateKeyPair()
+        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        logger.info("Generated CSR: ${csr.subject}")
+
+        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
+        String hmac = Hex.toHexString(hmacBytes)
+        logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
+
+        // Act
+        X509Certificate signedCertificate = cas.signCSR(csr, hmac)
+        logger.info("Signed certificate: ${signedCertificate.subjectX500Principal.name}")
+
+        // Assert
+        assert signedCertificate.publicKey == nodeKeyPair.public
+        assert signedCertificate.subjectX500Principal.name == csrDn
+        signedCertificate.verify(caKeyPair.public)
+        logger.info("The signed certificate was signed by the CA key")
+    }
+
+    /**
+     * Invalid HMAC should stop the operation.
+     */
+    @Test
+    void testShouldNotSignCSRIfHMACInvalid() {
+        // Arrange
+        final String CA_CN = "nifi-ca.nifi.apache.org"
+        final String CA_DN = "CN=" + CA_CN
+
+        KeyPair caKeyPair = generateKeyPair()
+
+        // Generate the CA
+        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
+
+        final String TOKEN = "token" * 4
+        logger.info("Using token: ${TOKEN}")
+
+        // Create the CAService
+        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created CAService: ${cas}")
+
+        // Generate the (mock) CSR
+        String csrDn = "CN=node1.nifi.apache.org"
+        KeyPair nodeKeyPair = generateKeyPair()
+        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        logger.info("Generated CSR: ${csr.subject}")
+
+        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
+        String hmac = Hex.toHexString(hmacBytes)
+        logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
+        hmac = hmac.reverse()
+        logger.info("Reversed HMAC to cause exception: ${hmac}")
+
+        // Act
+        def msg = shouldFail(GeneralSecurityException) {
+            X509Certificate signedCertificate = cas.signCSR(csr, hmac)
+            logger.info("Signed certificate: ${signedCertificate.subjectX500Principal.name}")
+        }
+        logger.expected(msg)
+
+        // Assert
+        assert msg =~ "The provided HMAC was not valid"
     }
 }
