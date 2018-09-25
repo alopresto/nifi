@@ -18,6 +18,14 @@
 package org.apache.nifi.toolkit.tls.service.server;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.MessageDigest;
+import java.security.cert.X509Certificate;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.io.input.BoundedReader;
 import org.apache.nifi.security.util.CertificateUtils;
 import org.apache.nifi.toolkit.tls.service.dto.TlsCertificateAuthorityRequest;
@@ -29,15 +37,6 @@ import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.MessageDigest;
-import java.security.cert.X509Certificate;
 
 /**
  * Jetty service handler that validates the hmac of a CSR and issues a certificate if it checks out
@@ -64,24 +63,29 @@ public class TlsCertificateAuthorityServiceHandler extends AbstractHandler {
     }
 
     @Override
-    public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+    public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws ServletException {
         // TODO: Add verbose mode debugging
         try {
+            // Read the (custom) CSR wrapper object from the request
             TlsCertificateAuthorityRequest tlsCertificateAuthorityRequest = objectMapper.readValue(new BoundedReader(request.getReader(), 1024 * 1024), TlsCertificateAuthorityRequest.class);
 
+            // Check if it contains an HMAC
             if (!tlsCertificateAuthorityRequest.hasHmac()) {
                 writeResponse(objectMapper, request, response, new TlsCertificateAuthorityResponse(HMAC_FIELD_MUST_BE_SET), Response.SC_BAD_REQUEST);
                 return;
             }
 
+            // Check if it contains a CSR
             if (!tlsCertificateAuthorityRequest.hasCsr()) {
                 writeResponse(objectMapper, request, response, new TlsCertificateAuthorityResponse(CSR_FIELD_MUST_BE_SET), Response.SC_BAD_REQUEST);
                 return;
             }
 
+            // Parse the wrapper to extract the CSR
             JcaPKCS10CertificationRequest jcaPKCS10CertificationRequest = TlsHelper.parseCsr(tlsCertificateAuthorityRequest.getCsr());
             byte[] expectedHmac = TlsHelper.calculateHMac(token, jcaPKCS10CertificationRequest.getPublicKey());
 
+            // Verify the HMAC
             if (MessageDigest.isEqual(expectedHmac, tlsCertificateAuthorityRequest.getHmac())) {
                 String dn = jcaPKCS10CertificationRequest.getSubject().toString();
                 if (logger.isInfoEnabled()) {
