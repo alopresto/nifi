@@ -58,6 +58,7 @@ import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.asn1.x500.style.IETFUtils;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.Extension;
@@ -549,7 +550,7 @@ public final class CertificateUtils {
             certBuilder.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth}));
 
             // (3) subjectAlternativeName
-            Extensions sanExtensions = buildSANExtensionContainingDN(dn, extensions);
+            Extensions sanExtensions = buildSANExtensionContainingCN(dn, extensions);
             certBuilder.addExtension(Extension.subjectAlternativeName, false, sanExtensions.getExtensionParsedValue(Extension.subjectAlternativeName));
 
             // Sign the certificate
@@ -561,17 +562,18 @@ public final class CertificateUtils {
     }
 
     /**
-     * Returns an {@link Extensions} object containing the SAN entries that were provided in addition to the DN explicitly added to comply with RFC 6125.
+     * Returns an {@link Extensions} object containing the SAN entries that were provided in addition to the CN from the DN explicitly added to comply with RFC 6125.
      * @param dn the DN
      * @param extensions the extensions object containing the provided SAN entries
-     * @return an extensions object with the DN inserted as a SAN
+     * @return an extensions object with the CN from the provided DN inserted as a SAN
      * @throws IOException if there is a problem reading the extensions object
      */
-    private static Extensions buildSANExtensionContainingDN(String dn, Extensions extensions) throws IOException {
+    private static Extensions buildSANExtensionContainingCN(String dn, Extensions extensions) throws IOException {
         // Explicitly add the DN as a SAN
-        GeneralName dnGeneralName = new GeneralName(GeneralName.dNSName, dn);
-        final GeneralNamesBuilder generalNamesBuilder = new GeneralNamesBuilder().addName(dnGeneralName);
-        logger.debug("Always add the provided DN as a SAN: {}", new Object[]{dn});
+        String cn = getCNFromDN(dn);
+        GeneralName cnGeneralName = new GeneralName(GeneralName.dNSName, cn);
+        final GeneralNamesBuilder generalNamesBuilder = new GeneralNamesBuilder().addName(cnGeneralName);
+        logger.debug("Always add the provided CN as a SAN: {}", new Object[]{cn});
 
         // Iterate over the provided extensions and add any SAN to the GeneralNamesBuilder
         if(extensions != null && extensions.getExtension(Extension.subjectAlternativeName) != null) {
@@ -585,6 +587,23 @@ public final class CertificateUtils {
         ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator();
         extensionsGenerator.addExtension(Extension.subjectAlternativeName, false, generalNames);
         return extensionsGenerator.generate();
+    }
+
+    /**
+     * Returns the CN extracted from the provided DN. Uses {@link X500Name} component parsing as opposed to String manipulation.
+     *
+     * @param dn the DN
+     * @return the CN
+     * @throws IOException if there is a problem parsing the CN
+     */
+    private static String getCNFromDN(String dn) throws IOException {
+        try {
+            final String cn = IETFUtils.valueToString(new X500Name(dn).getRDNs(BCStyle.CN)[0].getFirst().getValue());
+            logger.debug("Extracted CN ## {} ## from DN ## {} ##", new Object[]{cn, dn});
+            return cn;
+        } catch (Exception e) {
+            throw new IOException("Failed to extract CN from request DN: " + dn, e);
+        }
     }
 
     /**
@@ -650,7 +669,7 @@ public final class CertificateUtils {
             certBuilder.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth}));
 
             // (3) subjectAlternativeName
-            Extensions sanExtensions = buildSANExtensionContainingDN(dn, extensions);
+            Extensions sanExtensions = buildSANExtensionContainingCN(dn, extensions);
             certBuilder.addExtension(Extension.subjectAlternativeName, false, sanExtensions.getExtensionParsedValue(Extension.subjectAlternativeName));
 
             X509CertificateHolder certificateHolder = certBuilder.build(sigGen);
