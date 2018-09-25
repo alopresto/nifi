@@ -436,7 +436,7 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldGenerateSelfSignedCert() throws Exception {
+    void testShouldGenerateSelfSignedCert() throws Exception {
         String dn = "CN=testDN,O=testOrg"
 
         int days = 365
@@ -458,8 +458,8 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testIssueCert() throws Exception {
-        int days = 365;
+    void testIssueCert() throws Exception {
+        int days = 365
         KeyPair issuerKeyPair = generateKeyPair()
         X509Certificate issuer = CertificateUtils.generateSelfSignedX509Certificate(issuerKeyPair, "CN=testCa,O=testOrg", SIGNATURE_ALGORITHM, days)
 
@@ -486,7 +486,7 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void reorderShouldPutElementsInCorrectOrder() {
+    void reorderShouldPutElementsInCorrectOrder() {
         String cn = "CN=testcn"
         String l = "L=testl"
         String st = "ST=testst"
@@ -504,8 +504,8 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testUniqueSerialNumbers() {
-        def running = new AtomicBoolean(true);
+    void testUniqueSerialNumbers() {
+        def running = new AtomicBoolean(true)
         def executorService = Executors.newCachedThreadPool()
         def serialNumbers = Collections.newSetFromMap(new ConcurrentHashMap())
         try {
@@ -514,7 +514,7 @@ class CertificateUtilsTest extends GroovyTestCase {
                 futures.add(executorService.submit(new Callable<Integer>() {
                     @Override
                     Integer call() throws Exception {
-                        int count = 0;
+                        int count = 0
                         while (running.get()) {
                             def before = System.currentTimeMillis()
                             def serialNumber = CertificateUtils.getUniqueSerialNumber()
@@ -523,23 +523,23 @@ class CertificateUtilsTest extends GroovyTestCase {
                             assertTrue(serialNumberMillis >= before)
                             assertTrue(serialNumberMillis <= after)
                             assertTrue(serialNumbers.add(serialNumber))
-                            count++;
+                            count++
                         }
-                        return count;
+                        return count
                     }
-                }));
+                }))
             }
 
             Thread.sleep(1000)
 
             running.set(false)
 
-            def totalRuns = 0;
+            def totalRuns = 0
             for (int i = 0; i < futures.size(); i++) {
                 try {
                     def numTimes = futures.get(i).get()
                     logger.info("future $i executed $numTimes times")
-                    totalRuns += numTimes;
+                    totalRuns += numTimes
                 } catch (ExecutionException e) {
                     throw e.getCause()
                 }
@@ -585,5 +585,68 @@ class CertificateUtilsTest extends GroovyTestCase {
         assert certificate.getSubjectDN().name == SUBJECT_DN
         assert certificate.getSubjectAlternativeNames().size() == SANS.size()
         assert certificate.getSubjectAlternativeNames()*.last().containsAll(SANS)
+    }
+
+    /**
+     * Self-signed (or CA) certificates should populate the DN and any provided SANs into the certificate.
+     */
+    @Test
+    void testShouldGenerateSelfSignedCertificateWithSans() {
+        // Arrange
+        final String DN = "CN=localhost"
+        final List<String> SANS = ["127.0.0.1", "nifi.nifi.apache.org"]
+        logger.info("Creating a certificate with subject: ${DN} and SAN: ${SANS}")
+
+        // Expected value should also include DN
+        final List<String> ALL_SANS = SANS + DN
+        logger.info("Expected SANS: ${ALL_SANS}")
+
+        final KeyPair keyPair = generateKeyPair()
+
+        // Form the SANS into GeneralName instances and populate the container with the array
+        def gns = SANS.collect { String san ->
+            new GeneralName(GeneralName.dNSName, san)
+        }
+        def generalNames = new GeneralNames(gns as GeneralName[])
+        logger.info("Created GeneralNames object: ${generalNames.names*.toString()}")
+
+        // Form the Extensions object
+        ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator()
+        extensionsGenerator.addExtension(Extension.subjectAlternativeName, false, generalNames)
+        Extensions extensions = extensionsGenerator.generate()
+        logger.info("Generated extensions object: ${extensions.oids()*.toString()}")
+
+        // Act
+        final X509Certificate selfSignedCertificate = CertificateUtils.generateSelfSignedX509Certificate(keyPair, DN, extensions, SIGNATURE_ALGORITHM, DAYS_IN_YEAR)
+        logger.info("Issued certificate with subject: ${selfSignedCertificate.getSubjectDN().name} and SAN: ${selfSignedCertificate.getSubjectAlternativeNames().join(",")}")
+
+        // Assert
+        assert selfSignedCertificate instanceof X509Certificate
+        assert selfSignedCertificate.getSubjectDN().name == DN
+        assert selfSignedCertificate.getSubjectAlternativeNames().size() == ALL_SANS.size()
+        assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll(ALL_SANS)
+    }
+
+    /**
+     * Self-signed (or CA) certificates should populate the DN as a SAN in the certificate.
+     */
+    @Test
+    void testShouldGenerateSelfSignedCertificateWithDnInSan() {
+        // Arrange
+        final String DN = "CN=localhost"
+        final List<String> SANS = []
+        logger.info("Creating a certificate with subject: ${DN} and SAN: ${SANS}")
+
+        final KeyPair keyPair = generateKeyPair()
+
+        // Act
+        final X509Certificate selfSignedCertificate = CertificateUtils.generateSelfSignedX509Certificate(keyPair, DN, SIGNATURE_ALGORITHM, DAYS_IN_YEAR)
+        logger.info("Issued certificate with subject: ${selfSignedCertificate.getSubjectDN().name} and SAN: ${selfSignedCertificate.getSubjectAlternativeNames().join(",")}")
+
+        // Assert
+        assert selfSignedCertificate instanceof X509Certificate
+        assert selfSignedCertificate.getSubjectDN().name == DN
+        assert selfSignedCertificate.getSubjectAlternativeNames().size() == 1
+        assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll([DN])
     }
 }
