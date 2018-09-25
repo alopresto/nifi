@@ -554,12 +554,13 @@ class CertificateUtilsTest extends GroovyTestCase {
     @Test
     void testShouldGenerateIssuedCertificateWithSans() {
         // Arrange
-        final String SUBJECT_DN = "CN=localhost"
+        final String CN = "localhost"
+        final String SUBJECT_DN = "CN=" + CN
         final List<String> SANS = ["127.0.0.1", "nifi.nifi.apache.org"]
         logger.info("Creating a certificate with subject: ${SUBJECT_DN} and SAN: ${SANS}")
 
-        // Expected value should also include DN
-        final List<String> ALL_SANS = SANS + SUBJECT_DN
+        // Expected value should also include CN
+        final List<String> ALL_SANS = SANS + CN
         logger.info("Expected SANS: ${ALL_SANS}")
 
         final KeyPair subjectKeyPair = generateKeyPair()
@@ -597,12 +598,13 @@ class CertificateUtilsTest extends GroovyTestCase {
     @Test
     void testShouldGenerateSelfSignedCertificateWithSans() {
         // Arrange
-        final String DN = "CN=localhost"
+        final String CN = "localhost"
+        final String DN = "CN=" + CN
         final List<String> SANS = ["127.0.0.1", "nifi.nifi.apache.org"]
         logger.info("Creating a certificate with subject: ${DN} and SAN: ${SANS}")
 
-        // Expected value should also include DN
-        final List<String> ALL_SANS = SANS + DN
+        // Expected value should also include CN
+        final List<String> ALL_SANS = SANS + CN
         logger.info("Expected SANS: ${ALL_SANS}")
 
         final KeyPair keyPair = generateKeyPair()
@@ -632,12 +634,13 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     /**
-     * Self-signed (or CA) certificates should populate the DN as a SAN in the certificate.
+     * Self-signed (or CA) certificates should populate the CN as a SAN in the certificate.
      */
     @Test
-    void testShouldGenerateSelfSignedCertificateWithDnInSan() {
+    void testShouldGenerateSelfSignedCertificateWithCnInSan() {
         // Arrange
-        final String DN = "CN=localhost"
+        final String CN = "localhost"
+        final String DN = "CN=" + CN
         final List<String> SANS = []
         logger.info("Creating a certificate with subject: ${DN} and SAN: ${SANS}")
 
@@ -651,6 +654,6 @@ class CertificateUtilsTest extends GroovyTestCase {
         assert selfSignedCertificate instanceof X509Certificate
         assert selfSignedCertificate.getSubjectDN().name == DN
         assert selfSignedCertificate.getSubjectAlternativeNames().size() == 1
-        assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll([DN])
+        assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll([CN])
     }
 }
