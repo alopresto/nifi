@@ -69,7 +69,6 @@ import org.bouncycastle.asn1.x509.GeneralNamesBuilder;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.cert.CertIOException;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -550,25 +549,7 @@ public final class CertificateUtils {
             certBuilder.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth}));
 
             // (3) subjectAlternativeName
-            // TODO: Possibly refactor to #generateSAN(String dn, Extensions extensions)
-
-            // Explicitly add the DN as a SAN
-            GeneralName dnGeneralName = new GeneralName(GeneralName.dNSName, dn);
-            final GeneralNamesBuilder generalNamesBuilder = new GeneralNamesBuilder().addName(dnGeneralName);
-            logger.debug("Always add the provided DN as a SAN: {}", new Object[]{dn});
-
-            // Iterate over the provided extensions and add any SAN to the GeneralNamesBuilder
-            if(extensions != null && extensions.getExtension(Extension.subjectAlternativeName) != null) {
-                GeneralNames providedSanGeneralNames = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
-                logger.debug("Found {} provided SAN entries: {}", new Object[]{providedSanGeneralNames.getNames().length, providedSanGeneralNames.toString()});
-                generalNamesBuilder.addNames(providedSanGeneralNames);
-            }
-
-            GeneralNames generalNames = generalNamesBuilder.build();
-
-            ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator();
-            extensionsGenerator.addExtension(Extension.subjectAlternativeName, false, generalNames);
-            Extensions sanExtensions = extensionsGenerator.generate();
+            Extensions sanExtensions = buildSANExtensionContainingDN(dn, extensions);
             certBuilder.addExtension(Extension.subjectAlternativeName, false, sanExtensions.getExtensionParsedValue(Extension.subjectAlternativeName));
 
             // Sign the certificate
@@ -577,6 +558,26 @@ public final class CertificateUtils {
         } catch (IOException | NoSuchAlgorithmException | OperatorCreationException e) {
             throw new CertificateException(e);
         }
+    }
+
+    private static Extensions buildSANExtensionContainingDN(String dn, Extensions extensions) throws IOException {
+        // Explicitly add the DN as a SAN
+        GeneralName dnGeneralName = new GeneralName(GeneralName.dNSName, dn);
+        final GeneralNamesBuilder generalNamesBuilder = new GeneralNamesBuilder().addName(dnGeneralName);
+        logger.debug("Always add the provided DN as a SAN: {}", new Object[]{dn});
+
+        // Iterate over the provided extensions and add any SAN to the GeneralNamesBuilder
+        if(extensions != null && extensions.getExtension(Extension.subjectAlternativeName) != null) {
+            GeneralNames providedSanGeneralNames = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
+            logger.debug("Found {} provided SAN entries: {}", new Object[]{providedSanGeneralNames.getNames().length, providedSanGeneralNames.toString()});
+            generalNamesBuilder.addNames(providedSanGeneralNames);
+        }
+
+        GeneralNames generalNames = generalNamesBuilder.build();
+
+        ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator();
+        extensionsGenerator.addExtension(Extension.subjectAlternativeName, false, generalNames);
+        return extensionsGenerator.generate();
     }
 
     /**
@@ -638,13 +639,12 @@ public final class CertificateUtils {
             certBuilder.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth}));
 
             // (3) subjectAlternativeName
-            if(extensions != null && extensions.getExtension(Extension.subjectAlternativeName) != null) {
-                certBuilder.addExtension(Extension.subjectAlternativeName, false, extensions.getExtensionParsedValue(Extension.subjectAlternativeName));
-            }
+            Extensions sanExtensions = buildSANExtensionContainingDN(dn, extensions);
+            certBuilder.addExtension(Extension.subjectAlternativeName, false, sanExtensions.getExtensionParsedValue(Extension.subjectAlternativeName));
 
             X509CertificateHolder certificateHolder = certBuilder.build(sigGen);
             return new JcaX509CertificateConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME).getCertificate(certificateHolder);
-        } catch (CertIOException | NoSuchAlgorithmException | OperatorCreationException e) {
+        } catch (IOException | NoSuchAlgorithmException | OperatorCreationException e) {
             throw new CertificateException(e);
         }
     }

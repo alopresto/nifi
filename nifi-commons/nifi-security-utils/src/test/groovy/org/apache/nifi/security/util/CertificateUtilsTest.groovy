@@ -558,6 +558,10 @@ class CertificateUtilsTest extends GroovyTestCase {
         final List<String> SANS = ["127.0.0.1", "nifi.nifi.apache.org"]
         logger.info("Creating a certificate with subject: ${SUBJECT_DN} and SAN: ${SANS}")
 
+        // Expected value should also include DN
+        final List<String> ALL_SANS = SANS + SUBJECT_DN
+        logger.info("Expected SANS: ${ALL_SANS}")
+
         final KeyPair subjectKeyPair = generateKeyPair()
         final KeyPair issuerKeyPair = generateKeyPair()
 
@@ -583,8 +587,8 @@ class CertificateUtilsTest extends GroovyTestCase {
         // Assert
         assert certificate instanceof X509Certificate
         assert certificate.getSubjectDN().name == SUBJECT_DN
-        assert certificate.getSubjectAlternativeNames().size() == SANS.size()
-        assert certificate.getSubjectAlternativeNames()*.last().containsAll(SANS)
+        assert certificate.getSubjectAlternativeNames().size() == ALL_SANS.size()
+        assert certificate.getSubjectAlternativeNames()*.last().containsAll(ALL_SANS)
     }
 
     /**
