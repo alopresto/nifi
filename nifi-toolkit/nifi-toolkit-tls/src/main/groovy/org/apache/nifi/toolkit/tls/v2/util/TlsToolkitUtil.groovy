@@ -27,12 +27,19 @@ import org.bouncycastle.asn1.x509.ExtensionsGenerator
 import org.bouncycastle.asn1.x509.GeneralName
 import org.bouncycastle.asn1.x509.GeneralNames
 import org.bouncycastle.asn1.x509.GeneralNamesBuilder
+import org.bouncycastle.cert.X509CertificateHolder
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.openssl.PEMParser
+import org.bouncycastle.openssl.jcajce.JcaMiscPEMGenerator
 import org.bouncycastle.operator.OperatorCreationException
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import org.bouncycastle.pkcs.PKCS10CertificationRequest
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder
+import org.bouncycastle.util.io.pem.PemReader
+import org.bouncycastle.util.io.pem.PemWriter
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -49,6 +56,8 @@ import java.security.cert.X509Certificate
 
 class TlsToolkitUtil {
     private static final Logger logger = LoggerFactory.getLogger(TlsToolkitUtil.class)
+    static final String BEGIN_CERT = "-----BEGIN CERTIFICATE-----"
+    static final String END_CERT = "-----END CERTIFICATE-----"
 
     /**
      * Returns true if 256-bit key lengths are available.
@@ -234,6 +243,40 @@ class TlsToolkitUtil {
 
     private static String getCertificateDisplayInfo(X509Certificate certificate) {
         return certificate.getSubjectX500Principal().getName()
+    }
+
+    static String pemEncode(Object certOrCsr) {
+        def writer = new StringWriter()
+        PemWriter pemWriter = new PemWriter(writer)
+        pemWriter.writeObject(new JcaMiscPEMGenerator(certOrCsr))
+        pemWriter.close()
+        writer.toString()
+    }
+
+    static <T> T parsePem(Class<T> clazz, String pemContent) throws IOException {
+        PEMParser pemParser = new PEMParser(new PemReader(new StringReader(pemContent)))
+        Object object = pemParser.readObject()
+        if (!clazz.isInstance(object)) {
+            throw new IOException("Expected " + clazz + " but got " + object.getClass())
+        }
+        return (T) object
+    }
+
+    static JcaPKCS10CertificationRequest decodeCsr(String pemEncodedCsr) throws IOException {
+        PEMParser pemParser = new PEMParser(new StringReader(pemEncodedCsr))
+        Object o = pemParser.readObject()
+        if (!PKCS10CertificationRequest.class.isInstance(o)) {
+            throw new IOException("Expecting instance of " + PKCS10CertificationRequest.class + " but got " + o)
+        }
+        new JcaPKCS10CertificationRequest((PKCS10CertificationRequest) o)
+    }
+
+    static X509Certificate decodeCertificate(String pemEncodedCert) throws IOException {
+        new JcaX509CertificateConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME).getCertificate(parsePem(X509CertificateHolder.class, pemEncodedCert))
+    }
+
+    static String wrapCertificateHeaders(String pemEncodedCert) {
+        [BEGIN_CERT, pemEncodedCert, END_CERT].join("\n")
     }
 
     private static boolean isVerbose() {
