@@ -106,4 +106,32 @@ class TlsCertificateAuthorityServiceCommandLineGroovyTest extends GroovyTestCase
         assert parametersAreValid
     }
 
+    @Test
+    void testValidateParametersShouldVerifyAcceptableTokenFromConfigJson() {
+        // Arrange
+        TlsCertificateAuthorityServiceCommandLine cl = new TlsCertificateAuthorityServiceCommandLine()
+
+        String json = """{
+    "token": "${"t" * 16}"
+}"""
+
+        File configJson = tmpDir.newFile("config.json")
+        String configJsonPath = configJson.path
+
+        configJson.write(json)
+        logger.info("Wrote JSON to ${configJsonPath}: ${json}")
+
+        def args = "--useConfigJson --configJsonIn ${configJsonPath}".split(" ") as String[]
+        cl.parse(args)
+
+        // Manually read the config JSON file to populate the other variables
+        cl.createConfig()
+
+        // Act
+        boolean parametersAreValid = cl.validateParameters()
+        logger.info("Token with length ${cl.getToken().length()} is valid: ${parametersAreValid}")
+
+        // Assert
+        assert parametersAreValid
+    }
 }

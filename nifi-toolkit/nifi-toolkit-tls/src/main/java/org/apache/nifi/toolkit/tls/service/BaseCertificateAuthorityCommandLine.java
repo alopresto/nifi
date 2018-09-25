@@ -25,11 +25,15 @@ import org.apache.nifi.toolkit.tls.configuration.TlsConfig;
 import org.apache.nifi.util.StringUtils;
 
 import java.io.File;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Common base argument logic for the CA server and client
  */
 public abstract class BaseCertificateAuthorityCommandLine extends BaseTlsToolkitCommandLine {
+    private static final Logger logger = LoggerFactory.getLogger(BaseCertificateAuthorityCommandLine.class);
+
     public static final String TOKEN_ARG = "token";
     public static final String CONFIG_JSON_ARG = "configJson";
     public static final String READ_CONFIG_JSON_ARG = "configJsonIn";
@@ -43,6 +47,8 @@ public abstract class BaseCertificateAuthorityCommandLine extends BaseTlsToolkit
     private String configJsonIn;
     private int port;
     private String dn;
+
+    private boolean isVerbose;
 
     public BaseCertificateAuthorityCommandLine(String header) {
         super(header);
@@ -83,6 +89,7 @@ public abstract class BaseCertificateAuthorityCommandLine extends BaseTlsToolkit
         }
         port = getIntValue(commandLine, PORT_ARG, TlsConfig.DEFAULT_PORT);
         dn = commandLine.getOptionValue(DN_ARG, new TlsConfig().calcDefaultDn(getDnHostname()));
+        isVerbose = commandLine.hasOption(VERBOSE_ARG);
         return commandLine;
     }
 
@@ -104,5 +111,9 @@ public abstract class BaseCertificateAuthorityCommandLine extends BaseTlsToolkit
 
     public String getDn() {
         return dn;
+    }
+
+    public boolean isVerbose() {
+        return isVerbose;
     }
 }

@@ -80,10 +80,12 @@ public abstract class BaseCommandLine {
         }
     }
 
+    // TODO: Why is this a separate method?
     protected CommandLine doParse(String[] args) throws CommandLineParseException {
         CommandLineParser parser = new DefaultParser();
         CommandLine commandLine;
         try {
+            // This is the first time the args are parsed
             commandLine = parser.parse(options, args);
             if (commandLine.hasOption(HELP_ARG)) {
                 return printUsageAndThrow(null, ExitCode.HELP);
@@ -95,8 +97,9 @@ public abstract class BaseCommandLine {
         return commandLine;
     }
 
+    // TODO: Why is this here?
     protected void postParse(CommandLine commandLine) throws CommandLineParseException {
-
+        // This is probably where the configJson file should be read if present?
     }
 
     /**
@@ -106,6 +109,8 @@ public abstract class BaseCommandLine {
      * @throws CommandLineParseException if the arguments cannot be parsed
      */
     public void parse(String... args) throws CommandLineParseException {
+        // At this point, no arguments have been parsed
+        // Call the doParse method for some reason? (overridden from super)
         doParse(args);
     }
 

@@ -37,6 +37,7 @@ public abstract class BaseTlsToolkitCommandLine extends BaseCommandLine {
     public static final String SIGNING_ALGORITHM_ARG = "signingAlgorithm";
     public static final String DN_ARG = "dn";
     public static final String DIFFERENT_KEY_AND_KEYSTORE_PASSWORDS_ARG = "differentKeyAndKeystorePasswords";
+    public static final String VERBOSE_ARG = "verbose";
 
     public static final String KEYSTORE = "keystore.";
     public static final String TRUSTSTORE = "truststore.";
@@ -48,6 +49,7 @@ public abstract class BaseTlsToolkitCommandLine extends BaseCommandLine {
     private int days;
     private String signingAlgorithm;
     private boolean differentPasswordForKeyAndKeystore;
+    private boolean isVerbose;
 
     public BaseTlsToolkitCommandLine(String header) {
         super(header);
@@ -62,6 +64,7 @@ public abstract class BaseTlsToolkitCommandLine extends BaseCommandLine {
             addOptionWithArg("s", SIGNING_ALGORITHM_ARG, "Algorithm to use for signing certificates.", TlsConfig.DEFAULT_SIGNING_ALGORITHM);
         }
         addOptionNoArg("g", DIFFERENT_KEY_AND_KEYSTORE_PASSWORDS_ARG, "Use different generated password for the key and the keyStore.");
+        addOptionNoArg("v", VERBOSE_ARG, "Enable verbose mode.");
     }
 
     protected String getKeyStoreTypeDefault() {

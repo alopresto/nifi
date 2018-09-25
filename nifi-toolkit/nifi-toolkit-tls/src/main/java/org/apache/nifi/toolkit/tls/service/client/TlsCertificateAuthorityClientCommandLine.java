@@ -145,6 +145,7 @@ public class TlsCertificateAuthorityClientCommandLine extends BaseCertificateAut
             tlsClientConfig.setKeySize(getKeySize());
             tlsClientConfig.setKeyPairAlgorithm(getKeyAlgorithm());
             tlsClientConfig.setSigningAlgorithm(getSigningAlgorithm());
+            tlsClientConfig.setVerbose(isVerbose());
             return tlsClientConfig;
         }
     }
