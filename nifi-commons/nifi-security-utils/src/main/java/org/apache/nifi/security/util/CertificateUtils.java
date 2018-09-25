@@ -16,42 +16,6 @@
  */
 package org.apache.nifi.security.util;
 
-import org.apache.commons.lang3.StringUtils;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.DERSequence;
-import org.bouncycastle.asn1.pkcs.Attribute;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
-import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
-import org.bouncycastle.asn1.x500.RDN;
-import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x500.style.BCStyle;
-import org.bouncycastle.asn1.x509.BasicConstraints;
-import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.asn1.x509.KeyPurposeId;
-import org.bouncycastle.asn1.x509.KeyUsage;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.cert.CertIOException;
-import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.cert.X509v3CertificateBuilder;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.ContentSigner;
-import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.naming.InvalidNameException;
-import javax.naming.ldap.LdapName;
-import javax.naming.ldap.Rdn;
-import javax.net.ssl.SSLPeerUnverifiedException;
-import javax.net.ssl.SSLSocket;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -78,6 +42,45 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import javax.naming.InvalidNameException;
+import javax.naming.ldap.LdapName;
+import javax.naming.ldap.Rdn;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSocket;
+import org.apache.commons.lang3.StringUtils;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.pkcs.Attribute;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
+import org.bouncycastle.asn1.x500.RDN;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.Extensions;
+import org.bouncycastle.asn1.x509.ExtensionsGenerator;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.GeneralNamesBuilder;
+import org.bouncycastle.asn1.x509.KeyPurposeId;
+import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.cert.CertIOException;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class CertificateUtils {
     private static final Logger logger = LoggerFactory.getLogger(CertificateUtils.class);
@@ -490,6 +493,8 @@ public final class CertificateUtils {
 
     /**
      * Generates a self-signed {@link X509Certificate} suitable for use as a Certificate Authority.
+     * The {@code DN} will be populated in the {@code SubjectAlternativeNames} extension for RFC
+     * 6125 compliance.
      *
      * @param keyPair                 the {@link KeyPair} to generate the {@link X509Certificate} for
      * @param dn                      the distinguished name to user for the {@link X509Certificate}
@@ -499,6 +504,23 @@ public final class CertificateUtils {
      * @throws CertificateException      if there is an generating the new certificate
      */
     public static X509Certificate generateSelfSignedX509Certificate(KeyPair keyPair, String dn, String signingAlgorithm, int certificateDurationDays)
+            throws CertificateException {
+        return generateSelfSignedX509Certificate(keyPair, dn, null, signingAlgorithm, certificateDurationDays);
+    }
+
+    /**
+     * Generates a self-signed {@link X509Certificate} suitable for use as a Certificate Authority.
+     * The {@code DN} will be populated in the {@code SubjectAlternativeNames} extension along
+     * with the provided SANs for RFC 6125 compliance.
+     *
+     * @param keyPair                 the {@link KeyPair} to generate the {@link X509Certificate} for
+     * @param dn                      the distinguished name to user for the {@link X509Certificate}
+     * @param signingAlgorithm        the signing algorithm to use for the {@link X509Certificate}
+     * @param certificateDurationDays the duration in days for which the {@link X509Certificate} should be valid
+     * @return a self-signed {@link X509Certificate} suitable for use as a Certificate Authority
+     * @throws CertificateException      if there is an generating the new certificate
+     */
+    public static X509Certificate generateSelfSignedX509Certificate(KeyPair keyPair, String dn, Extensions extensions, String signingAlgorithm, int certificateDurationDays)
             throws CertificateException {
         try {
             ContentSigner sigGen = new JcaContentSignerBuilder(signingAlgorithm).setProvider(BouncyCastleProvider.PROVIDER_NAME).build(keyPair.getPrivate());
@@ -527,10 +549,32 @@ public final class CertificateUtils {
             // (2) extendedKeyUsage extension
             certBuilder.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth}));
 
+            // (3) subjectAlternativeName
+            // TODO: Possibly refactor to #generateSAN(String dn, Extensions extensions)
+
+            // Explicitly add the DN as a SAN
+            GeneralName dnGeneralName = new GeneralName(GeneralName.dNSName, dn);
+            final GeneralNamesBuilder generalNamesBuilder = new GeneralNamesBuilder().addName(dnGeneralName);
+            logger.debug("Always add the provided DN as a SAN: {}", new Object[]{dn});
+
+            // Iterate over the provided extensions and add any SAN to the GeneralNamesBuilder
+            if(extensions != null && extensions.getExtension(Extension.subjectAlternativeName) != null) {
+                GeneralNames providedSanGeneralNames = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
+                logger.debug("Found {} provided SAN entries: {}", new Object[]{providedSanGeneralNames.getNames().length, providedSanGeneralNames.toString()});
+                generalNamesBuilder.addNames(providedSanGeneralNames);
+            }
+
+            GeneralNames generalNames = generalNamesBuilder.build();
+
+            ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator();
+            extensionsGenerator.addExtension(Extension.subjectAlternativeName, false, generalNames);
+            Extensions sanExtensions = extensionsGenerator.generate();
+            certBuilder.addExtension(Extension.subjectAlternativeName, false, sanExtensions.getExtensionParsedValue(Extension.subjectAlternativeName));
+
             // Sign the certificate
             X509CertificateHolder certificateHolder = certBuilder.build(sigGen);
             return new JcaX509CertificateConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME).getCertificate(certificateHolder);
-        } catch (CertIOException | NoSuchAlgorithmException | OperatorCreationException e) {
+        } catch (IOException | NoSuchAlgorithmException | OperatorCreationException e) {
             throw new CertificateException(e);
         }
     }
