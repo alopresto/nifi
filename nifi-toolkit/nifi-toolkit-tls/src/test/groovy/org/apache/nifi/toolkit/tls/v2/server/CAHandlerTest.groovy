@@ -25,6 +25,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
 import org.bouncycastle.util.encoders.Hex
 import org.eclipse.jetty.server.Request
+import org.eclipse.jetty.server.Response
 import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
@@ -90,8 +91,10 @@ class CAHandlerTest extends GroovyTestCase {
         new CAService(TOKEN, "DN=${CA_CN}")
     }
 
+    // TODO: Currently the entire positive/negative flow is covered, but each component method should be exercised with edge cases
+
     /**
-     * Provide CSR object and inject mock CA service
+     * Provide CSR object and inject CA service
      */
     @Test
     void testShouldHandleCSR() {
@@ -142,15 +145,18 @@ class CAHandlerTest extends GroovyTestCase {
 
         // Build a response object to hold the response
         StringWriter responseSW = new StringWriter()
-        HttpServletResponse response = [getWriter: { ->
-            new PrintWriter(responseSW)
-        }] as HttpServletResponse
+        String contentType = ""
+        int statusCode = 0
+        HttpServletResponse response = mockResponse(responseSW, contentType, statusCode)
 
         // Act
         caHandler.handle("target", new Request(null, null), request, response)
         logger.info("Got response: ${response}")
 
         // Assert
+        assert response.status == Response.SC_OK
+        assert response.contentType == "application/json"
+
         String responseJson = responseSW.toString()
         logger.info("Response JSON: ${responseJson}")
 
@@ -161,10 +167,7 @@ class CAHandlerTest extends GroovyTestCase {
 
         String pemEncodedChain = parsedResponse.certificateChain
 
-        // TODO: Better way to split
-        def chainElements = pemEncodedChain.split("-----\n-----")
-        chainElements[0] = chainElements[0] + "-----"
-        chainElements[1] = "-----" + chainElements[1]
+        List<String> chainElements = splitPEMEncodedCertificateChain(pemEncodedChain)
 
         List<Certificate> chain = chainElements.collect { TlsToolkitUtil.decodeCertificate(it) }
         assert chain.size() == 2
@@ -178,5 +181,109 @@ class CAHandlerTest extends GroovyTestCase {
         assert signedCertificate.subjectX500Principal.name == csrDn
         signedCertificate.verify(caKeyPair.public)
         logger.info("The signed certificate was signed by the CA key")
+    }
+
+    private HttpServletResponse mockResponse(StringWriter responseSW, String contentType, int statusCode) {
+        HttpServletResponse response = [
+                getWriter     : { -> new PrintWriter(responseSW) },
+                setContentType: { ct ->
+                    logger.mock("Set response content type to ${ct}")
+                    contentType = ct
+                },
+                getContentType: { -> contentType },
+                setStatus     : { sc ->
+                    logger.mock("Set response status code to ${sc}")
+                    statusCode = sc
+                },
+                getStatus     : { -> statusCode }
+        ] as HttpServletResponse
+        response
+    }
+
+    /**
+     * Provide CSR object and inject CA service
+     */
+    @Test
+    void testShouldRejectCSRWithInvalidHMAC() {
+        // Arrange
+        final String CA_CN = "nifi-ca.nifi.apache.org"
+        final String CA_DN = "CN=" + CA_CN
+
+        KeyPair caKeyPair = generateKeyPair()
+
+        // Generate the CA
+        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
+
+        final String TOKEN = "token" * 4
+        logger.info("Using token: ${TOKEN}")
+
+        // Create the CAService
+        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created CAService: ${cas}")
+
+        // Create the CAHandler
+        CAHandler caHandler = new CAHandler(cas)
+        logger.info("Created CAHandler: ${caHandler}")
+
+        // Generate the (mock) CSR
+        String csrDn = "CN=node1.nifi.apache.org"
+        KeyPair nodeKeyPair = generateKeyPair()
+        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        logger.info("Generated CSR: ${csr.subject}")
+
+        // Encode the CSR in PEM (Base64)
+        String pemEncodedCsr = TlsToolkitUtil.pemEncode(csr)
+        logger.info("PEM-encoded CSR: ${pemEncodedCsr}")
+
+        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
+        String hmac = Hex.toHexString(hmacBytes)
+        logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
+        hmac = hmac.reverse()
+        logger.info("Reversed HMAC to generate exception: ${hmac}")
+
+        // Wrap the CSR and HMAC in JSON
+        String requestJson = JsonOutput.toJson([csr: pemEncodedCsr, hmac: hmac])
+        logger.info("Wrapped contents in JSON: ${requestJson}")
+
+        // Form a request
+        HttpServletRequest request = [
+                getRemoteAddr: { -> "mock://localhost:14443" },
+                getReader    : { -> new BufferedReader(new StringReader(requestJson)) }
+        ] as HttpServletRequest
+
+        // Build a response object to hold the response
+        StringWriter responseSW = new StringWriter()
+        String contentType = ""
+        int statusCode = 0
+        HttpServletResponse response = mockResponse(responseSW, contentType, statusCode)
+
+        // Act
+        caHandler.handle("target", new Request(null, null), request, response)
+        logger.info("Got response: ${response}")
+
+        // Assert
+        assert response.status != Response.SC_OK
+        assert response.contentType == "application/json"
+
+        String responseJson = responseSW.toString()
+        logger.info("Response JSON: ${responseJson}")
+
+        Map parsedResponse = new JsonSlurper().parseText(responseJson) as Map
+        def message = parsedResponse.message
+        assert message =~ "Unable to sign"
+        logger.info("Message: ${message}")
+
+        def errorMessage = parsedResponse.errorMessage
+        assert errorMessage =~ "HMAC was not valid"
+        logger.info("Error Message: ${errorMessage}")
+
+        String pemEncodedChain = parsedResponse.certificateChain
+        assert !pemEncodedChain
+        logger.info("No signed certificate returned")
+    }
+
+    private static List<String> splitPEMEncodedCertificateChain(String pemEncodedChain) {
+        pemEncodedChain.split("(?<=-----)(\n)(?=-----)") as List<String>
     }
 }
