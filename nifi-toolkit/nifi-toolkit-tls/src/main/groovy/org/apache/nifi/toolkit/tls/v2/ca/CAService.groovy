@@ -51,8 +51,8 @@ class CAService {
 
     private String token
     private KeyPair caKeyPair
-    private X509Certificate caCert
 
+    private X509Certificate caCert
     /**
      * Returns an instance of the service that generates a new {@link KeyPair}.
      *
@@ -85,6 +85,10 @@ class CAService {
      */
     CAService(String token, PublicKey publicKey, PrivateKey privateKey, X509Certificate signingCertificate) {
         this(token, new KeyPair(publicKey, privateKey), signingCertificate)
+    }
+
+    X509Certificate getCaCert() {
+        return caCert
     }
 
     // TODO: Add parameter guards (callers expected to pass valid data for now)
@@ -143,7 +147,7 @@ class CAService {
         if (MessageDigest.isEqual(expectedHmac, Hex.decode(providedHmac))) {
             // The HMAC is valid, sign the certificate
             String dn = csr.getSubject().toString()
-            logger.info("Received CSR with DN ${dn} and SPKI ${csr.subjectPublicKeyInfo}")
+            logger.info("Received CSR with DN ${dn} and signature ${Hex.toHexString(csr.signature)[0..<16]}...")
             X509Certificate issuedCertificate = CertificateUtils.generateIssuedCertificate(dn, csr.getPublicKey(),
                     CertificateUtils.getExtensionsFromCSR(csr), caCert, caKeyPair, signingAlgorithm, certDaysValid)
 
