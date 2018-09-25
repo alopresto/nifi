@@ -560,6 +560,13 @@ public final class CertificateUtils {
         }
     }
 
+    /**
+     * Returns an {@link Extensions} object containing the SAN entries that were provided in addition to the DN explicitly added to comply with RFC 6125.
+     * @param dn the DN
+     * @param extensions the extensions object containing the provided SAN entries
+     * @return an extensions object with the DN inserted as a SAN
+     * @throws IOException if there is a problem reading the extensions object
+     */
     private static Extensions buildSANExtensionContainingDN(String dn, Extensions extensions) throws IOException {
         // Explicitly add the DN as a SAN
         GeneralName dnGeneralName = new GeneralName(GeneralName.dNSName, dn);
@@ -581,7 +588,9 @@ public final class CertificateUtils {
     }
 
     /**
-     * Generates an issued {@link X509Certificate} from the given issuer certificate and {@link KeyPair}
+     * Generates an issued {@link X509Certificate} from the given issuer certificate and
+     * {@link KeyPair}. The {@code DN} will be populated in the {@code SubjectAlternativeNames}
+     * extension along with the provided SANs for RFC 6125 compliance.
      *
      * @param dn the distinguished name to use
      * @param publicKey the public key to issue the certificate to
@@ -598,7 +607,9 @@ public final class CertificateUtils {
     }
 
     /**
-     * Generates an issued {@link X509Certificate} from the given issuer certificate and {@link KeyPair}
+     * Generates an issued {@link X509Certificate} from the given issuer certificate and
+     * {@link KeyPair}. The {@code DN} will be populated in the {@code SubjectAlternativeNames}
+     * extension along with the provided SANs for RFC 6125 compliance.
      *
      * @param dn the distinguished name to use
      * @param publicKey the public key to issue the certificate to
