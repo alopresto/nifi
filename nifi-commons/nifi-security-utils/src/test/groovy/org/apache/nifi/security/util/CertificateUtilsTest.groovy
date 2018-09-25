@@ -656,4 +656,28 @@ class CertificateUtilsTest extends GroovyTestCase {
         assert selfSignedCertificate.getSubjectAlternativeNames().size() == 1
         assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll([CN])
     }
+
+    /**
+     * If the CN was explicitly provided as a SAN, don't duplicate it.
+     */
+    @Test
+    void testBuildSANExtensionsContainingCNShouldNotDuplicateCN() {
+        // Arrange
+        final String CN = "localhost"
+        final String DN = "CN=" + CN
+        final List<String> SANS = [CN]
+        logger.info("Creating a certificate with subject: ${DN} and SAN: ${SANS}")
+
+        final KeyPair keyPair = generateKeyPair()
+
+        // Act
+        final X509Certificate selfSignedCertificate = CertificateUtils.generateSelfSignedX509Certificate(keyPair, DN, SIGNATURE_ALGORITHM, DAYS_IN_YEAR)
+        logger.info("Issued certificate with subject: ${selfSignedCertificate.getSubjectDN().name} and SAN: ${selfSignedCertificate.getSubjectAlternativeNames().join(",")}")
+
+        // Assert
+        assert selfSignedCertificate instanceof X509Certificate
+        assert selfSignedCertificate.getSubjectDN().name == DN
+        assert selfSignedCertificate.getSubjectAlternativeNames().size() == 1
+        assert selfSignedCertificate.getSubjectAlternativeNames()*.last().containsAll([CN])
+    }
 }
