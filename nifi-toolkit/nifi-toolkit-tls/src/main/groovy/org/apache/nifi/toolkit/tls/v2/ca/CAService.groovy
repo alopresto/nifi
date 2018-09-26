@@ -17,7 +17,6 @@
 
 package org.apache.nifi.toolkit.tls.v2.ca
 
-
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.asn1.x509.Extensions
@@ -28,7 +27,6 @@ import org.slf4j.LoggerFactory
 
 import java.security.GeneralSecurityException
 import java.security.KeyPair
-import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.PublicKey
@@ -42,11 +40,6 @@ import java.security.cert.X509Certificate
 class CAService {
     private static final Logger logger = LoggerFactory.getLogger(CAService.class)
 
-    static final String DEFAULT_ALGORITHM = "RSA"
-    static final String DEFAULT_SIGNING_ALGORITHM = "SHA256withRSA"
-    static final int DEFAULT_KEY_SIZE = 2048
-    static final int DEFAULT_CERT_VALIDITY_DAYS = 1095
-
     boolean isVerbose = false
 
     private String token
@@ -59,7 +52,7 @@ class CAService {
      * @param token the MITM token to use
      */
     CAService(String token, String caDistinguishedName) {
-        def keyPair = generateKeyPair()
+        def keyPair = TlsToolkitUtil.generateKeyPair()
         CAService(token, keyPair, generateCACertificate(keyPair, caDistinguishedName))
     }
 
@@ -94,22 +87,6 @@ class CAService {
     // TODO: Add parameter guards (callers expected to pass valid data for now)
 
     /**
-     * Returns a {@link KeyPair} containing the public and private key values for the provided algorithm and key size.
-     *
-     * @param algorithm "RSA" (default), "EC", "DSA", or "DiffieHellman"
-     * @param keySize 2048 (default) or higher is recommended
-     * @return the key pair
-     */
-    static KeyPair generateKeyPair(String algorithm = DEFAULT_ALGORITHM, int keySize = DEFAULT_KEY_SIZE) {
-        logger.debug("Generating key pair for ${algorithm} with key size ${keySize}")
-        KeyPairGenerator generator = KeyPairGenerator.getInstance(algorithm)
-        generator.initialize(keySize)
-        KeyPair keyPair = generator.generateKeyPair()
-        logger.debug("Generated key pair ${keyPair}")
-        keyPair
-    }
-
-    /**
      * Returns the {@link java.security.cert.X509Certificate} identifying the given DN. The cert has the key usages and EKU set for certificate signing, and is signed by itself.
      *
      * @param keyPair the public and private key to use
@@ -119,7 +96,7 @@ class CAService {
      * @param sans an optional list of {@code SubjectAlternativeNames} as Strings (default empty)
      * @return the signed certificate
      */
-    static X509Certificate generateCACertificate(KeyPair keyPair, String dn, String signingAlgorithm = DEFAULT_SIGNING_ALGORITHM, int certificateDurationDays = DEFAULT_CERT_VALIDITY_DAYS, List<String> sans = []) {
+    static X509Certificate generateCACertificate(KeyPair keyPair, String dn, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certificateDurationDays = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS, List<String> sans = [ ]) {
         logger.debug("Generating CA certificate with DN ${dn}, SANS ${sans}, signing algorithm ${signingAlgorithm}, and certificate duration days ${certificateDurationDays}")
 
         Extensions sanExtensions = null
@@ -140,7 +117,7 @@ class CAService {
      * @param providedHmac the hex-encoded HMAC provided by the requester
      * @return the signed certificate
      */
-    X509Certificate signCSR(JcaPKCS10CertificationRequest csr, String providedHmac, String signingAlgorithm = DEFAULT_SIGNING_ALGORITHM, int certDaysValid = DEFAULT_CERT_VALIDITY_DAYS) {
+    X509Certificate signCSR(JcaPKCS10CertificationRequest csr, String providedHmac, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certDaysValid = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS) {
         // Verify the HMAC
         logger.info("Verifying provided HMAC ${providedHmac}")
         byte[] expectedHmac = TlsToolkitUtil.calculateHMac(token, csr.getPublicKey())
@@ -163,7 +140,7 @@ class CAService {
         "CA Service for ${caCert.subjectX500Principal.name} with token ${"*" * token.size()}"
     }
 
-    static JcaPKCS10CertificationRequest generateCSR(String dn, List<String> sans, KeyPair keyPair, String signingAlgorithm = CAService.DEFAULT_SIGNING_ALGORITHM) {
+    static JcaPKCS10CertificationRequest generateCSR(String dn, List<String> sans, KeyPair keyPair, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM) {
         logger.info("Generating CSR for ${dn}")
         JcaPKCS10CertificationRequest csr = TlsToolkitUtil.generateCertificateSigningRequest(dn, sans, keyPair, signingAlgorithm)
         logger.info("Generated CSR for ${csr.subject}")
