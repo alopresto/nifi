@@ -41,7 +41,7 @@ import java.security.Security
 import java.security.SignatureException
 import java.security.cert.X509Certificate
 
-//@Ignore
+@Ignore
 @RunWith(JUnit4.class)
 class TlsCertificateAuthorityClientGroovyTest extends GroovyTestCase {
     private static final Logger logger = LoggerFactory.getLogger(TlsCertificateAuthorityClientGroovyTest.class)
@@ -62,6 +62,7 @@ class TlsCertificateAuthorityClientGroovyTest extends GroovyTestCase {
         }
     }
 
+    @Ignore
     @Test
     void testShouldVerifyCertificateSignatureWhenSelfSigned() {
         // Arrange
