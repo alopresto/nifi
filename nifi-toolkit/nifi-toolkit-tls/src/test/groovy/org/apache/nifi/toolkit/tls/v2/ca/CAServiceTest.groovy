@@ -133,7 +133,7 @@ class CAServiceTest extends GroovyTestCase {
         def certAgeDays = 5
 
         // Act
-        final X509Certificate caCertificate = CAService.generateCACertificate(keyPair, DN, CAService.DEFAULT_SIGNING_ALGORITHM, certAgeDays, SANS)
+        final X509Certificate caCertificate = CAService.generateCACertificate(keyPair, DN, TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, certAgeDays, SANS)
         logger.info("Issued certificate with subject: ${caCertificate.getSubjectDN().name} and SAN: ${caCertificate.getSubjectAlternativeNames().join(",")}")
 
         // Assert

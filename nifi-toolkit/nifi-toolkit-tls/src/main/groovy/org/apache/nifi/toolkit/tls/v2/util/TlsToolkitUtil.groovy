@@ -19,6 +19,7 @@ package org.apache.nifi.toolkit.tls.v2.util
 
 import org.apache.commons.lang3.StringUtils
 import org.apache.nifi.security.util.CertificateUtils
+import org.apache.nifi.toolkit.tls.v2.ca.CAService
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.Extension
@@ -49,8 +50,12 @@ import javax.crypto.spec.SecretKeySpec
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
 import java.security.PublicKey
+import java.security.cert.Certificate
 import java.security.cert.CertificateParsingException
 import java.security.cert.X509Certificate
 
@@ -58,6 +63,10 @@ class TlsToolkitUtil {
     private static final Logger logger = LoggerFactory.getLogger(TlsToolkitUtil.class)
     static final String BEGIN_CERT = "-----BEGIN CERTIFICATE-----"
     static final String END_CERT = "-----END CERTIFICATE-----"
+    static final String DEFAULT_ALGORITHM = "RSA"
+    static final String DEFAULT_SIGNING_ALGORITHM = "SHA256withRSA"
+    static final int DEFAULT_CERT_VALIDITY_DAYS = 1095
+    static final int DEFAULT_KEY_SIZE = 2048
 
     /**
      * Returns true if 256-bit key lengths are available.
@@ -66,6 +75,22 @@ class TlsToolkitUtil {
      */
     static boolean isUnlimitedStrengthCryptoAvailable() {
         Cipher.getMaxAllowedKeyLength("AES") > 128
+    }
+
+    /**
+     * Returns a {@link KeyPair} containing the public and private key values for the provided algorithm and key size.
+     *
+     * @param algorithm "RSA" (default), "EC", "DSA", or "DiffieHellman"
+     * @param keySize 2048 (default) or higher is recommended
+     * @return the key pair
+     */
+    static KeyPair generateKeyPair(String algorithm = DEFAULT_ALGORITHM, int keySize = DEFAULT_KEY_SIZE) {
+        logger.debug("Generating key pair for ${algorithm} with key size ${keySize}")
+        KeyPairGenerator generator = KeyPairGenerator.getInstance(algorithm)
+        generator.initialize(keySize)
+        KeyPair keyPair = generator.generateKeyPair()
+        logger.debug("Generated key pair ${keyPair}")
+        keyPair
     }
 
     /**
@@ -283,6 +308,77 @@ class TlsToolkitUtil {
         // TODO: When verbose mode is enabled via command-line flag, this will read the variable
         return true
     }
+
+    static KeyStore generateOrLocateKeystore(String keystorePath, String keystorePassword, String alias, String dn) {
+        KeyStore keystore
+
+        try {
+            // Try loading from file
+            if (keystorePath) {
+                keystore = loadKeystoreContainingAlias(keystorePath, keystorePassword, alias)
+            } else {
+                // TODO: Pass provided SANs for creating CA
+                keystore = generateCAKeystore(dn, alias, keystorePassword)
+            }
+        } catch (KeyStoreException kse) {
+            // Keystore loads but does not contain alias
+            logger.warn("Because the expected alias could not be loaded, generate a new CA key and cert and inject it in this keystore")
+            keystore = addCAToKeystore(dn, alias, keystorePassword, keystore)
+            // Write the modified keystore to the file
+            writeKeystore(keystore, keystorePassword, keystorePath)
+        } catch (IOException ioe) {
+            // No keystore at all
+            logger.warn("Failed to load the keystore, generate a new keystore containing a CA key and cert")
+            keystore = generateCAKeystore(dn, alias, keystorePassword)
+            writeKeystore(keystore, keystorePassword, keystorePath)
+        }
+
+        keystore
+    }
+
+    static boolean writeKeystore(KeyStore keystore, String keystorePassword, String keystorePath) {
+        try {
+            FileOutputStream fos = new FileOutputStream(keystorePath)
+            keystore.store(fos, keystorePassword.chars)
+            true
+        } catch (IOException e) {
+            logger.error("Error writing keystore to ${keystorePath}", e)
+            false
+        }
+    }
+
+    static KeyStore addCAToKeystore(String dn, String alias, String keystorePassword, KeyStore keystore, String sans = "") {
+        KeyPair caKeyPair = generateKeyPair()
+        X509Certificate caCertificate = CAService.generateCACertificate(caKeyPair, dn, DEFAULT_SIGNING_ALGORITHM, DEFAULT_CERT_VALIDITY_DAYS, sans.tokenize(","))
+        keystore.setKeyEntry(alias, caKeyPair.private, keystorePassword.chars, [caCertificate] as Certificate[])
+        keystore
+    }
+
+    static KeyStore generateCAKeystore(String dn, String alias, String keystorePassword, String sans = "") {
+        KeyStore keystore = KeyStore.getInstance("JKS")
+        keystore.load(null, keystorePassword.chars)
+        addCAToKeystore(dn, alias, keystorePassword, keystore, sans)
+    }
+
+    static KeyStore loadKeystoreContainingAlias(String keystorePath, String keystorePassword, String alias) {
+        KeyStore keystore = KeyStore.getInstance("JKS")
+        File keystoreFile = new File(keystorePath)
+        if (keystoreFile.exists()) {
+            keystore.load(keystoreFile.newInputStream(), keystorePassword.chars)
+            if (keystore.containsAlias(alias)) {
+                return keystore
+            } else {
+                def msg = "Keystore at ${keystorePath} did not contain alias ${alias}"
+                logger.warn(msg)
+                throw new KeyStoreException(msg)
+            }
+        } else {
+            def msg = "Keystore at ${keystorePath} cannot be loaded"
+            logger.warn(msg)
+            throw new IOException(msg)
+        }
+    }
+
 //
 //    /**
 //     * Returns the parsed {@link java.security.KeyPair} from the provided {@link Reader}. The incoming format can be PKCS #8 or PKCS #1.
