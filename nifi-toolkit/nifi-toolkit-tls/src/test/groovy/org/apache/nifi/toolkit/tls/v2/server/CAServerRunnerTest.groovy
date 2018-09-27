@@ -70,7 +70,7 @@ class CAServerRunnerTest extends GroovyTestCase {
 
         CAServerRunner runner = new CAServerRunner()
 
-        def args = "-k ${KEYSTORE_PATH} -x ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Act
@@ -98,7 +98,7 @@ class CAServerRunnerTest extends GroovyTestCase {
 
         CAServerRunner runner = new CAServerRunner()
 
-        def args = "-k ${KEYSTORE_PATH} -x ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Act
@@ -123,7 +123,7 @@ class CAServerRunnerTest extends GroovyTestCase {
 
         CAServerRunner runner = new CAServerRunner()
 
-        def args = "-c ${CERT_PATH} -e ${KEY_PATH} -t ${TOKEN}".split(" ")
+        def args = "-c ${CERT_PATH} -K ${KEY_PATH} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Act
@@ -150,7 +150,7 @@ class CAServerRunnerTest extends GroovyTestCase {
 
         CAServerRunner runner = new CAServerRunner()
 
-        def args = "-k ${KEYSTORE_PATH} -x ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Act
