@@ -24,6 +24,7 @@ import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
+import org.junit.contrib.java.lang.system.ExpectedSystemExit
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -38,6 +39,9 @@ class CAServerRunnerTest extends GroovyTestCase {
 
     @Rule
     public TemporaryFolder tmpDir = new TemporaryFolder()
+
+    @Rule
+    public final ExpectedSystemExit exit = ExpectedSystemExit.none()
 
     private static final String TOKEN = "token" * 4
 
@@ -59,6 +63,12 @@ class CAServerRunnerTest extends GroovyTestCase {
     @After
     void tearDown() {
 
+    }
+
+    private static BufferedReader generateShutdownReader(int seconds = 10) {
+        // One newline character per 5 second delay
+        String delay = "\n" * (seconds / 5)
+        new BufferedReader(new StringReader("${delay}stop\n"))
     }
 
     @Test
@@ -142,24 +152,42 @@ class CAServerRunnerTest extends GroovyTestCase {
      * Normal invocation (JKS keystore with password).
      */
     @Test
-    void testShouldStartServer() {
+    void testShouldStartAndShutdownServer() {
         // Arrange
+        exit.expectSystemExitWithStatus(0)
+
         File keystoreFile = tmpDir.newFile("keystore.jks")
         final String KEYSTORE_PATH = keystoreFile.path
         final String KEYSTORE_PASSWORD = "password" * 2
 
-        CAServerRunner runner = new CAServerRunner()
-
         def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
+        // Override the shutdown reader
+        int runTime = 5
+        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
+        logger.info("Configured server to run for ~ ${runTime} s")
+
+        long start, stop
+        exit.checkAssertionAfterwards({
+            logger.info("Ran main() with args: ${args}")
+
+            stop = System.nanoTime()
+            logger.stop("${stop} | ${new Date(stop).format("HH:mm:ss.SSS")}")
+
+            long executionTime = stop - start
+            logger.info("Server ran for ${executionTime} ns (${executionTime / 1_000_000_000}) s")
+            assert executionTime > runTime * 1_000_000_000
+        })
+
         // Act
+        start = System.nanoTime()
+        logger.start("${start} | ${new Date(start).format("HH:mm:ss.SSS")}")
+
         CAServerRunner.main(args)
-        logger.info("Ran main() with args: ${args}")
-
-
 
         // Assert
 
+        // Assertions defined above
     }
 }
