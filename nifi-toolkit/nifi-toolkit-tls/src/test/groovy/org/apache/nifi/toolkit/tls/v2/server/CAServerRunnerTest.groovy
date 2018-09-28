@@ -41,6 +41,7 @@ import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
 import javax.security.auth.x500.X500Principal
+import java.math.MathContext
 import java.security.KeyPair
 import java.security.KeyStore
 import java.security.PublicKey
@@ -233,16 +234,16 @@ class CAServerRunnerTest extends GroovyTestCase {
             logger.info("Ran main() with args: ${args}")
 
             stop = System.nanoTime()
-            logger.stop("${stop} | ${new Date(stop).format("HH:mm:ss.SSS")}")
+            logger.stop("${stop}")
 
-            long executionTime = stop - start
-            logger.info("Server ran for ${executionTime} ns (${executionTime / 1_000_000_000}) s")
-            assert executionTime > runTime * 1_000_000_000
+            long executionTimeMs = (stop - start) / 1_000_000
+            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
+            assert executionTimeMs > runTime * 1_000
         })
 
         // Act
         start = System.nanoTime()
-        logger.start("${start} | ${new Date(start).format("HH:mm:ss.SSS")}")
+        logger.start("${start}")
 
         CAServerRunner.main(args)
 
@@ -307,54 +308,54 @@ class CAServerRunnerTest extends GroovyTestCase {
             logger.info("Ran main() with args: ${args}")
 
             stop = System.nanoTime()
-            logger.stop("${stop} | ${new Date(stop).format("HH:mm:ss.SSS")}")
+            logger.stop("${stop}")
 
-            long executionTime = stop - start
-            logger.info("Server ran for ${executionTime} ns (${executionTime / 1_000_000_000}) s")
-            assert executionTime > runTime * 1_000_000_000
+            long executionTimeMs = (stop - start) / 1_000_000
+            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
+            assert executionTimeMs > runTime * 1_000
 
             // TODO: Check that received certificate was signed correctly and response format is good
         })
 
         // Act
-        start = System.nanoTime()
-        logger.start("${start} | ${new Date(start).format("HH:mm:ss.SSS")}")
 
-        // TODO: Sleep & send request in separate thread; run server in main thread
+        // Send the request in a separate thread
+        Thread.start("client") {
+            // Wait for the server to come online
+            sleep(2000)
 
-        // Start the server in a separate thread
-        Thread.start("server") {
-            logger.info("Starting server in separate thread: ${Thread.name}")
-            CAServerRunner.main(args)
-        }
-
-        // Wait for the server to come online
-        sleep(2000)
-
-        // Send the request
-        Map response = http.post(Map) {
-            request.body = requestJson
+            // Send the request
+            Map response = http.post(Map) {
+                request.body = requestJson
 //            response.success { FromServer fs ->
 //                logger.success(fs.statusCode)
 //            }
 //            response.failure { FromServer fs ->
 //                logger.failure(fs.statusCode)
 //            }
+            }
+            logger.info("Response: ${response}")
+
+            // Assert
+
+            assert response.message =~ "Successfully signed certificate"
+
+            def certChain = TlsToolkitUtil.splitPEMEncodedCertificateChain(response.certificateChain)
+            assert certChain.size() == 2
+
+            // Assert the node cert is signed by the root cert
+            certChain.last().verify(certChain.first().publicKey)
         }
-        logger.info("Response: ${response}")
+
+        // Start the server
+        start = System.nanoTime()
+        logger.start("${start}")
+
+        CAServerRunner.main(args)
 
         // Assert
 
-        assert response.message =~ "Successfully signed certificate"
-
-        def certChain = TlsToolkitUtil.splitPEMEncodedCertificateChain(response.certificateChain)
-        assert certChain.size() == 2
-
-        // Assert the node cert is signed by the root cert
-        certChain.last().verify(certChain.first().publicKey)
-
-        // Assertions defined above
-        sleep(3000)
+        // Server assertions defined above
     }
 
     /**
