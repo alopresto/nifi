@@ -129,8 +129,7 @@ class CAHandlerTest extends GroovyTestCase {
         String pemEncodedCsr = TlsToolkitUtil.pemEncode(csr)
         logger.info("PEM-encoded CSR: ${pemEncodedCsr}")
 
-        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
-        String hmac = Hex.toHexString(hmacBytes)
+        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
         logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
 
         // Wrap the CSR and HMAC in JSON
@@ -236,8 +235,7 @@ class CAHandlerTest extends GroovyTestCase {
         String pemEncodedCsr = TlsToolkitUtil.pemEncode(csr)
         logger.info("PEM-encoded CSR: ${pemEncodedCsr}")
 
-        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
-        String hmac = Hex.toHexString(hmacBytes)
+        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
         logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
         hmac = hmac.reverse()
         logger.info("Reversed HMAC to generate exception: ${hmac}")
