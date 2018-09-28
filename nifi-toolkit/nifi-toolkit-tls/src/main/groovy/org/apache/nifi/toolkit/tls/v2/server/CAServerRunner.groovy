@@ -67,10 +67,12 @@ class CAServerRunner {
     private static final int MIN_TOKEN_LENGTH = 16
 
     private static
-    final String DEFAULT_DESCRIPTION = "This tool starts a CA server running on the specified port."
+    final String DEFAULT_DESCRIPTION = "This tool starts a CA server running on the specified port. Type 'stop' to shutdown the server, or kill the process with Ctrl + C"
 
     // Static holder to avoid re-generating the options object multiple times in an invocation
     private static Options staticOptions
+
+    private static BufferedReader shutdownReader = System.in.newReader()
 
     private static final String DEFAULT_CA_ALIAS = "nifi-key"
     private static final String DEFAULT_CA_DN = "CN=nifi-ca, OU=NiFi"
@@ -239,7 +241,7 @@ class CAServerRunner {
             // TODO: Encrypted External CA key file (requires password arg)
 
             if (isVerbose) {
-                printArguments()
+                printArguments(commandLine)
             }
 
             // Check parameter validity
@@ -254,9 +256,18 @@ class CAServerRunner {
         }
     }
 
-    void printArguments() {
+    void printArguments(CommandLine commandLine) {
         options.getOptions().each { Option opt ->
-            logger.info(opt.longOpt.padLeft(15) + (opt.value?:"null").padLeft(40))
+            logger.info(opt.longOpt.padRight(25) + getValueForDisplay(commandLine, opt))
+        }
+    }
+
+    static String getValueForDisplay(CommandLine cl, Option opt) {
+        if (opt.longOpt.toLowerCase().contains("password")) {
+            String password = cl.getOptionValue(opt.longOpt)
+            return (cl.hasOption(opt.longOpt) ? '*' * password.length() : "null")
+        } else {
+            (cl.getOptionValue(opt.longOpt) ?: "null")
         }
     }
 
@@ -315,8 +326,17 @@ class CAServerRunner {
         caServer
     }
 
-
     // Starts server
+
+    static boolean waitForShutdown(BufferedReader reader) {
+        while (true) {
+            if (reader.readLine() == "stop") {
+                return true
+            }
+            logger.debug("No shutdown command received; sleep 5 s")
+            Thread.sleep(5000)
+        }
+    }
 
     // Main
 
@@ -326,6 +346,9 @@ class CAServerRunner {
      * @param args the command-line arguments
      */
     static void main(String[] args) {
+        // TODO: Comment out after testing
+        System.out.println("Invoked with args: " + args)
+
         Security.addProvider(new BouncyCastleProvider())
 
         CAServerRunner runner = new CAServerRunner()
@@ -349,6 +372,12 @@ class CAServerRunner {
         runner.prepareKeystore()
         NiFiCAServer caServer = runner.createServer()
         caServer.start()
+
+        boolean shutdownCalled = waitForShutdown(shutdownReader)
+        logger.info("Shutdown command received")
+
+        caServer.shutdown()
+        System.exit(0)
 
         // Shutdown gracefully?
 
