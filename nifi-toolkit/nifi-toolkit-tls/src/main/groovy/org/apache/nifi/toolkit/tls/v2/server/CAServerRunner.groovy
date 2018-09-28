@@ -328,10 +328,14 @@ class CAServerRunner {
 
     // Starts server
 
-    static boolean waitForShutdown(BufferedReader reader) {
+    /**
+     * Runs a loop which waits for the {@code stop} command to be issued. Sleeps for {@code 5 s} between checking input.
+     * @param reader can be {@code System.in} when run from command-line, or a {@link Reader} for DI
+     */
+    static void waitForShutdown(BufferedReader reader) {
         while (true) {
             if (reader.readLine() == "stop") {
-                return true
+                return
             }
             logger.debug("No shutdown command received; sleep 5 s")
             Thread.sleep(5000)
@@ -367,20 +371,19 @@ class CAServerRunner {
             System.exit(1)
         }
 
-        // Start runner
+        // Prepare the keystore
+        KeyStore keystore = runner.prepareKeystore()
 
-        runner.prepareKeystore()
+        // TODO: Use keystore directly rather than reading path & password fields
+        // Start runner
         NiFiCAServer caServer = runner.createServer()
         caServer.start()
 
-        boolean shutdownCalled = waitForShutdown(shutdownReader)
+        waitForShutdown(shutdownReader)
         logger.info("Shutdown command received")
 
+        // Shutdown gracefully
         caServer.shutdown()
         System.exit(0)
-
-        // Shutdown gracefully?
-
-//        System.exit(ExitCode.SUCCESS.ordinal())
     }
 }
