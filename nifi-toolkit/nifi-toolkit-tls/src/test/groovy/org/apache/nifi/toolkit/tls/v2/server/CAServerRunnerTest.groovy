@@ -18,7 +18,7 @@
 package org.apache.nifi.toolkit.tls.v2.server
 
 import groovy.json.JsonBuilder
-import groovyx.net.http.FromServer
+import groovyx.net.http.NativeHandlers
 import org.apache.commons.cli.CommandLine
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.security.util.SslContextFactory
@@ -48,6 +48,7 @@ import java.security.Security
 import java.security.cert.Certificate
 import java.security.cert.X509Certificate
 
+import static groovyx.net.http.ContentTypes.JSON
 import static groovyx.net.http.HttpBuilder.configure
 
 @RunWith(JUnit4.class)
@@ -263,8 +264,15 @@ class CAServerRunnerTest extends GroovyTestCase {
             request.uri = 'https://localhost:14443'
             request.contentType = 'application/json'
 
+            // Build the TLS configs
             execution.sslContext = generateLocalhostTrustContext()
             execution.hostnameVerifier = generateLocalhostVerifier()
+
+            // Configure the JSON parser for the result
+            request.contentType = JSON[0]
+            response.parser(JSON[0]) { config, resp ->
+                NativeHandlers.Parsers.json(config, resp)
+            }
         }
 
         def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
@@ -324,20 +332,29 @@ class CAServerRunnerTest extends GroovyTestCase {
         sleep(2000)
 
         // Send the request
-        String response = http.post(String) {
+        Map response = http.post(Map) {
             request.body = requestJson
-            response.success { FromServer fs ->
-                logger.success(fs.statusCode)
-            }
-            response.failure { FromServer fs ->
-                logger.failure(fs.statusCode)
-            }
+//            response.success { FromServer fs ->
+//                logger.success(fs.statusCode)
+//            }
+//            response.failure { FromServer fs ->
+//                logger.failure(fs.statusCode)
+//            }
         }
         logger.info("Response: ${response}")
 
         // Assert
 
+        assert response.message =~ "Successfully signed certificate"
+
+        def certChain = TlsToolkitUtil.splitPEMEncodedCertificateChain(response.certificateChain)
+        assert certChain.size() == 2
+
+        // Assert the node cert is signed by the root cert
+        certChain.last().verify(certChain.first().publicKey)
+
         // Assertions defined above
+        sleep(3000)
     }
 
     /**
