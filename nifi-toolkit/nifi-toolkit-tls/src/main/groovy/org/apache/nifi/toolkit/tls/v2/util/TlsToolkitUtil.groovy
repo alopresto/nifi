@@ -301,6 +301,17 @@ class TlsToolkitUtil {
         new JcaX509CertificateConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME).getCertificate(parsePem(X509CertificateHolder.class, pemEncodedCert))
     }
 
+    static List<X509Certificate> splitPEMEncodedCertificateChain(String pemEncodedChain) {
+        JcaX509CertificateConverter certConverter = new JcaX509CertificateConverter()
+        def pemList = pemEncodedChain.split("(?<=-----)(\n)(?=-----)") as List<String>
+        pemList.collect { String pemEncodedCert ->
+            // The decoding returns a BC X509CertificateHolder instance
+            def certHolder = parsePem(X509CertificateHolder.class, pemEncodedCert)
+            // Use the converter to get the actual certificate
+            certConverter.getCertificate(certHolder)
+        }
+    }
+
     static String wrapCertificateHeaders(String pemEncodedCert) {
         [BEGIN_CERT, pemEncodedCert, END_CERT].join("\n")
     }
