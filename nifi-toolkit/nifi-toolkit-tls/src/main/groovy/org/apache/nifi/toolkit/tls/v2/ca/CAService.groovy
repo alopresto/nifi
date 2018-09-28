@@ -120,8 +120,8 @@ class CAService {
     X509Certificate signCSR(JcaPKCS10CertificationRequest csr, String providedHmac, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certDaysValid = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS) {
         // Verify the HMAC
         logger.info("Verifying provided HMAC ${providedHmac}")
-        byte[] expectedHmac = TlsToolkitUtil.calculateHMac(token, csr.getPublicKey())
-        if (MessageDigest.isEqual(expectedHmac, Hex.decode(providedHmac))) {
+        String expectedHmac = TlsToolkitUtil.calculateHMac(token, csr.getPublicKey())
+        if (MessageDigest.isEqual(Hex.decode(expectedHmac), Hex.decode(providedHmac))) {
             // The HMAC is valid, sign the certificate
             String dn = csr.getSubject().toString()
             logger.info("Received CSR with DN ${dn} and signature ${Hex.toHexString(csr.signature)[0..<16]}...")

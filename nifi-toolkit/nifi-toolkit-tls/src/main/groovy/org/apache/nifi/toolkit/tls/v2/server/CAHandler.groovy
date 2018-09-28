@@ -64,7 +64,7 @@ class CAHandler extends AbstractHandler {
         String csrDn = "unable to parse CSR subject"
 
         try {
-            // Parse the incoming request and extract the body (JSON containing Base64-encoded CSR)
+            // Parse the incoming request and extract the body (JSON containing Base64-encoded CSR and HMAC)
             Map parsedJson = extractRequestJson(httpServletRequest)
 
             String hmac = parsedJson.hmac
@@ -94,6 +94,9 @@ class CAHandler extends AbstractHandler {
             httpServletResponse.writer.write(responseJson)
             httpServletResponse.setStatus(Response.SC_FORBIDDEN)
         }
+
+        // Required or a 404 will be returned
+        request.setHandled(true)
     }
 
     protected String formSuccessResponseJson(String csrDn, String chainBase64) {

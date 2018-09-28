@@ -21,7 +21,6 @@ import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
-import org.bouncycastle.util.encoders.Hex
 import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
@@ -248,8 +247,7 @@ class CAServiceTest extends GroovyTestCase {
         JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
-        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
-        String hmac = Hex.toHexString(hmacBytes)
+        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
         logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
 
         // Act
@@ -291,8 +289,7 @@ class CAServiceTest extends GroovyTestCase {
         JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
-        byte[] hmacBytes = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
-        String hmac = Hex.toHexString(hmacBytes)
+        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
         logger.info("Calculated HMAC using token ${TOKEN}: ${hmac}")
         hmac = hmac.reverse()
         logger.info("Reversed HMAC to cause exception: ${hmac}")

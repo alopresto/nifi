@@ -39,6 +39,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.pkcs.PKCS10CertificationRequest
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder
+import org.bouncycastle.util.encoders.Hex
 import org.bouncycastle.util.io.pem.PemReader
 import org.bouncycastle.util.io.pem.PemWriter
 import org.slf4j.Logger
@@ -98,10 +99,10 @@ class TlsToolkitUtil {
      *
      * @param token cannot be null and must be at least 16 bytes
      * @param publicKey the public key to use as (data) input
-     * @return the HMAC/SHA-256(token, publicKey)
+     * @return the HMAC/SHA-256(token, publicKey) in hex-encoded form
      * @throws GeneralSecurityException
      */
-    static byte[] calculateHMac(String token, PublicKey publicKey) throws GeneralSecurityException {
+    static String calculateHMac(String token, PublicKey publicKey) throws GeneralSecurityException {
         if (token == null) {
             throw new IllegalArgumentException("Token cannot be null")
         }
@@ -112,7 +113,7 @@ class TlsToolkitUtil {
         SecretKeySpec keySpec = new SecretKeySpec(tokenBytes, "RAW")
         Mac mac = Mac.getInstance("Hmac-SHA256", BouncyCastleProvider.PROVIDER_NAME)
         mac.init(keySpec)
-        return mac.doFinal(getKeyIdentifier(publicKey))
+        return Hex.toHexString(mac.doFinal(getKeyIdentifier(publicKey)))
     }
 
     /**
