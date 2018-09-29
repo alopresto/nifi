@@ -18,6 +18,8 @@
 package org.apache.nifi.toolkit.tls.v2.server
 
 import groovy.json.JsonBuilder
+import groovyx.net.http.FromServer
+import groovyx.net.http.HttpBuilder
 import groovyx.net.http.NativeHandlers
 import org.apache.commons.cli.CommandLine
 import org.apache.nifi.security.util.CertificateUtils
@@ -70,6 +72,7 @@ class CAServerRunnerTest extends GroovyTestCase {
     private static final File TRUSTSTORE_FILE = new File("src/test/resources/v2/localhost/truststore.jks")
     private static final String TRUSTSTORE_PATH = TRUSTSTORE_FILE.path
     private static final String TRUSTSTORE_PASSWORD = KEYSTORE_PASSWORD
+    static private final String NODE_DN = "CN=node.nifi.apache.org, OU=NiFi"
 
     @BeforeClass
     static void setUpOnce() {
@@ -261,20 +264,7 @@ class CAServerRunnerTest extends GroovyTestCase {
         exit.expectSystemExitWithStatus(0)
 
         // Configure the request builder
-        def http = configure {
-            request.uri = 'https://localhost:14443'
-            request.contentType = 'application/json'
-
-            // Build the TLS configs
-            execution.sslContext = generateLocalhostTrustContext()
-            execution.hostnameVerifier = generateLocalhostVerifier()
-
-            // Configure the JSON parser for the result
-            request.contentType = JSON[0]
-            response.parser(JSON[0]) { config, resp ->
-                NativeHandlers.Parsers.json(config, resp)
-            }
-        }
+        def http = createHttpBuilder()
 
         def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
@@ -284,23 +274,8 @@ class CAServerRunnerTest extends GroovyTestCase {
         CAServerRunner.shutdownReader = generateShutdownReader(runTime)
         logger.info("Configured server to run for ~ ${runTime} s")
 
-        // Build the CSR
-        String nodeDn = "CN=node.nifi.apache.org, OU=NiFi"
-        KeyPair nodeKeyPair = TlsToolkitUtil.generateKeyPair()
-        def csr = CAService.generateCSR(nodeDn, [], nodeKeyPair)
-        logger.info("Created CSR: ${csr.subject}")
-
-        // Encode the CSR as PEM (Base64)
-        String pemEncodedCsr = TlsToolkitUtil.pemEncode(csr)
-        logger.info("PEM encoded CSR: ${pemEncodedCsr}")
-
-        // Generate the HMAC
-        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, csr.publicKey)
-        logger.info("Calculated HMAC of CSR public key: ${hmac}")
-
-        // Build the request
-        Map requestMap = [hmac: hmac, csr: pemEncodedCsr]
-        String requestJson = new JsonBuilder(requestMap).toString()
+        // Build the CSR request JSON
+        String requestJson = buildCSRRequestJson()
         logger.info("Generated request JSON: ${requestJson}")
 
         long start, stop
@@ -313,8 +288,6 @@ class CAServerRunnerTest extends GroovyTestCase {
             long executionTimeMs = (stop - start) / 1_000_000
             logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
             assert executionTimeMs > runTime * 1_000
-
-            // TODO: Check that received certificate was signed correctly and response format is good
         })
 
         // Act
@@ -327,12 +300,11 @@ class CAServerRunnerTest extends GroovyTestCase {
             // Send the request
             Map response = http.post(Map) {
                 request.body = requestJson
-//            response.success { FromServer fs ->
-//                logger.success(fs.statusCode)
-//            }
-//            response.failure { FromServer fs ->
-//                logger.failure(fs.statusCode)
-//            }
+
+                response.success { FromServer fs, Object response ->
+                    logger.success(fs.statusCode)
+                    response
+                }
             }
             logger.info("Response: ${response}")
 
@@ -356,6 +328,119 @@ class CAServerRunnerTest extends GroovyTestCase {
         // Assert
 
         // Server assertions defined above
+    }
+
+    /**
+     * Start the server, send an HTTP request with a CSR and an invalid HMAC, and receive the error message.
+     */
+    @Test
+    void testShouldNotSignCSRWithInvalidHMAC() {
+        // Arrange
+        exit.expectSystemExitWithStatus(0)
+
+        // Configure the request builder
+        def http = createHttpBuilder()
+
+        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        logger.info("Running with args: ${args}")
+
+        // Override the shutdown reader
+        int runTime = 5
+        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
+        logger.info("Configured server to run for ~ ${runTime} s")
+
+        // Build the CSR request JSON
+        String requestJson = buildCSRRequestJson(NODE_DN, true)
+        logger.info("Generated request JSON: ${requestJson}")
+
+        long start, stop
+        exit.checkAssertionAfterwards({
+            logger.info("Ran main() with args: ${args}")
+
+            stop = System.nanoTime()
+            logger.stop("${stop}")
+
+            long executionTimeMs = (stop - start) / 1_000_000
+            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
+            assert executionTimeMs > runTime * 1_000
+        })
+
+        // Act
+
+        // Send the request in a separate thread
+        Thread.start("client") {
+            // Wait for the server to come online
+            sleep(2000)
+
+            // Send the request
+            Map response = http.post(Map) {
+                request.body = requestJson
+
+                response.failure { FromServer fs, Object response ->
+                    logger.failure(fs.statusCode)
+                    response
+                }
+            }
+            logger.info("Response: ${response}")
+
+            // Assert
+            assert response.message =~ "Unable to sign"
+            assert response.errorMessage =~ "HMAC was not valid"
+
+            assert !response.certificateChain
+        }
+
+        // Start the server
+        start = System.nanoTime()
+        logger.start("${start}")
+
+        CAServerRunner.main(args)
+
+        // Assert
+
+        // Server assertions defined above
+    }
+
+    private static String buildCSRRequestJson(String nodeDn = NODE_DN, boolean invalidateHmac = false) {
+        // Build the CSR
+        KeyPair nodeKeyPair = TlsToolkitUtil.generateKeyPair()
+        def csr = CAService.generateCSR(nodeDn, [], nodeKeyPair)
+        logger.info("Created CSR: ${csr.subject}")
+
+        // Encode the CSR as PEM (Base64)
+        String pemEncodedCsr = TlsToolkitUtil.pemEncode(csr)
+        logger.info("PEM encoded CSR: ${pemEncodedCsr}")
+
+        // Generate the HMAC
+        String hmac = TlsToolkitUtil.calculateHMac(TOKEN, csr.publicKey)
+        logger.info("Calculated HMAC of CSR public key: ${hmac}")
+
+        // Invalidate HMAC if necessary
+        if (invalidateHmac) {
+            hmac = hmac.reverse()
+            logger.info("Invalidated HMAC by reversing: ${hmac}")
+        }
+
+        // Build the request
+        Map requestMap = [hmac: hmac, csr: pemEncodedCsr]
+        new JsonBuilder(requestMap).toString()
+    }
+
+    private static HttpBuilder createHttpBuilder(String uri = "https://localhost:14443") {
+        configure {
+            request.uri = uri
+            request.contentType = 'application/json'
+
+            // Build the TLS configs
+            execution.sslContext = generateLocalhostTrustContext()
+            execution.hostnameVerifier = generateLocalhostVerifier()
+
+            // Configure the JSON parser for the result
+            request.contentType = JSON[0]
+            response.parser(JSON[0]) { config, resp ->
+                NativeHandlers.Parsers.json(config, resp)
+            }
+        }
     }
 
     /**
