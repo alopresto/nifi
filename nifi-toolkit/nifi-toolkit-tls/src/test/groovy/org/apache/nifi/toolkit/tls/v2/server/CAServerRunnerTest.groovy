@@ -73,6 +73,8 @@ class CAServerRunnerTest extends GroovyTestCase {
     private static final String TRUSTSTORE_PATH = TRUSTSTORE_FILE.path
     private static final String TRUSTSTORE_PASSWORD = KEYSTORE_PASSWORD
     static private final String NODE_DN = "CN=node.nifi.apache.org, OU=NiFi"
+    private static final String GENERIC_ERROR_MSG = "Unable to sign"
+    private static final String HMAC_ERROR_MSG = "HMAC was not valid"
 
     @BeforeClass
     static void setUpOnce() {
@@ -285,7 +287,7 @@ class CAServerRunnerTest extends GroovyTestCase {
         // Act
 
         // Send the request in a separate thread
-        Thread.start("client") {
+        Thread.start("client-success") {
             // Wait for the server to come online
             sleep(2000)
 
@@ -296,11 +298,8 @@ class CAServerRunnerTest extends GroovyTestCase {
             assertSuccessfulCSROperation(response)
         }
 
-        // Override the shutdown reader
-        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
-        logger.info("Configured server to run for ~ ${runTime} s")
-
         // Start the server
+        setServerRunTime(runTime)
         start = System.nanoTime()
         logger.start("${start}")
 
@@ -308,6 +307,64 @@ class CAServerRunnerTest extends GroovyTestCase {
 
         // Assert
         // Server assertions defined above
+    }
+
+    /**
+     * Start the server, send an HTTP request with a CSR and an invalid HMAC, and receive the error message.
+     */
+    @Test
+    void testShouldNotSignCSRWithInvalidHMAC() {
+        // Arrange
+        exit.expectSystemExitWithStatus(0)
+        int runTime = 5
+
+        // Configure the request builder
+        def http = createHttpBuilder()
+
+        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        logger.info("Running with args: ${args}")
+
+        // Build the CSR request JSON
+        String requestJson = buildCSRRequestJson(NODE_DN, true)
+        logger.info("Generated request JSON: ${requestJson}")
+
+        long start, stop
+        exit.checkAssertionAfterwards({
+            logger.info("Ran main() with args: ${args}")
+
+            // Assert
+            assertServerRunTime(runTime, start, stop)
+        })
+
+        // Act
+
+        // Send the request in a separate thread
+        Thread.start("client-failure") {
+            // Wait for the server to come online
+            sleep(2000)
+
+            // Send the request
+            Map response = postJsonFailure(http, requestJson)
+
+            // Assert
+            assertFailedCSROperation(response)
+        }
+
+        // Start the server
+        setServerRunTime(runTime)
+        start = System.nanoTime()
+        logger.start("${start}")
+
+        CAServerRunner.main(args)
+
+        // Assert
+        // Server assertions defined above
+    }
+
+    private static void setServerRunTime(int runTime) {
+        // Override the shutdown reader
+        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
+        logger.info("Configured server to run for ~ ${runTime} s")
     }
 
     private static void assertSuccessfulCSROperation(Map response) {
@@ -342,75 +399,24 @@ class CAServerRunnerTest extends GroovyTestCase {
         response
     }
 
-    /**
-     * Start the server, send an HTTP request with a CSR and an invalid HMAC, and receive the error message.
-     */
-    @Test
-    void testShouldNotSignCSRWithInvalidHMAC() {
-        // Arrange
-        exit.expectSystemExitWithStatus(0)
+    private static Map postJsonFailure(HttpBuilder http, String requestJson) {
+        Map response = http.post(Map) {
+            request.body = requestJson
 
-        // Configure the request builder
-        def http = createHttpBuilder()
-
-        def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
-        logger.info("Running with args: ${args}")
-
-        // Override the shutdown reader
-        int runTime = 5
-        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
-        logger.info("Configured server to run for ~ ${runTime} s")
-
-        // Build the CSR request JSON
-        String requestJson = buildCSRRequestJson(NODE_DN, true)
-        logger.info("Generated request JSON: ${requestJson}")
-
-        long start, stop
-        exit.checkAssertionAfterwards({
-            logger.info("Ran main() with args: ${args}")
-
-            stop = System.nanoTime()
-            logger.stop("${stop}")
-
-            long executionTimeMs = (stop - start) / 1_000_000
-            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
-            assert executionTimeMs > runTime * 1_000
-        })
-
-        // Act
-
-        // Send the request in a separate thread
-        Thread.start("client") {
-            // Wait for the server to come online
-            sleep(2000)
-
-            // Send the request
-            Map response = http.post(Map) {
-                request.body = requestJson
-
-                response.failure { FromServer fs, Object response ->
-                    logger.failure(fs.statusCode)
-                    response
-                }
+            response.failure { FromServer fs, Object objResponse ->
+                logger.failure(fs.statusCode)
+                objResponse
             }
-            logger.info("Response: ${response}")
-
-            // Assert
-            assert response.message =~ "Unable to sign"
-            assert response.errorMessage =~ "HMAC was not valid"
-
-            assert !response.certificateChain
         }
+        logger.info("Response: ${response}")
+        response
+    }
 
-        // Start the server
-        start = System.nanoTime()
-        logger.start("${start}")
+    private static void assertFailedCSROperation(Map response, String expectedMessage = GENERIC_ERROR_MSG, String expectedErrorMessage = HMAC_ERROR_MSG) {
+        assert response.message =~ expectedMessage
+        assert response.errorMessage =~ expectedErrorMessage
 
-        CAServerRunner.main(args)
-
-        // Assert
-
-        // Server assertions defined above
+        assert !response.certificateChain
     }
 
     private static String buildCSRRequestJson(String nodeDn = NODE_DN, boolean invalidateHmac = false) {
