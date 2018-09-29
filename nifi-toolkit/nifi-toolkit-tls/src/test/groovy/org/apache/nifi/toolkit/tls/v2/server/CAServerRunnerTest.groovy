@@ -262,17 +262,13 @@ class CAServerRunnerTest extends GroovyTestCase {
     void testShouldSignCSR() {
         // Arrange
         exit.expectSystemExitWithStatus(0)
+        int runTime = 5
 
         // Configure the request builder
         def http = createHttpBuilder()
 
         def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
-
-        // Override the shutdown reader
-        int runTime = 5
-        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
-        logger.info("Configured server to run for ~ ${runTime} s")
 
         // Build the CSR request JSON
         String requestJson = buildCSRRequestJson()
@@ -282,12 +278,8 @@ class CAServerRunnerTest extends GroovyTestCase {
         exit.checkAssertionAfterwards({
             logger.info("Ran main() with args: ${args}")
 
-            stop = System.nanoTime()
-            logger.stop("${stop}")
-
-            long executionTimeMs = (stop - start) / 1_000_000
-            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
-            assert executionTimeMs > runTime * 1_000
+            // Assert
+            assertServerRunTime(runTime, start, stop)
         })
 
         // Act
@@ -298,26 +290,15 @@ class CAServerRunnerTest extends GroovyTestCase {
             sleep(2000)
 
             // Send the request
-            Map response = http.post(Map) {
-                request.body = requestJson
-
-                response.success { FromServer fs, Object response ->
-                    logger.success(fs.statusCode)
-                    response
-                }
-            }
-            logger.info("Response: ${response}")
+            Map response = postJson(http, requestJson)
 
             // Assert
-
-            assert response.message =~ "Successfully signed certificate"
-
-            def certChain = TlsToolkitUtil.splitPEMEncodedCertificateChain(response.certificateChain)
-            assert certChain.size() == 2
-
-            // Assert the node cert is signed by the root cert
-            certChain.last().verify(certChain.first().publicKey)
+            assertSuccessfulCSROperation(response)
         }
+
+        // Override the shutdown reader
+        CAServerRunner.shutdownReader = generateShutdownReader(runTime)
+        logger.info("Configured server to run for ~ ${runTime} s")
 
         // Start the server
         start = System.nanoTime()
@@ -326,8 +307,39 @@ class CAServerRunnerTest extends GroovyTestCase {
         CAServerRunner.main(args)
 
         // Assert
-
         // Server assertions defined above
+    }
+
+    private static void assertSuccessfulCSROperation(Map response) {
+        assert response.message =~ "Successfully signed certificate"
+
+        def certChain = TlsToolkitUtil.splitPEMEncodedCertificateChain(response.certificateChain)
+        assert certChain.size() == 2
+
+        // Assert the node cert is signed by the root cert
+        certChain.last().verify(certChain.first().publicKey)
+    }
+
+    private static void assertServerRunTime(int runTime, long start, long stop) {
+        stop = System.nanoTime()
+        logger.stop("${stop}")
+
+        long executionTimeMs = (long) ((stop - start) / 1_000_000)
+        logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
+        assert executionTimeMs > runTime * 1_000
+    }
+
+    private static Map postJson(HttpBuilder http, String requestJson) {
+        Map response = http.post(Map) {
+            request.body = requestJson
+
+            response.success { FromServer fs, Object response ->
+                logger.success(fs.statusCode)
+                response
+            }
+        }
+        logger.info("Response: ${response}")
+        response
     }
 
     /**
