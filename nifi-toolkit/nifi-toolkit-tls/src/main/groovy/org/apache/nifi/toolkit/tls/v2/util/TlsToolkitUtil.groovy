@@ -50,12 +50,14 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
+import java.security.InvalidKeyException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
 import java.security.PublicKey
+import java.security.SecureRandom
 import java.security.cert.Certificate
 import java.security.cert.CertificateParsingException
 import java.security.cert.X509Certificate
@@ -66,8 +68,12 @@ class TlsToolkitUtil {
     static final String END_CERT = "-----END CERTIFICATE-----"
     static final String DEFAULT_ALGORITHM = "RSA"
     static final String DEFAULT_SIGNING_ALGORITHM = "SHA256withRSA"
+    static final String DEFAULT_ALIAS = "nifi-key"
+    static final String DEFAULT_DN = "CN=nifi-ca, OU=NiFi"
     static final int DEFAULT_CERT_VALIDITY_DAYS = 1095
     static final int DEFAULT_KEY_SIZE = 2048
+    static final int DEFAULT_PASSWORD_LENGTH = 30
+    static final int PASSWORD_MIN_LENGTH = 16
 
     /**
      * Returns true if 256-bit key lengths are available.
@@ -372,6 +378,10 @@ class TlsToolkitUtil {
         addCAToKeystore(dn, alias, keystorePassword, keystore, sans)
     }
 
+    // TODO: Implement
+    static KeyStore buildKeystoreFromPEMCertAndKey(String certPath, String keyPath, String password, String alias = DEFAULT_ALIAS) {}
+
+
     static KeyStore loadKeystoreContainingAlias(String keystorePath, String keystorePassword, String alias) {
         KeyStore keystore = KeyStore.getInstance("JKS")
         File keystoreFile = new File(keystorePath)
@@ -389,6 +399,19 @@ class TlsToolkitUtil {
             logger.warn(msg)
             throw new IOException(msg)
         }
+    }
+
+    static String generateRandomPassword(int length = DEFAULT_PASSWORD_LENGTH) {
+        if (length < PASSWORD_MIN_LENGTH) {
+            def msg = "The requested password length (${length} chars) cannot be less than the minimum password length (${PASSWORD_MIN_LENGTH} chars)"
+            logger.warn(msg)
+            throw new InvalidKeyException(msg)
+        }
+        byte[] passwordBytes = new byte[length * 3 / 4]
+        new SecureRandom().nextBytes(passwordBytes)
+        String password = Base64.encoder.withoutPadding().encodeToString(passwordBytes)
+        logger.debug("Generated random password of length ${password.length()}")
+        password
     }
 
 //
