@@ -314,14 +314,15 @@ class CAServerRunner {
 
     // Loads or generates CA keystore
     KeyStore prepareKeystore() {
+        // TODO: Can't generate keystore if external CA props are passed because no password present
         KeyStore keystore = TlsToolkitUtil.generateOrLocateKeystore(keystorePath, keystorePassword, caAlias, certDn)
         logger.info("Loaded CA keystore at ${keystorePath} with CA cert for ${certDn} in alias ${caAlias}")
         keystore
     }
 
     // Configures server
-    NiFiCAServer createServer() {
-        NiFiCAServer caServer = new NiFiCAServer(port, keystorePath, keystorePassword, token, caAlias, certDn)
+    CAServer createServer() {
+        CAServer caServer = new CAServer(port, keystorePath, keystorePassword, token, caAlias, certDn)
         logger.info("Created CA server: ${caServer}")
         caServer
     }
@@ -376,7 +377,7 @@ class CAServerRunner {
 
         // TODO: Use keystore directly rather than reading path & password fields
         // Start runner
-        NiFiCAServer caServer = runner.createServer()
+        CAServer caServer = runner.createServer()
         caServer.start()
 
         waitForShutdown(shutdownReader)

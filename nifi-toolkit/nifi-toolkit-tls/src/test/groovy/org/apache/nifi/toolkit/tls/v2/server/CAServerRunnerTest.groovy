@@ -65,6 +65,7 @@ class CAServerRunnerTest extends GroovyTestCase {
     public final ExpectedSystemExit exit = ExpectedSystemExit.none()
 
     private static final String TOKEN = "token" * 4
+
     private static final File KEYSTORE_FILE = new File("src/test/resources/v2/localhost/keystore.jks")
     private static final String KEYSTORE_PATH = KEYSTORE_FILE.path
     private static final String KEYSTORE_PASSWORD = "password" * 2
@@ -72,6 +73,10 @@ class CAServerRunnerTest extends GroovyTestCase {
     private static final File TRUSTSTORE_FILE = new File("src/test/resources/v2/localhost/truststore.jks")
     private static final String TRUSTSTORE_PATH = TRUSTSTORE_FILE.path
     private static final String TRUSTSTORE_PASSWORD = KEYSTORE_PASSWORD
+
+    private static final String EXTERNAL_CA_CERT_PATH = "src/test/resources/v2/nifi-cert.pem"
+    private static final String EXTERNAL_CA_KEY_PATH = "src/test/resources/v2/nifi-key.key"
+
     static private final String NODE_DN = "CN=node.nifi.apache.org, OU=NiFi"
     private static final String GENERIC_ERROR_MSG = "Unable to sign"
     private static final String HMAC_ERROR_MSG = "HMAC was not valid"
@@ -270,6 +275,58 @@ class CAServerRunnerTest extends GroovyTestCase {
         def http = createHttpBuilder()
 
         def args = "-k ${KEYSTORE_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
+        logger.info("Running with args: ${args}")
+
+        // Build the CSR request JSON
+        String requestJson = buildCSRRequestJson()
+        logger.info("Generated request JSON: ${requestJson}")
+
+        long start, stop
+        exit.checkAssertionAfterwards({
+            logger.info("Ran main() with args: ${args}")
+
+            // Assert
+            assertServerRunTime(runTime, start, stop)
+        })
+
+        // Act
+
+        // Send the request in a separate thread
+        Thread.start("client-success") {
+            // Wait for the server to come online
+            sleep(2000)
+
+            // Send the request
+            Map response = postJson(http, requestJson)
+
+            // Assert
+            assertSuccessfulCSROperation(response)
+        }
+
+        // Start the server
+        setServerRunTime(runTime)
+        start = System.nanoTime()
+        logger.start("${start}")
+
+        CAServerRunner.main(args)
+
+        // Assert
+        // Server assertions defined above
+    }
+
+    /**
+     * Start the server (using a .crt and .key), send an HTTP request with a CSR, and receive and verify the signed certificate chain.
+     */
+    @Test
+    void testShouldSignCSRWithExternalCA() {
+        // Arrange
+        exit.expectSystemExitWithStatus(0)
+        int runTime = 5
+
+        // Configure the request builder
+        def http = createHttpBuilder()
+
+        def args = "-c ${EXTERNAL_CA_CERT_PATH} -K ${EXTERNAL_CA_KEY_PATH} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Build the CSR request JSON

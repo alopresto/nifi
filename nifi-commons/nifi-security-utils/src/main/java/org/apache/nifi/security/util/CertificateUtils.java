@@ -527,12 +527,13 @@ public final class CertificateUtils {
             SubjectPublicKeyInfo subPubKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic().getEncoded());
             Date startDate = new Date();
             Date endDate = new Date(startDate.getTime() + TimeUnit.DAYS.toMillis(certificateDurationDays));
+            final X500Name reversedX500Name = reverseX500Name(new X500Name(dn));
 
             X509v3CertificateBuilder certBuilder = new X509v3CertificateBuilder(
-                    reverseX500Name(new X500Name(dn)),
+                    reversedX500Name,
                     getUniqueSerialNumber(),
                     startDate, endDate,
-                    reverseX500Name(new X500Name(dn)),
+                    reversedX500Name,
                     subPubKeyInfo);
 
             // Set certificate extensions

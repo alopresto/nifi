@@ -40,8 +40,8 @@ import java.security.PublicKey
 import java.security.cert.Certificate
 import java.security.cert.X509Certificate
 
-class NiFiCAServer {
-    private static final Logger logger = LoggerFactory.getLogger(NiFiCAServer.class)
+class CAServer {
+    private static final Logger logger = LoggerFactory.getLogger(CAServer.class)
 
     static final String DEFAULT_KEYSTORE_PATH = "./conf/keystore.jks"
     static final String DEFAULT_ALIAS = "nifi-key"
@@ -51,7 +51,7 @@ class NiFiCAServer {
     private Server server
     private KeyStore keystore
 
-    NiFiCAServer(int port = DEFAULT_PORT, String keystorePath = DEFAULT_KEYSTORE_PATH, String keystorePassword, String token, String alias = DEFAULT_ALIAS, String dn = DEFAULT_DN) {
+    CAServer(int port = DEFAULT_PORT, String keystorePath = DEFAULT_KEYSTORE_PATH, String keystorePassword, String token, String alias = DEFAULT_ALIAS, String dn = DEFAULT_DN) {
         // TODO: Handle different key password
         // Generate or locate keystore
         KeyStore keystore = generateOrLocateKeystore(keystorePath, keystorePassword, alias, dn)
@@ -63,6 +63,11 @@ class NiFiCAServer {
         this.server = createServer(caHandler, port, keystore, keystorePassword)
     }
 
+    // TODO: Add constructor for external CA
+
+    // TODO: Add KeyStore generator for external CA?
+    // TODO: Or inject different CAService impls based on signing material?
+
     static CAService createCAService(KeyStore keystore, String keyPassword, String token, String alias) {
         PrivateKey privateKey = keystore.getKey(alias, keyPassword.chars) as PrivateKey
         X509Certificate caCert = keystore.getCertificate(alias) as X509Certificate
@@ -70,6 +75,8 @@ class NiFiCAServer {
         new CAService(token, publicKey, privateKey, caCert)
     }
 
+    // TODO: Refactor into components
+    // TODO: Make static
     KeyStore generateOrLocateKeystore(String keystorePath, String keystorePassword, String alias, String dn) {
         KeyStore keyStore
 
@@ -173,6 +180,6 @@ class NiFiCAServer {
 
     @Override
     String toString() {
-        return "NiFiCAServer (v2)"
+        return "CAServer (v2)"
     }
 }
