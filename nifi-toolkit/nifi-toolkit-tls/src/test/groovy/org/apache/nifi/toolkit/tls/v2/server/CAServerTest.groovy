@@ -188,15 +188,28 @@ class CAServerTest extends GroovyTestCase {
     @Test
     void testShouldCreateCAServiceWithoutKeystore() {
         // Arrange
-        KeyStore keystore = KeyStore.getInstance("JKS")
-        keystore.load(KEYSTORE_FILE.newInputStream(), KEYSTORE_PASSWORD.chars)
-        logger.info("Loaded keystore ${keystore} from ${KEYSTORE_PATH}")
+        File keystoreFile = tmpDir.newFile("keystore.jks")
+        final String TMP_KEYSTORE_PATH = keystoreFile.path
+        keystoreFile.delete()
+        logger.info("Keystore exists at ${TMP_KEYSTORE_PATH}: ${keystoreFile.exists()}")
 
         // Act
-        CAService caService = CAServer.createCAService(keystore, KEYSTORE_PASSWORD, TOKEN, ALIAS)
-        logger.info("Created CAService: ${caService}")
+        CAServer caServer = new CAServer(14443, TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, TOKEN)
+        logger.info("Created CAServer: ${caServer}")
 
         // Assert
-        assert caService.caCert == keystore.getCertificate(ALIAS)
+        def keystore = caServer.keystore
+
+        def caCert = keystore.getCertificate(ALIAS) as X509Certificate
+        assert caCert.subjectX500Principal as String == CAServer.DEFAULT_DN
+
+        // Implicitly asserts that the password is correct
+        assert keystore.getKey(ALIAS, KEYSTORE_PASSWORD.chars) instanceof PrivateKey
+
+        // Assert that the keystore file was persisted to the provided path
+        KeyStore persistedKeystore = KeyStore.getInstance("JKS")
+        File persistedKeystoreFile = new File(TMP_KEYSTORE_PATH)
+        persistedKeystore.load(persistedKeystoreFile.newInputStream(), KEYSTORE_PASSWORD.chars)
+        logger.info("Loaded keystore from ${TMP_KEYSTORE_PATH}")
     }
 }
