@@ -49,7 +49,6 @@ class CAServer {
     static final int DEFAULT_PORT = 1443
 
     private Server server
-    private KeyStore keystore
 
     CAServer(int port = DEFAULT_PORT, String keystorePath = DEFAULT_KEYSTORE_PATH, String keystorePassword, String token, String alias = DEFAULT_ALIAS, String dn = DEFAULT_DN) {
         // TODO: Handle different key password
@@ -77,8 +76,8 @@ class CAServer {
 
     // TODO: Refactor into components
     // TODO: Make static
-    KeyStore generateOrLocateKeystore(String keystorePath, String keystorePassword, String alias, String dn) {
-        KeyStore keyStore
+    static KeyStore generateOrLocateKeystore(String keystorePath, String keystorePassword, String alias, String dn) {
+        KeyStore keystore
 
         try {
             // Try loading from file

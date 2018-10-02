@@ -102,7 +102,7 @@ class CAHandler extends AbstractHandler {
     protected String formSuccessResponseJson(String csrDn, String chainBase64) {
         // Form response map
         Map responseMap = [
-                message         : "Successfully signed certificate for ${csrDn} with CA ${getCACertName()}",
+                message         : "Successfully signed certificate for ${csrDn} with CA ${getCACertificateSubjectName()}",
                 certificateChain: chainBase64
         ]
 
@@ -115,7 +115,7 @@ class CAHandler extends AbstractHandler {
     protected String formErrorResponseJson(String csrDn, String errorMessage) {
         // Form response map
         Map responseMap = [
-                message     : "Unable to sign ${csrDn} with CA ${getCACertName()}",
+                message     : "Unable to sign ${csrDn} with CA ${getCACertificateSubjectName()}",
                 errorMessage: errorMessage
         ]
 
@@ -125,8 +125,13 @@ class CAHandler extends AbstractHandler {
         responseJson
     }
 
-    private String getCACertName() {
-        caService.caCert.subjectX500Principal.name
+    X509Certificate getCACertificate() {
+        caService?.caCert
+    }
+
+    String getCACertificateSubjectName() {
+        // .name removes spaces between RDNs for some reason
+        getCACertificate()?.subjectX500Principal as String
     }
 
     protected String signAndEncodeCertificateChain(JcaPKCS10CertificationRequest csr, String hmac) {

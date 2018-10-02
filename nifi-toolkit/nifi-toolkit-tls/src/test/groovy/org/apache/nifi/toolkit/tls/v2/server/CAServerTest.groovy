@@ -20,6 +20,7 @@ package org.apache.nifi.toolkit.tls.v2.server
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.eclipse.jetty.server.Connector
+import org.eclipse.jetty.server.Handler
 import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.server.ServerConnector
 import org.junit.After
@@ -133,11 +134,8 @@ class CAServerTest extends GroovyTestCase {
         EXPECTED_KEYSTORE.load(KEYSTORE_FILE.newInputStream(), KEYSTORE_PASSWORD.chars)
         logger.info("Loaded expected keystore ${EXPECTED_KEYSTORE} from ${KEYSTORE_PATH}")
 
-        CAServer caServer = new CAServer(14443, KEYSTORE_PATH, KEYSTORE_PASSWORD, TOKEN)
-        logger.info("Created CAServer: ${caServer}")
-
         // Act
-        KeyStore keystore = caServer.generateOrLocateKeystore(KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
+        KeyStore keystore = CAServer.generateOrLocateKeystore(KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
         logger.info("Created keystore: ${keystore}")
 
         // Assert
@@ -156,11 +154,8 @@ class CAServerTest extends GroovyTestCase {
         keystoreFile.delete()
         logger.info("Keystore exists at ${TMP_KEYSTORE_PATH}: ${keystoreFile.exists()}")
 
-        CAServer caServer = new CAServer(14443, TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, TOKEN)
-        logger.info("Created CAServer: ${caServer}")
-
         // Act
-        KeyStore keystore = caServer.generateOrLocateKeystore(TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
+        KeyStore keystore = CAServer.generateOrLocateKeystore(TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
         logger.info("Created keystore: ${keystore}")
 
         // Assert
@@ -180,11 +175,6 @@ class CAServerTest extends GroovyTestCase {
     /**
      * Verifies that the service is created if the provided keystore does not exist
      */
-    // TODO: Should create new keystore if none provided
-
-    /**
-     * Verifies that the service is created if the provided keystore does not exist
-     */
     @Test
     void testShouldCreateCAServiceWithoutKeystore() {
         // Arrange
@@ -198,17 +188,17 @@ class CAServerTest extends GroovyTestCase {
         logger.info("Created CAServer: ${caServer}")
 
         // Assert
-        def keystore = caServer.keystore
+        def caHandler = (caServer.server.handlers as List<Handler>).first() as CAHandler
+        def caCert = caHandler.getCACertificate()
+        logger.info("CA cert in CAHandler: ${caCert}")
+        logger.info("CA cert name in CAHandler: ${caHandler.getCACertificateSubjectName()}")
 
-        def caCert = keystore.getCertificate(ALIAS) as X509Certificate
-        assert caCert.subjectX500Principal as String == CAServer.DEFAULT_DN
-
-        // Implicitly asserts that the password is correct
-        assert keystore.getKey(ALIAS, KEYSTORE_PASSWORD.chars) instanceof PrivateKey
+        assert caHandler.getCACertificateSubjectName() == CAServer.DEFAULT_DN
 
         // Assert that the keystore file was persisted to the provided path
         KeyStore persistedKeystore = KeyStore.getInstance("JKS")
         File persistedKeystoreFile = new File(TMP_KEYSTORE_PATH)
+        // Implicitly asserts that the password is correct
         persistedKeystore.load(persistedKeystoreFile.newInputStream(), KEYSTORE_PASSWORD.chars)
         logger.info("Loaded keystore from ${TMP_KEYSTORE_PATH}")
     }
