@@ -46,6 +46,7 @@ import javax.security.auth.x500.X500Principal
 import java.math.MathContext
 import java.security.KeyPair
 import java.security.KeyStore
+import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.Security
 import java.security.cert.Certificate
@@ -221,6 +222,69 @@ class CAServerRunnerTest extends GroovyTestCase {
         logger.info("Loaded certificate at alias ${EXPECTED_ALIAS} with subject ${certificate.subjectX500Principal} and public key ${certificate.publicKey}")
         assert certificate.subjectX500Principal.toString() == EXPECTED_DN
         assert certificate.publicKey == EXPECTED_PUBLIC_KEY
+    }
+
+    /**
+     * Verifies that if a PEM cert and key are provided, a keystore is generated and written out.
+     */
+    @Test
+    void testShouldCreateNewKeystoreWithExternalCA() {
+        // Arrange
+        final File CA_CERT_FILE = new File("src/test/resources/v2/nifi-cert.pem")
+        final File CA_KEY_FILE = new File("src/test/resources/v2/nifi-key.key")
+
+        CAServerRunner runner = new CAServerRunner()
+        logger.info("Created CAServerRunner: ${runner}")
+
+        // Override output location
+        File keystoreFile = tmpDir.newFile("keystore.jks")
+        String keystorePath = keystoreFile.path
+        logger.info("Output location: ${keystorePath}")
+
+        // Parse external CA material
+
+        // Read and validate the external CA cert
+        String pemEncodedCert = CA_CERT_FILE.text
+        logger.debug("Read public certificate from ${CA_CERT_FILE.path}")
+        X509Certificate externalCACert = TlsToolkitUtil.decodeCertificate(pemEncodedCert)
+
+        // Read and validate the external CA key
+        String pemEncodedKey = CA_KEY_FILE.text
+        logger.debug("Read private key from ${CA_KEY_FILE.path}")
+        PrivateKey externalCAKey = TlsToolkitUtil.decodePrivateKey(pemEncodedKey)
+
+        // Override external CA material (would be done via arg parsing)
+        runner.externalCertPath = CA_CERT_FILE.path
+        runner.externalKeyPath = CA_KEY_FILE.path
+
+        // Act
+        KeyStore keystore = runner.buildAndPersistKeystoreFromExternalCA(keystorePath)
+        logger.info("Generated keystore: ${keystore}")
+
+        // Assert
+
+        // Assert the keystore is valid
+        def alias = TlsToolkitUtil.DEFAULT_ALIAS
+        assert keystore.containsAlias(alias)
+
+        // Assert the password was set in the field
+        String keystorePassword = runner.keystorePassword
+        logger.info("Retrieved generated password: ${keystorePassword}")
+        assert keystorePassword.length() >= CAServerRunner.KEYSTORE_PASSWORD_LENGTH
+
+        // Assert the key and cert are correct
+        def certificate = keystore.getCertificate(alias) as X509Certificate
+        logger.info("Loaded certificate at alias ${alias} with subject ${certificate.subjectX500Principal} and public key ${certificate.publicKey}")
+        assert certificate.subjectX500Principal.toString() == externalCACert.subjectX500Principal.toString()
+        assert certificate.publicKey == externalCACert.publicKey
+
+        assert keystore.getKey(alias, keystorePassword.chars) == externalCAKey
+
+        // Assert the keystore was persisted correctly
+        KeyStore persistedKeystore = KeyStore.getInstance("JKS")
+        persistedKeystore.load(keystoreFile.newInputStream(), keystorePassword.chars)
+        assert persistedKeystore.getCertificate(alias) == externalCACert
+        assert persistedKeystore.getKey(alias, keystorePassword.chars) == externalCAKey
     }
 
     /**

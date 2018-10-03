@@ -31,7 +31,9 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import java.security.KeyStore
+import java.security.PrivateKey
 import java.security.Security
+import java.security.cert.X509Certificate
 
 class CAServerRunner {
     private static final Logger logger = LoggerFactory.getLogger(CAServerRunner.class)
@@ -76,7 +78,9 @@ class CAServerRunner {
 
     private static final String DEFAULT_CA_ALIAS = "nifi-key"
     private static final String DEFAULT_CA_DN = "CN=nifi-ca, OU=NiFi"
+    private static final String DEFAULT_KEYSTORE_PATH = "./conf/keystore.jks"
     private static final int DEFAULT_PORT = 14443
+    static final int KEYSTORE_PASSWORD_LENGTH = 30
 
     private static String buildHeader(String description = DEFAULT_DESCRIPTION) {
         "${SEP}${description}${SEP * 2}"
@@ -325,6 +329,38 @@ class CAServerRunner {
         CAServer caServer = new CAServer(port, keystorePath, keystorePassword, token, caAlias, certDn)
         logger.info("Created CA server: ${caServer}")
         caServer
+    }
+
+    KeyStore buildAndPersistKeystoreFromExternalCA(String keystorePath = DEFAULT_KEYSTORE_PATH) {
+        // Read and validate the external CA cert
+        File externalCACertFile = new File(externalCertPath)
+        String pemEncodedCert = externalCACertFile.text
+        logger.debug("Read public certificate from ${externalCACertFile.path}")
+        X509Certificate externalCACert = TlsToolkitUtil.decodeCertificate(pemEncodedCert)
+
+        // Read and validate the external CA key
+        File externalCAKeyFile = new File(externalKeyPath)
+        String pemEncodedKey = externalCAKeyFile.text
+        logger.debug("Read private key from ${externalCAKeyFile.path}")
+        PrivateKey externalCAKey = TlsToolkitUtil.decodePrivateKey(pemEncodedKey)
+
+        // Assert the keys are paired
+        // TODO: Validate the keys
+
+        // Generate a random password for the keystore and output it in the logs ?
+        String keystorePassword = TlsToolkitUtil.generateRandomPassword(KEYSTORE_PASSWORD_LENGTH)
+        logger.debug("Generated password of length ${keystorePassword.length()} for new keystore")
+
+        // Store the generated password in the field so it can be used
+        this.keystorePassword = keystorePassword
+
+        // Generate a keystore containing the external cert and key under the default alias
+        KeyStore keystore = TlsToolkitUtil.generateKeystoreFromExternalMaterial(externalCACert, externalCAKey, keystorePassword, TlsToolkitUtil.DEFAULT_ALIAS)
+
+        // Persist the keystore in the default location
+        TlsToolkitUtil.writeKeystore(keystore, keystorePassword, keystorePath)
+
+        keystore
     }
 
     // Starts server

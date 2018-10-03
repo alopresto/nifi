@@ -44,25 +44,61 @@ class CAServer {
     private static final Logger logger = LoggerFactory.getLogger(CAServer.class)
 
     static final String DEFAULT_KEYSTORE_PATH = "./conf/keystore.jks"
-    static final String DEFAULT_ALIAS = "nifi-key"
-    static final String DEFAULT_DN = "CN=nifi-ca, OU=NiFi"
-    static final int DEFAULT_PORT = 1443
+    static final int DEFAULT_PORT = 14443
+    private static final int KEYSTORE_PASSWORD_LENGTH = 30
 
     private Server server
 
-    CAServer(int port = DEFAULT_PORT, String keystorePath = DEFAULT_KEYSTORE_PATH, String keystorePassword, String token, String alias = DEFAULT_ALIAS, String dn = DEFAULT_DN) {
+    CAServer(int port = DEFAULT_PORT, String keystorePath = DEFAULT_KEYSTORE_PATH, String keystorePassword, String token, String alias = TlsToolkitUtil.DEFAULT_ALIAS, String dn = TlsToolkitUtil.DEFAULT_DN) {
         // TODO: Handle different key password
         // Generate or locate keystore
         KeyStore keystore = generateOrLocateKeystore(keystorePath, keystorePassword, alias, dn)
+
         // Create CAService with CA cert and token
         CAService caService = createCAService(keystore, keystorePassword, token, alias)
+
         // Create CAHandler
         CAHandler caHandler = new CAHandler(caService)
+
         // Create server
         this.server = createServer(caHandler, port, keystore, keystorePassword)
     }
 
-    // TODO: Add constructor for external CA
+    // TODO: Move to CAServerRunner (not the responsibility of the server to build the keystore)
+    /**
+     * Instantiates a {@code CAServer} using PEM-encoded certificate and key files. The {@link File}s are passed rather than {@code String} paths to differentiate the constructors.
+     *
+     * @param port the port to run on
+     * @param externalCACertFile the *.crt or *.pem CA public certificate
+     * @param externalCAKeyFile the *.key or *.pem CA private key (no password)
+     * @param token the MITM token
+     */
+    CAServer(int port = DEFAULT_PORT, File externalCACertFile, File externalCAKeyFile, String token) {
+        // Generate a random password for the keystore and output it in the logs
+        String keystorePassword = TlsToolkitUtil.generateRandomPassword(KEYSTORE_PASSWORD_LENGTH)
+        logger.debug("Generated password of length ${keystorePassword.length()} for new keystore")
+
+        String pemEncodedCert = externalCACertFile.text
+        logger.debug("Read public certificate from ${externalCACertFile.path}")
+
+        String pemEncodedKey = externalCAKeyFile.text
+        logger.debug("Read private key from ${externalCAKeyFile.path}")
+
+
+        X509Certificate externalCACert = TlsToolkitUtil.decodeCertificate(pemEncodedCert)
+        PrivateKey externalCAKey = TlsToolkitUtil.parsePem(PrivateKey.class, pemEncodedKey)
+
+        // Generate a keystore containing the external cert and key under the default alias
+        KeyStore keystore = TlsToolkitUtil.generateKeystoreFromExternalMaterial(externalCACert, externalCAKey, keystorePassword, TlsToolkitUtil.DEFAULT_ALIAS)
+
+        // Persist the keystore in the default location
+        // TODO: Write file out
+
+        // Create the CA service
+        CAService caService = createCAService(keystore, keystorePassword, token, TlsToolkitUtil.DEFAULT_ALIAS)
+        CAHandler caHandler = new CAHandler(caService)
+        this.server = createServer(caHandler, port, keystore, keystorePassword)
+    }
 
     // TODO: Add KeyStore generator for external CA?
     // TODO: Or inject different CAService impls based on signing material?
@@ -74,8 +110,15 @@ class CAServer {
         new CAService(token, publicKey, privateKey, caCert)
     }
 
-    // TODO: Refactor into components
-    // TODO: Make static
+    /**
+     * Returns a {@link KeyStore} containing the CA certificate and private key. If the keystore already exists at the provided path and contains the key under the specified alias, it simply loads and returns it. If the keystore does not exist, or if it exists but does not contain the key under the alias, a new key and certificate are generated and stored, and the updated file is written out to the provided path.
+     *
+     * @param keystorePath the location of the keystore
+     * @param keystorePassword the keystore password
+     * @param alias the alias to check / persist
+     * @param dn the DN of the CA certificate if a new one must be generated
+     * @return the populated keystore
+     */
     static KeyStore generateOrLocateKeystore(String keystorePath, String keystorePassword, String alias, String dn) {
         KeyStore keystore
 
