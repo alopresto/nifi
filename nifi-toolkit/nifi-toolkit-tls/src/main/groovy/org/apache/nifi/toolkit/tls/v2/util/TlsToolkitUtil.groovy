@@ -56,6 +56,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
+import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
 import java.security.cert.Certificate
@@ -378,8 +379,18 @@ class TlsToolkitUtil {
         addCAToKeystore(dn, alias, keystorePassword, keystore, sans)
     }
 
-    // TODO: Implement
-    static KeyStore buildKeystoreFromPEMCertAndKey(String certPath, String keyPath, String password, String alias = DEFAULT_ALIAS) {}
+    static KeyStore generateKeystoreFromExternalMaterial(X509Certificate publicCertificate, PrivateKey privateKey, String password, String alias = DEFAULT_ALIAS) {
+        KeyStore keystore = KeyStore.getInstance("JKS")
+
+        // Set the keystore password
+        keystore.load(null, password.chars)
+
+        // Set the key and cert as an entry
+        keystore.setKeyEntry(alias, privateKey, password.chars, [publicCertificate] as Certificate[])
+        logger.debug("Created keystore with alias ${alias} and certificate ${publicCertificate.subjectX500Principal}")
+
+        keystore
+    }
 
 
     static KeyStore loadKeystoreContainingAlias(String keystorePath, String keystorePassword, String alias) {

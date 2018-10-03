@@ -17,22 +17,30 @@
 
 package org.apache.nifi.toolkit.tls.v2.util
 
-
+import org.apache.nifi.security.util.CertificateUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.security.KeyPair
+import java.security.PrivateKey
 import java.security.Security
+import java.security.cert.X509Certificate
 
 @RunWith(JUnit4.class)
 class TlsToolkitUtilTest extends GroovyTestCase {
     private static final Logger logger = LoggerFactory.getLogger(TlsToolkitUtilTest.class)
+
+    @Rule
+    public TemporaryFolder tmpDir = new TemporaryFolder()
 
     @BeforeClass
     static void setUpOnce() {
@@ -114,5 +122,32 @@ class TlsToolkitUtilTest extends GroovyTestCase {
 
         // Assert
         assert msg == "The requested password length (${customLength} chars) cannot be less than the minimum password length (16 chars)".toString()
+    }
+
+    @Test
+    void testShouldGenerateKeystoreFromExternalMaterial() {
+        // Arrange
+        File keystoreFile = tmpDir.newFile("keystore.jks")
+        final String TMP_KEYSTORE_PATH = keystoreFile.path
+        keystoreFile.delete()
+        logger.info("Keystore exists at ${TMP_KEYSTORE_PATH}: ${keystoreFile.exists()}")
+
+        String alias = TlsToolkitUtil.DEFAULT_ALIAS
+        KeyPair keyPair = TlsToolkitUtil.generateKeyPair()
+        PrivateKey privateKey = keyPair.private
+        X509Certificate caCert = CertificateUtils.generateSelfSignedX509Certificate(keyPair, TlsToolkitUtil.DEFAULT_DN, TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS)
+
+        final String KEYSTORE_PASSWORD = "passwordpassword"
+
+        // TODO: Override the output location in the constructor
+
+        // Act
+        def keystore = TlsToolkitUtil.generateKeystoreFromExternalMaterial(caCert, privateKey, KEYSTORE_PASSWORD)
+        logger.info("Generated keystore: ${keystore}")
+
+        // Assert
+        assert Collections.list(keystore.aliases()) == [alias]
+        assert keystore.getKey(alias, KEYSTORE_PASSWORD.chars) == privateKey
+        assert keystore.getCertificate(alias) == caCert
     }
 }
