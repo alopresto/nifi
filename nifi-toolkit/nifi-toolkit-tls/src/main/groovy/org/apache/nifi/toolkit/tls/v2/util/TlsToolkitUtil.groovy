@@ -32,8 +32,10 @@ import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.openssl.PEMKeyPair
 import org.bouncycastle.openssl.PEMParser
 import org.bouncycastle.openssl.jcajce.JcaMiscPEMGenerator
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
 import org.bouncycastle.operator.OperatorCreationException
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.pkcs.PKCS10CertificationRequest
@@ -306,6 +308,10 @@ class TlsToolkitUtil {
 
     static X509Certificate decodeCertificate(String pemEncodedCert) throws IOException {
         new JcaX509CertificateConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME).getCertificate(parsePem(X509CertificateHolder.class, pemEncodedCert))
+    }
+
+    static PrivateKey decodePrivateKey(String pemEncodedKey) throws IOException {
+        new JcaPEMKeyConverter().getKeyPair(parsePem(PEMKeyPair.class, pemEncodedKey)).private
     }
 
     static List<X509Certificate> splitPEMEncodedCertificateChain(String pemEncodedChain) {
