@@ -14,26 +14,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.nifi.provenance;
+package org.apache.nifi.security.repository;
 
-import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata;
+import java.io.Serializable;
+import org.apache.commons.codec.binary.Hex;
 
-public class EncryptionMetadata extends RepositoryObjectEncryptionMetadata {
-    EncryptionMetadata() {
-    }
-
-    EncryptionMetadata(String keyId, String algorithm, byte[] ivBytes, String version, int cipherByteLength) {
-        this.keyId = keyId;
-        this.ivBytes = ivBytes;
-        this.algorithm = algorithm;
-        this.version = version;
-        this.cipherByteLength = cipherByteLength;
-    }
+public abstract class RepositoryObjectEncryptionMetadata implements Serializable {
+    public String keyId;
+    public String algorithm;
+    public byte[] ivBytes;
+    public String version;
+    public int cipherByteLength;
 
     @Override
     public String toString() {
-        String sb = "Provenance Record Encryption Metadata: " +
-                super.toString();
+        String sb = "Repository Object Encryption Metadata" +
+                " Key ID: " +
+                keyId +
+                " Algorithm: " +
+                algorithm +
+                " IV: " +
+                Hex.encodeHexString(ivBytes) +
+                " Version: " +
+                version +
+                " Cipher text length: " +
+                cipherByteLength;
         return sb;
     }
 }
