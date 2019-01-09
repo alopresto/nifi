@@ -107,7 +107,7 @@ public class RepositoryObjectAESCTREncryptor implements RepositoryObjectStreamEn
             new SecureRandom().nextBytes(ivBytes);
             try {
                 logger.debug("Encrypting provenance record " + recordId + " with key ID " + keyId);
-                Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, EncryptionMethod.AES_GCM, Cipher.ENCRYPT_MODE, keyProvider.getKey(keyId), ivBytes);
+                Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, EncryptionMethod.forAlgorithm(ALGORITHM), Cipher.ENCRYPT_MODE, keyProvider.getKey(keyId), ivBytes);
                 ivBytes = cipher.getIV();
 
                 // Prepare the output stream for the actual encryption
