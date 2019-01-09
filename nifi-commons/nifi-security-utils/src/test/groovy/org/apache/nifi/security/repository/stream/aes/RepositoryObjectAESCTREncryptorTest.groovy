@@ -149,4 +149,56 @@ class RepositoryObjectAESCTREncryptorTest extends GroovyTestCase {
         assert recoveredBytes == SERIALIZED_BYTES
         logger.info("Decoded (usually would be serialized schema record): ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
     }
+
+    /**
+     * Test which demonstrates that normal mechanism of {@code OutputStream os = repository.write(contentClaim); os.write(content1); os.write(content2);} works because only one encryption metadata record is written (before {@code content1}). {@code content2} is written with the same recordId and keyId because the output stream is written to by the same {@code session.write()}
+     */
+    @Test
+    void testShouldEncryptAndDecryptMultiplePiecesOfContent() {
+        // Arrange
+        final byte[] SERIALIZED_BYTES_1 = "This is plaintext content 1.".getBytes(StandardCharsets.UTF_8)
+        final byte[] SERIALIZED_BYTES_2 = "This is plaintext content 2.".getBytes(StandardCharsets.UTF_8)
+        logger.info("Serialized bytes 1 (${SERIALIZED_BYTES_1.size()}): ${Hex.toHexString(SERIALIZED_BYTES_1)}")
+        logger.info("Serialized bytes 2 (${SERIALIZED_BYTES_2.size()}): ${Hex.toHexString(SERIALIZED_BYTES_2)}")
+
+        encryptor = new RepositoryObjectAESCTREncryptor()
+        encryptor.initialize(mockKeyProvider)
+        encryptor.setCipherProvider(mockCipherProvider)
+        logger.info("Created ${encryptor}")
+
+        String keyId = "K1"
+        String recordId = "R1"
+
+        OutputStream encryptDestination = new ByteArrayOutputStream(512)
+
+        // Act
+        logger.info("Using record ID ${recordId} and key ID ${keyId}")
+        OutputStream encryptedOutputStream = encryptor.encrypt(encryptDestination, recordId, keyId)
+        encryptedOutputStream.write(SERIALIZED_BYTES_1)
+        encryptedOutputStream.write(SERIALIZED_BYTES_2)
+
+        encryptedOutputStream.flush()
+        encryptedOutputStream.close()
+
+        byte[] encryptedBytes = encryptDestination.toByteArray()
+        logger.info("Encrypted bytes: ${Hex.toHexString(encryptedBytes)}".toString())
+
+        InputStream encryptedInputStream = new ByteArrayInputStream(encryptedBytes)
+
+        InputStream decryptedInputStream = encryptor.decrypt(encryptedInputStream, recordId)
+        byte[] recoveredBytes1 = new byte[SERIALIZED_BYTES_1.length]
+        decryptedInputStream.read(recoveredBytes1)
+        logger.info("Decrypted data 1 to: \n\t${Hex.toHexString(recoveredBytes1)}")
+
+        byte[] recoveredBytes2 = new byte[SERIALIZED_BYTES_2.length]
+        decryptedInputStream.read(recoveredBytes2)
+        logger.info("Decrypted data 2 to: \n\t${Hex.toHexString(recoveredBytes2)}")
+
+        // Assert
+        assert recoveredBytes1 == SERIALIZED_BYTES_1
+        logger.info("Decoded 1 (usually would be serialized schema record): ${new String(recoveredBytes1, StandardCharsets.UTF_8)}")
+
+        assert recoveredBytes2 == SERIALIZED_BYTES_2
+        logger.info("Decoded 2 (usually would be serialized schema record): ${new String(recoveredBytes2, StandardCharsets.UTF_8)}")
+    }
 }
