@@ -126,9 +126,6 @@ class RepositoryObjectAESCTREncryptorTest extends GroovyTestCase {
 
         OutputStream encryptDestination = new ByteArrayOutputStream(256)
 
-        byte[] decryptBytes = new byte[256]
-        InputStream decryptDestination = new ByteArrayInputStream(decryptBytes)
-
         // Act
         OutputStream encryptedOutputStream = encryptor.encrypt(encryptDestination, recordId, keyId)
         encryptedOutputStream.write(SERIALIZED_BYTES)
@@ -147,7 +144,7 @@ class RepositoryObjectAESCTREncryptorTest extends GroovyTestCase {
 
         // Assert
         assert recoveredBytes == SERIALIZED_BYTES
-        logger.info("Decoded (usually would be serialized schema record): ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
+        logger.info("Decoded: ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
     }
 
     /**
@@ -196,9 +193,58 @@ class RepositoryObjectAESCTREncryptorTest extends GroovyTestCase {
 
         // Assert
         assert recoveredBytes1 == SERIALIZED_BYTES_1
-        logger.info("Decoded 1 (usually would be serialized schema record): ${new String(recoveredBytes1, StandardCharsets.UTF_8)}")
+        logger.info("Decoded 1: ${new String(recoveredBytes1, StandardCharsets.UTF_8)}")
 
         assert recoveredBytes2 == SERIALIZED_BYTES_2
-        logger.info("Decoded 2 (usually would be serialized schema record): ${new String(recoveredBytes2, StandardCharsets.UTF_8)}")
+        logger.info("Decoded 2: ${new String(recoveredBytes2, StandardCharsets.UTF_8)}")
+    }
+
+    /**
+     * Test which demonstrates that encrypting and decrypting large blocks of content (~6 KB) works via streaming mechanism
+     */
+    @Test
+    void testShouldEncryptAndDecryptLargeContent() {
+        // Arrange
+        final byte[] IMAGE_BYTES = new File("src/test/resources/nifi.png").readBytes()
+        logger.info("Image bytes (${IMAGE_BYTES.size()}): src/test/resources/nifi.png")
+
+        // Arbitrary buffer size to force multiple writes
+        final int BUFFER_SIZE = 256
+
+        encryptor = new RepositoryObjectAESCTREncryptor()
+        encryptor.initialize(mockKeyProvider)
+        encryptor.setCipherProvider(mockCipherProvider)
+        logger.info("Created ${encryptor}")
+
+        String keyId = "K1"
+        String recordId = "R1"
+
+        // Create a stream with enough room for the content and some header & encryption overhead
+        OutputStream encryptDestination = new ByteArrayOutputStream(6 * 1024 + 512)
+
+        // Act
+        logger.info("Using record ID ${recordId} and key ID ${keyId}")
+        OutputStream encryptedOutputStream = encryptor.encrypt(encryptDestination, recordId, keyId)
+
+        // Buffer the byte[] writing to the stream in chunks of BUFFER_SIZE
+        for (int i = 0; i < IMAGE_BYTES.length; i+= BUFFER_SIZE) {
+            int buf = Math.min(i+BUFFER_SIZE, IMAGE_BYTES.length)
+            encryptedOutputStream.write((byte[]) (IMAGE_BYTES[i..<buf]))
+            encryptedOutputStream.flush()
+        }
+        encryptedOutputStream.close()
+
+        byte[] encryptedBytes = encryptDestination.toByteArray()
+        logger.info("Encrypted bytes (${encryptedBytes.size()}): ${Hex.toHexString(encryptedBytes)}".toString())
+
+        InputStream encryptedInputStream = new ByteArrayInputStream(encryptedBytes)
+
+        InputStream decryptedInputStream = encryptor.decrypt(encryptedInputStream, recordId)
+        byte[] recoveredBytes = decryptedInputStream.getBytes()
+        logger.info("Decrypted data to (${recoveredBytes.size()}): \n\t${Hex.toHexString(recoveredBytes)}")
+
+        // Assert
+        assert recoveredBytes == IMAGE_BYTES
+        logger.info("Decoded (binary PNG header): ${new String(recoveredBytes[0..<16] as byte[], StandardCharsets.UTF_8)}...")
     }
 }
