@@ -247,4 +247,144 @@ class RepositoryObjectAESCTREncryptorTest extends GroovyTestCase {
         assert recoveredBytes == IMAGE_BYTES
         logger.info("Decoded (binary PNG header): ${new String(recoveredBytes[0..<16] as byte[], StandardCharsets.UTF_8)}...")
     }
+
+    /**
+     * Test which demonstrates that if two {@code #encrypt()} calls are made, each piece of content is encrypted and decrypted independently, and each has its own encryption metadata persisted
+     */
+    @Test
+    void testShouldEncryptAndDecryptMultiplePiecesOfContentIndependently() {
+        // Arrange
+        final byte[] SERIALIZED_BYTES_1 = "This is plaintext content 1.".getBytes(StandardCharsets.UTF_8)
+        final byte[] SERIALIZED_BYTES_2 = "This is plaintext content 2.".getBytes(StandardCharsets.UTF_8)
+        logger.info("Serialized bytes 1 (${SERIALIZED_BYTES_1.size()}): ${Hex.toHexString(SERIALIZED_BYTES_1)}")
+        logger.info("Serialized bytes 2 (${SERIALIZED_BYTES_2.size()}): ${Hex.toHexString(SERIALIZED_BYTES_2)}")
+
+        encryptor = new RepositoryObjectAESCTREncryptor()
+        encryptor.initialize(mockKeyProvider)
+        encryptor.setCipherProvider(mockCipherProvider)
+        logger.info("Created ${encryptor}")
+
+        String keyId = "K1"
+        String recordId1 = "R1"
+        String recordId2 = "R2"
+
+        OutputStream encryptDestination1 = new ByteArrayOutputStream(512)
+        OutputStream encryptDestination2 = new ByteArrayOutputStream(512)
+
+        // Act
+        logger.info("Using record ID ${recordId1} and key ID ${keyId}")
+        OutputStream encryptedOutputStream1 = encryptor.encrypt(encryptDestination1, recordId1, keyId)
+        encryptedOutputStream1.write(SERIALIZED_BYTES_1)
+        encryptedOutputStream1.flush()
+        encryptedOutputStream1.close()
+
+        logger.info("Using record ID ${recordId2} and key ID ${keyId}")
+        OutputStream encryptedOutputStream2 = encryptor.encrypt(encryptDestination2, recordId2, keyId)
+        encryptedOutputStream2.write(SERIALIZED_BYTES_2)
+        encryptedOutputStream2.flush()
+        encryptedOutputStream2.close()
+        
+        byte[] encryptedBytes1 = encryptDestination1.toByteArray()
+        logger.info("Encrypted bytes 1: ${Hex.toHexString(encryptedBytes1)}".toString())
+
+        byte[] encryptedBytes2 = encryptDestination2.toByteArray()
+        logger.info("Encrypted bytes 2: ${Hex.toHexString(encryptedBytes2)}".toString())
+
+        InputStream encryptedInputStream1 = new ByteArrayInputStream(encryptedBytes1)
+        InputStream encryptedInputStream2 = new ByteArrayInputStream(encryptedBytes2)
+
+        InputStream decryptedInputStream1 = encryptor.decrypt(encryptedInputStream1, recordId1)
+        byte[] recoveredBytes1 = new byte[SERIALIZED_BYTES_1.length]
+        decryptedInputStream1.read(recoveredBytes1)
+        logger.info("Decrypted data 1 to: \n\t${Hex.toHexString(recoveredBytes1)}")
+
+        InputStream decryptedInputStream2 = encryptor.decrypt(encryptedInputStream2, recordId2)
+        byte[] recoveredBytes2 = new byte[SERIALIZED_BYTES_2.length]
+        decryptedInputStream2.read(recoveredBytes2)
+        logger.info("Decrypted data 2 to: \n\t${Hex.toHexString(recoveredBytes2)}")
+
+        // Assert
+        assert recoveredBytes1 == SERIALIZED_BYTES_1
+        logger.info("Decoded 1: ${new String(recoveredBytes1, StandardCharsets.UTF_8)}")
+
+        assert recoveredBytes2 == SERIALIZED_BYTES_2
+        logger.info("Decoded 2: ${new String(recoveredBytes2, StandardCharsets.UTF_8)}")
+    }
+
+    /**
+     * Test which demonstrates that if two {@code #encrypt()} calls are made *with different keys*, each piece of content is encrypted and decrypted independently, and each has its own encryption metadata persisted (including the key ID)
+     */
+    @Test
+    void testShouldEncryptAndDecryptMultiplePiecesOfContentWithDifferentKeys() {
+        // Arrange
+        final byte[] SERIALIZED_BYTES_1 = "This is plaintext content 1.".getBytes(StandardCharsets.UTF_8)
+        final byte[] SERIALIZED_BYTES_2 = "This is plaintext content 2.".getBytes(StandardCharsets.UTF_8)
+        logger.info("Serialized bytes 1 (${SERIALIZED_BYTES_1.size()}): ${Hex.toHexString(SERIALIZED_BYTES_1)}")
+        logger.info("Serialized bytes 2 (${SERIALIZED_BYTES_2.size()}): ${Hex.toHexString(SERIALIZED_BYTES_2)}")
+
+        // Set up a mock that can provide multiple keys
+        KeyProvider mockMultipleKeyProvider = [
+                getKey   : { String keyId ->
+                    logger.mock("Requesting key ID: ${keyId}")
+                    def keyHex = keyId == "K1" ? KEY_HEX : "AB" * 16
+                    new SecretKeySpec(Hex.decode(keyHex), "AES")
+                },
+                keyExists: { String keyId ->
+                    logger.mock("Checking existence of ${keyId}")
+                    true
+                }] as KeyProvider
+
+
+        encryptor = new RepositoryObjectAESCTREncryptor()
+        encryptor.initialize(mockMultipleKeyProvider)
+        encryptor.setCipherProvider(mockCipherProvider)
+        logger.info("Created ${encryptor}")
+
+        String keyId1 = "K1"
+        String keyId2 = "K1"
+        String recordId1 = "R1"
+        String recordId2 = "R2"
+
+        OutputStream encryptDestination1 = new ByteArrayOutputStream(512)
+        OutputStream encryptDestination2 = new ByteArrayOutputStream(512)
+
+        // Act
+        logger.info("Using record ID ${recordId1} and key ID ${keyId1}")
+        OutputStream encryptedOutputStream1 = encryptor.encrypt(encryptDestination1, recordId1, keyId1)
+        encryptedOutputStream1.write(SERIALIZED_BYTES_1)
+        encryptedOutputStream1.flush()
+        encryptedOutputStream1.close()
+
+        logger.info("Using record ID ${recordId2} and key ID ${keyId2}")
+        OutputStream encryptedOutputStream2 = encryptor.encrypt(encryptDestination2, recordId2, keyId2)
+        encryptedOutputStream2.write(SERIALIZED_BYTES_2)
+        encryptedOutputStream2.flush()
+        encryptedOutputStream2.close()
+
+        byte[] encryptedBytes1 = encryptDestination1.toByteArray()
+        logger.info("Encrypted bytes 1: ${Hex.toHexString(encryptedBytes1)}".toString())
+
+        byte[] encryptedBytes2 = encryptDestination2.toByteArray()
+        logger.info("Encrypted bytes 2: ${Hex.toHexString(encryptedBytes2)}".toString())
+
+        InputStream encryptedInputStream1 = new ByteArrayInputStream(encryptedBytes1)
+        InputStream encryptedInputStream2 = new ByteArrayInputStream(encryptedBytes2)
+
+        InputStream decryptedInputStream1 = encryptor.decrypt(encryptedInputStream1, recordId1)
+        byte[] recoveredBytes1 = new byte[SERIALIZED_BYTES_1.length]
+        decryptedInputStream1.read(recoveredBytes1)
+        logger.info("Decrypted data 1 to: \n\t${Hex.toHexString(recoveredBytes1)}")
+
+        InputStream decryptedInputStream2 = encryptor.decrypt(encryptedInputStream2, recordId2)
+        byte[] recoveredBytes2 = new byte[SERIALIZED_BYTES_2.length]
+        decryptedInputStream2.read(recoveredBytes2)
+        logger.info("Decrypted data 2 to: \n\t${Hex.toHexString(recoveredBytes2)}")
+
+        // Assert
+        assert recoveredBytes1 == SERIALIZED_BYTES_1
+        logger.info("Decoded 1: ${new String(recoveredBytes1, StandardCharsets.UTF_8)}")
+
+        assert recoveredBytes2 == SERIALIZED_BYTES_2
+        logger.info("Decoded 2: ${new String(recoveredBytes2, StandardCharsets.UTF_8)}")
+    }
 }
