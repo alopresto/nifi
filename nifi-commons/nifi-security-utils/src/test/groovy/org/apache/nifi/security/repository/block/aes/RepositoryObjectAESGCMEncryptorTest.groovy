@@ -208,4 +208,60 @@ class RepositoryObjectAESGCMEncryptorTest extends GroovyTestCase {
         assert decryptedBytes == IMAGE_BYTES
         logger.info("Decoded (binary PNG header): ${new String(decryptedBytes[0..<16] as byte[], StandardCharsets.UTF_8)}...")
     }
+
+    /**
+     * Test which demonstrates that multiple encryption and decryption calls each receive their own independent {@link RepositoryObjectEncryptionMetadata} instance and use independent keys.
+     */
+    @Test
+    void testShouldEncryptAndDecryptMultiplePiecesOfContentWithDifferentKeys() {
+        // Arrange
+        final byte[] SERIALIZED_BYTES_1 = "This is plaintext content 1.".getBytes(StandardCharsets.UTF_8)
+        final byte[] SERIALIZED_BYTES_2 = "This is plaintext content 2.".getBytes(StandardCharsets.UTF_8)
+        logger.info("Serialized bytes 1 (${SERIALIZED_BYTES_1.size()}): ${Hex.toHexString(SERIALIZED_BYTES_1)}")
+        logger.info("Serialized bytes 2 (${SERIALIZED_BYTES_2.size()}): ${Hex.toHexString(SERIALIZED_BYTES_2)}")
+
+        // Set up a mock that can provide multiple keys
+        KeyProvider mockMultipleKeyProvider = [
+                getKey   : { String keyId ->
+                    logger.mock("Requesting key ID: ${keyId}")
+                    def keyHex = keyId == "K1" ? KEY_HEX : "AB" * 16
+                    new SecretKeySpec(Hex.decode(keyHex), "AES")
+                },
+                keyExists: { String keyId ->
+                    logger.mock("Checking existence of ${keyId}")
+                    true
+                }] as KeyProvider
+
+        encryptor = new RepositoryObjectAESGCMEncryptor()
+        encryptor.initialize(mockMultipleKeyProvider)
+        encryptor.setCipherProvider(mockCipherProvider)
+        logger.info("Created ${encryptor}")
+
+        String keyId1 = "K1"
+        String keyId2 = "K2"
+        String recordId1 = "R1"
+        String recordId2 = "R2"
+
+        // Act
+        logger.info("Using record ID ${recordId1} and key ID ${keyId1}")
+        byte[] encryptedBytes1 = encryptor.encrypt(SERIALIZED_BYTES_1, recordId1, keyId1)
+        logger.info("Encrypted bytes 1: ${Hex.toHexString(encryptedBytes1)}".toString())
+
+        logger.info("Using record ID ${recordId2} and key ID ${keyId2}")
+        byte[] encryptedBytes2 = encryptor.encrypt(SERIALIZED_BYTES_2, recordId2, keyId2)
+        logger.info("Encrypted bytes 2: ${Hex.toHexString(encryptedBytes2)}".toString())
+
+        byte[] decryptedBytes1 = encryptor.decrypt(encryptedBytes1, recordId1)
+        logger.info("Decrypted data 1 to: \n\t${Hex.toHexString(decryptedBytes1)}")
+
+        byte[] decryptedBytes2 = encryptor.decrypt(encryptedBytes2, recordId2)
+        logger.info("Decrypted data 2 to: \n\t${Hex.toHexString(decryptedBytes2)}")
+
+        // Assert
+        assert decryptedBytes1 == SERIALIZED_BYTES_1
+        logger.info("Decoded 1: ${new String(decryptedBytes1, StandardCharsets.UTF_8)}")
+
+        assert decryptedBytes2 == SERIALIZED_BYTES_2
+        logger.info("Decoded 2: ${new String(decryptedBytes2, StandardCharsets.UTF_8)}")
+    }
 }
