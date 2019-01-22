@@ -150,8 +150,10 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
                 byte[] serializedEncryptionMetadata = serializeEncryptionMetadata(metadata);
 
                 // Add the sentinel byte of 0x01
+                // TODO: Remove (required for prov repo but not FF repo)
                 logger.debug("Encrypted provenance event record " + recordId + " with key ID " + keyId);
-                return CryptoUtils.concatByteArrays(SENTINEL, serializedEncryptionMetadata, cipherBytes);
+                // return CryptoUtils.concatByteArrays(SENTINEL, serializedEncryptionMetadata, cipherBytes);
+                return CryptoUtils.concatByteArrays(serializedEncryptionMetadata, cipherBytes);
             } catch (EncryptionException | BadPaddingException | IllegalBlockSizeException | IOException | KeyManagementException e) {
                 final String msg = "Encountered an exception encrypting provenance record " + recordId;
                 logger.error(msg, e);
