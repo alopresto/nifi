@@ -16,31 +16,23 @@
  */
 package org.apache.nifi.security.repository.block.aes;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.security.KeyManagementException;
 import java.security.SecureRandom;
-import java.security.Security;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.SecretKey;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.security.kms.CryptoUtils;
 import org.apache.nifi.security.kms.EncryptionException;
-import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.repository.AbstractAESEncryptor;
 import org.apache.nifi.security.repository.RepositoryEncryptorUtils;
 import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata;
 import org.apache.nifi.security.repository.block.BlockEncryptionMetadata;
 import org.apache.nifi.security.repository.block.RepositoryObjectBlockEncryptor;
 import org.apache.nifi.security.util.EncryptionMethod;
-import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,11 +41,9 @@ import org.slf4j.LoggerFactory;
  * cipher provides AEAD behavior, but requires the entire input to be available in order to
  * encrypt/decrypt.
  */
-public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEncryptor {
+public class RepositoryObjectAESGCMEncryptor extends AbstractAESEncryptor implements RepositoryObjectBlockEncryptor {
     private static final Logger logger = LoggerFactory.getLogger(RepositoryObjectAESGCMEncryptor.class);
     private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final int IV_LENGTH = 16;
-    private static final byte[] EMPTY_IV = new byte[IV_LENGTH];
 
     // TODO: Increment the version for new implementations?
     private static final String VERSION = "v1";
@@ -62,59 +52,7 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
     private static final int METADATA_DEFAULT_LENGTH = (20 + ALGORITHM.length() + IV_LENGTH + VERSION.length()) * 2; // Default to twice the expected length
     private static final byte[] SENTINEL = new byte[]{0x01};
 
-    private KeyProvider keyProvider;
-
-    private AESKeyedCipherProvider aesKeyedCipherProvider = new AESKeyedCipherProvider();
-
     // TODO: Dependency injection for record parser (provenance SENTINEL vs. flowfile)?
-
-    /**
-     * Initializes the encryptor with a {@link KeyProvider}.
-     *
-     * @param keyProvider the key provider which will be responsible for accessing keys
-     * @throws KeyManagementException if there is an issue configuring the key provider
-     */
-    @Override
-    public void initialize(KeyProvider keyProvider) throws KeyManagementException {
-        this.keyProvider = keyProvider;
-
-        if (this.aesKeyedCipherProvider == null) {
-            this.aesKeyedCipherProvider = new AESKeyedCipherProvider();
-        }
-
-        if (Security.getProvider("BC") == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
-    }
-
-    /**
-     * Available for dependency injection to override the default {@link AESKeyedCipherProvider} if necessary.
-     *
-     * @param cipherProvider the AES cipher provider to use
-     */
-    void setCipherProvider(AESKeyedCipherProvider cipherProvider) {
-        this.aesKeyedCipherProvider = cipherProvider;
-    }
-
-    private byte[] serializeEncryptionMetadata(RepositoryObjectEncryptionMetadata metadata) throws IOException {
-        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream outputStream = new ObjectOutputStream(baos);
-        outputStream.writeObject(metadata);
-        outputStream.close();
-        return baos.toByteArray();
-    }
-
-    private Cipher initCipher(EncryptionMethod method, int mode, SecretKey key, byte[] ivBytes) throws EncryptionException {
-        try {
-            if (method == null || key == null || ivBytes == null) {
-                throw new IllegalArgumentException("Missing critical information");
-            }
-            return aesKeyedCipherProvider.getCipher(method, key, ivBytes, mode == Cipher.ENCRYPT_MODE);
-        } catch (Exception e) {
-            logger.error("Encountered an exception initializing the cipher", e);
-            throw new EncryptionException(e);
-        }
-    }
 
     /**
      * Encrypts the serialized byte[].
@@ -139,7 +77,7 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
             try {
                 // TODO: Add object type to description
                 logger.debug("Encrypting repository object " + recordId + " with key ID " + keyId);
-                Cipher cipher = initCipher(EncryptionMethod.AES_GCM, Cipher.ENCRYPT_MODE, keyProvider.getKey(keyId), ivBytes);
+                Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, EncryptionMethod.AES_GCM, Cipher.ENCRYPT_MODE, keyProvider.getKey(keyId), ivBytes);
                 ivBytes = cipher.getIV();
 
                 // Perform the actual encryption
@@ -147,7 +85,7 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
 
                 // Serialize and concat encryption details fields (keyId, algo, IV, version, CB length) outside of encryption
                 RepositoryObjectEncryptionMetadata metadata = new BlockEncryptionMetadata(keyId, ALGORITHM, ivBytes, VERSION, cipherBytes.length);
-                byte[] serializedEncryptionMetadata = serializeEncryptionMetadata(metadata);
+                byte[] serializedEncryptionMetadata = RepositoryEncryptorUtils.serializeEncryptionMetadata(metadata);
 
                 // Add the sentinel byte of 0x01
                 // TODO: Remove (required for prov repo but not FF repo)
@@ -197,7 +135,7 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
             try {
                 logger.debug("Decrypting provenance record " + recordId + " with key ID " + metadata.keyId);
                 EncryptionMethod method = EncryptionMethod.forAlgorithm(metadata.algorithm);
-                Cipher cipher = initCipher(method, Cipher.DECRYPT_MODE, keyProvider.getKey(metadata.keyId), metadata.ivBytes);
+                Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, method, Cipher.DECRYPT_MODE, keyProvider.getKey(metadata.keyId), metadata.ivBytes);
 
                 // Strip the metadata away to get just the cipher bytes
                 byte[] cipherBytes = extractCipherBytes(encryptedRecord, metadata);
@@ -232,18 +170,6 @@ public class RepositoryObjectAESGCMEncryptor implements RepositoryObjectBlockEnc
         throw new KeyManagementException("No available key IDs");
     }
 
-    private RepositoryObjectEncryptionMetadata extractEncryptionMetadata(byte[] encryptedRecord) throws EncryptionException, IOException, ClassNotFoundException {
-        if (encryptedRecord == null || encryptedRecord.length < MIN_METADATA_LENGTH) {
-            throw new EncryptionException("The encrypted record is too short to contain the metadata");
-        }
-
-        // Skip the first byte (SENTINEL) and don't need to copy all the serialized record
-        ByteArrayInputStream bais = new ByteArrayInputStream(encryptedRecord);
-        bais.read();
-        try (ObjectInputStream ois = new ObjectInputStream(bais)) {
-            return (RepositoryObjectEncryptionMetadata) ois.readObject();
-        }
-    }
 
     private byte[] extractCipherBytes(byte[] encryptedRecord, RepositoryObjectEncryptionMetadata metadata) {
         return Arrays.copyOfRange(encryptedRecord, encryptedRecord.length - metadata.cipherByteLength, encryptedRecord.length);
