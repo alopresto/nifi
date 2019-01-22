@@ -21,7 +21,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.KeyManagementException;
 import java.security.SecureRandom;
-import java.security.Security;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.Cipher;
@@ -30,60 +29,26 @@ import javax.crypto.CipherOutputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.security.kms.CryptoUtils;
 import org.apache.nifi.security.kms.EncryptionException;
-import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.repository.AbstractAESEncryptor;
 import org.apache.nifi.security.repository.RepositoryEncryptorUtils;
 import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata;
 import org.apache.nifi.security.repository.StreamingEncryptionMetadata;
 import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncryptor;
 import org.apache.nifi.security.util.EncryptionMethod;
-import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class RepositoryObjectAESCTREncryptor implements RepositoryObjectStreamEncryptor {
+public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implements RepositoryObjectStreamEncryptor {
     private static final Logger logger = LoggerFactory.getLogger(RepositoryObjectAESCTREncryptor.class);
     private static final byte[] EM_START_SENTINEL = new byte[]{0x00, 0x00};
     private static final byte[] EM_END_SENTINEL = new byte[]{(byte) 0xFF, (byte) 0xFF};
     private static String ALGORITHM = "AES/CTR/NoPadding";
-    private static final int IV_LENGTH = 16;
-    private static final byte[] EMPTY_IV = new byte[IV_LENGTH];
+    // private static final int IV_LENGTH = 16;
+    // private static final byte[] EMPTY_IV = new byte[IV_LENGTH];
     private static final String VERSION = "v1";
     private static final List<String> SUPPORTED_VERSIONS = Arrays.asList(VERSION);
     private static final int MIN_METADATA_LENGTH = IV_LENGTH + 3 + 3; // 3 delimiters and 3 non-zero elements
     private static final int METADATA_DEFAULT_LENGTH = (20 + ALGORITHM.length() + IV_LENGTH + VERSION.length()) * 2; // Default to twice the expected length
-
-    private KeyProvider keyProvider;
-
-    private AESKeyedCipherProvider aesKeyedCipherProvider = new AESKeyedCipherProvider();
-
-    /**
-     * Initializes the encryptor with a {@link KeyProvider}.
-     *
-     * @param keyProvider the key provider which will be responsible for accessing keys
-     * @throws KeyManagementException if there is an issue configuring the key provider
-     */
-    @Override
-    public void initialize(KeyProvider keyProvider) throws KeyManagementException {
-        this.keyProvider = keyProvider;
-
-        if (this.aesKeyedCipherProvider == null) {
-            this.aesKeyedCipherProvider = new AESKeyedCipherProvider();
-        }
-
-        if (Security.getProvider("BC") == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
-    }
-
-    /**
-     * Available for dependency injection to override the default {@link AESKeyedCipherProvider} if necessary.
-     *
-     * @param cipherProvider the AES cipher provider to use
-     */
-    void setCipherProvider(AESKeyedCipherProvider cipherProvider) {
-        this.aesKeyedCipherProvider = cipherProvider;
-    }
 
     /**
      * Encrypts the serialized byte[].
