@@ -210,7 +210,7 @@ class RepositoryObjectAESGCMEncryptorTest extends GroovyTestCase {
     }
 
     /**
-     * Test which demonstrates that multiple encryption and decryption calls each receive their own independent {@link RepositoryObjectEncryptionMetadata} instance and use independent keys.
+     * Test which demonstrates that multiple encryption and decryption calls each receive their own independent {@code RepositoryObjectEncryptionMetadata} instance and use independent keys.
      */
     @Test
     void testShouldEncryptAndDecryptMultiplePiecesOfContentWithDifferentKeys() {
