@@ -29,12 +29,14 @@ import javax.crypto.SecretKey;
 import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider;
+import org.apache.nifi.stream.io.NonCloseableInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class RepositoryEncryptorUtils {
     private static final Logger logger = LoggerFactory.getLogger(RepositoryEncryptorUtils.class);
 
+    private static final int CONTENT_HEADER_SIZE = 2;
     private static final int IV_LENGTH = 16;
     private static final byte[] EMPTY_IV = new byte[IV_LENGTH];
     private static final String VERSION = "v1";
@@ -86,13 +88,16 @@ public class RepositoryEncryptorUtils {
         // TODO: Inject parser for SENTINEL vs non-SENTINEL
         // Skip the first two bytes (EM_START_SENTINEL) and don't need to copy all the serialized record
         // TODO: May need to seek for EM_START_SENTINEL segment first
-        encryptedRecord.read(new byte[2]);
-        try (ObjectInputStream ois = new ObjectInputStream(encryptedRecord)) {
+        encryptedRecord.read(new byte[CONTENT_HEADER_SIZE]);
+        try (ObjectInputStream ois = new ObjectInputStream(new NonCloseableInputStream(encryptedRecord))) {
             return (RepositoryObjectEncryptionMetadata) ois.readObject();
         }
     }
 
     public static byte[] extractCipherBytes(byte[] encryptedRecord, RepositoryObjectEncryptionMetadata metadata) {
-        return Arrays.copyOfRange(encryptedRecord, encryptedRecord.length - metadata.cipherByteLength, encryptedRecord.length);
+        // If the length is known, there is no header, start from total length - cipher length
+        // If the length is unknown (streaming/content), calculate the metadata length + header length and start from there
+        int cipherBytesStart = metadata.cipherByteLength > 0 ? encryptedRecord.length - metadata.cipherByteLength : metadata.length() + CONTENT_HEADER_SIZE;
+        return Arrays.copyOfRange(encryptedRecord, cipherBytesStart, encryptedRecord.length);
     }
 }

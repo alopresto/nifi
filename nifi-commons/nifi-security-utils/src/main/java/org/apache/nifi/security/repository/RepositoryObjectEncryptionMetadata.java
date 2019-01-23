@@ -16,6 +16,9 @@
  */
 package org.apache.nifi.security.repository;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import org.apache.commons.codec.binary.Hex;
 
@@ -25,6 +28,7 @@ public abstract class RepositoryObjectEncryptionMetadata implements Serializable
     public byte[] ivBytes;
     public String version;
     public int cipherByteLength;
+    private transient int length = 0;
 
     @Override
     public String toString() {
@@ -38,7 +42,23 @@ public abstract class RepositoryObjectEncryptionMetadata implements Serializable
                 " Version: " +
                 version +
                 " Cipher text length: " +
-                cipherByteLength;
+                cipherByteLength +
+                " Serialized byte length: " +
+                length();
         return sb;
+    }
+
+    public int length() {
+        if (length == 0) {
+            try {
+                final ByteArrayOutputStream temp = new ByteArrayOutputStream(512);
+                ObjectOutputStream oos = new ObjectOutputStream(temp);
+                oos.writeObject(this);
+                length = temp.size();
+            } catch (IOException e) {
+                throw new AssertionError("This is unreachable code");
+            }
+        }
+        return length;
     }
 }

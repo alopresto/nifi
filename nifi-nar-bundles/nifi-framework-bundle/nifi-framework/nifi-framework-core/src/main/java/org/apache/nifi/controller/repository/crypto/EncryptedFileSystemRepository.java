@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.KeyManagementException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -57,6 +58,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
+import javax.crypto.CipherOutputStream;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.controller.repository.ContentNotFoundException;
@@ -69,7 +71,13 @@ import org.apache.nifi.controller.repository.claim.StandardContentClaim;
 import org.apache.nifi.controller.repository.io.LimitedInputStream;
 import org.apache.nifi.engine.FlowEngine;
 import org.apache.nifi.processor.DataUnit;
+import org.apache.nifi.security.kms.EncryptionException;
+import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.kms.StaticKeyProvider;
+import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncryptor;
+import org.apache.nifi.security.repository.stream.aes.RepositoryObjectAESCTREncryptor;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
+import org.apache.nifi.stream.io.NonCloseableOutputStream;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.stream.io.SynchronizedByteCountingOutputStream;
 import org.apache.nifi.util.FormatUtils;
@@ -880,13 +888,28 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             inputStream = fis;
         }
 
-        // TODO: Don't do this
-        byte[] encryptedBytes = IOUtils.toByteArray(inputStream);
+        // TODO: Refactor OS implementation out (deduplicate methods, etc.)
+        try {
+            RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
+            // TODO: Instantiate from nifi.properties
+            String keyId = "K1";
+            String keyHex = "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210";
+            String recordId = "R1";
+            KeyProvider keyProvider = new StaticKeyProvider(keyId, keyHex);
+            encryptor.initialize(keyProvider);
 
-        // Decrypt the input
-        byte[] plainBytes = decrypt(encryptedBytes);
+            // ECROS wrapping COS wrapping BCOS wrapping FOS
+            final InputStream decryptingInputStream = encryptor.decrypt(inputStream, recordId);
+            LOG.debug("Reading from {}", decryptingInputStream);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for reading from " + decryptingInputStream));
+            }
 
-        return new ByteArrayInputStream(plainBytes);
+            return decryptingInputStream;
+        } catch (EncryptionException | KeyManagementException e) {
+            logger.error("Encountered an error instantiating the encrypted content repository input stream: " + e.getMessage());
+            throw new IOException("Error creating encrypted content repository input stream", e);
+        }
     }
 
     @Override
@@ -910,173 +933,32 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             throw new IllegalArgumentException("Cannot write to " + claim + " because it has already been written to.");
         }
 
+        // BCOS wrapping FOS
         ByteCountingOutputStream claimStream = writableClaimStreams.get(scc.getResourceClaim());
         final int initialLength = append ? (int) Math.max(0, scc.getLength()) : 0;
 
-        final ByteCountingOutputStream bcos = claimStream;
-
         // TODO: Refactor OS implementation out (deduplicate methods, etc.)
-        final OutputStream out = new OutputStream() {
-            private long bytesWritten = 0L;
-            private boolean recycle = true;
-            private boolean closed = false;
+        try {
+            RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
+            // TODO: Instantiate from nifi.properties
+            String keyId = "K1";
+            String keyHex = "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210";
+            String recordId = "R1";
+            KeyProvider keyProvider = new StaticKeyProvider(keyId, keyHex);
+            encryptor.initialize(keyProvider);
 
-            @Override
-            public String toString() {
-                return "FileSystemRepository Stream [" + scc + "]";
+            // ECROS wrapping COS wrapping BCOS wrapping FOS
+            final OutputStream out = new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, initialLength);
+            LOG.debug("Writing to {}", out);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for writing to " + out));
             }
 
-            @Override
-            public synchronized void write(final int b) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(encrypt(b));
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten++;
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void write(final byte[] b) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(encrypt(b));
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten += b.length;
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void write(final byte[] b, final int off, final int len) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(encrypt(b), off, len);
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten += len;
-
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void flush() throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                bcos.flush();
-            }
-
-            @Override
-            public synchronized void close() throws IOException {
-                closed = true;
-
-                if (alwaysSync) {
-                    ((FileOutputStream) bcos.getWrappedStream()).getFD().sync();
-                }
-
-                if (scc.getLength() < 0) {
-                    // If claim was not written to, set length to 0
-                    scc.setLength(0L);
-                }
-
-                // if we've not yet hit the threshold for appending to a resource claim, add the claim
-                // to the writableClaimQueue so that the Resource Claim can be used again when create()
-                // is called. In this case, we don't have to actually close the file stream. Instead, we
-                // can just add it onto the queue and continue to use it for the next content claim.
-                final long resourceClaimLength = scc.getOffset() + scc.getLength();
-                if (recycle && resourceClaimLength < maxAppendableClaimLength) {
-                    final EncryptedFileSystemRepository.ClaimLengthPair pair = new EncryptedFileSystemRepository.ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength);
-
-                    // We are checking that writableClaimStreams contains the resource claim as a key, as a sanity check.
-                    // It should always be there. However, we have encountered a bug before where we archived content before
-                    // we should have. As a result, the Resource Claim and the associated OutputStream were removed from the
-                    // writableClaimStreams map, and this caused a NullPointerException. Worse, the call here to
-                    // writableClaimQueue.offer() means that the ResourceClaim was then reused, which resulted in an endless
-                    // loop of NullPointerException's being thrown. As a result, we simply ensure that the Resource Claim does
-                    // in fact have an OutputStream associated with it before adding it back to the writableClaimQueue.
-                    final boolean enqueued = writableClaimStreams.get(scc.getResourceClaim()) != null && writableClaimQueue.offer(pair);
-
-                    if (enqueued) {
-                        LOG.debug("Claim length less than max; Adding {} back to Writable Claim Queue", this);
-                    } else {
-                        writableClaimStreams.remove(scc.getResourceClaim());
-                        resourceClaimManager.freeze(scc.getResourceClaim());
-
-                        bcos.close();
-
-                        LOG.debug("Claim length less than max; Closing {} because could not add back to queue", this);
-                        if (LOG.isTraceEnabled()) {
-                            LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                        }
-                    }
-                } else {
-                    // we've reached the limit for this claim. Don't add it back to our queue.
-                    // Instead, just remove it and move on.
-
-                    // Mark the claim as no longer being able to be written to
-                    resourceClaimManager.freeze(scc.getResourceClaim());
-
-                    // ensure that the claim is no longer on the queue
-                    writableClaimQueue.remove(new EncryptedFileSystemRepository.ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
-
-                    bcos.close();
-                    LOG.debug("Claim length >= max; Closing {}", this);
-                    if (LOG.isTraceEnabled()) {
-                        LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                    }
-                }
-            }
-        };
-
-        LOG.debug("Writing to {}", out);
-        if (LOG.isTraceEnabled()) {
-            LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for writing to " + out));
+            return out;
+        } catch (EncryptionException | KeyManagementException e) {
+            logger.error("Encountered an error instantiating the encrypted content repository output stream: " + e.getMessage());
+            throw new IOException("Error creating encrypted content repository output stream", e);
         }
-
-        return out;
-    }
-
-    private static int encrypt(int b) {
-        return b + 128 % 256;
-    }
-
-    private byte[] encrypt(byte[] plainBytes) {
-        // TODO: Implement non-ROT13 encryption
-        return byteShift128(plainBytes);
-    }
-
-    private byte[] decrypt(byte[] cipherBytes) {
-        // TODO: Implement non-ROT13 encryption
-        return byteShift128(cipherBytes);
-    }
-
-    private static byte[] byteShift128(byte[] originalBytes) {
-        byte[] shiftedBytes = new byte[originalBytes.length];
-        for (int i = 0; i < originalBytes.length; i++) {
-            shiftedBytes[i] = (byte) encrypt(originalBytes[i]);
-        }
-        return shiftedBytes;
     }
 
     @Override
@@ -1822,5 +1704,156 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             }
         }
         return cleanupInterval;
+    }
+
+    // TODO: Refactor inline OutputStream from FileSystemRepository to ContentRepositoryOutputStream and ECROS will extend
+    private class EncryptedContentRepositoryOutputStream extends OutputStream {
+        private final StandardContentClaim scc;
+        private final ByteCountingOutputStream byteCountingOutputStream;
+        private final CipherOutputStream cipherOutputStream;
+        private final int initialLength;
+        private boolean recycle;
+        private boolean closed;
+
+        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream, RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, int initialLength) throws EncryptionException {
+            this.scc = scc;
+            this.byteCountingOutputStream = byteCountingOutputStream;
+            this.initialLength = initialLength;
+            recycle = true;
+            closed = false;
+
+            // Set up cipher stream
+            this.cipherOutputStream = (CipherOutputStream) encryptor.encrypt(new NonCloseableOutputStream(byteCountingOutputStream), recordId, keyId);
+        }
+
+        @Override
+        public String toString() {
+            return "FileSystemRepository Stream [" + scc + "]";
+        }
+
+        @Override
+        public synchronized void write(final int b) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                cipherOutputStream.write(b);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+        }
+
+        @Override
+        public synchronized void write(final byte[] b) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                cipherOutputStream.write(b);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+        }
+
+        @Override
+        public synchronized void write(final byte[] b, final int off, final int len) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                cipherOutputStream.write(b, off, len);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+        }
+
+        @Override
+        public synchronized void flush() throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            cipherOutputStream.flush();
+        }
+
+        @Override
+        public synchronized void close() throws IOException {
+            closed = true;
+
+            // Always flush and close (close triggers cipher.doFinal())
+            cipherOutputStream.flush();
+            cipherOutputStream.close();
+
+            // Add the additional bytes written to the scc.length
+            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+
+            if (alwaysSync) {
+                ((FileOutputStream) byteCountingOutputStream.getWrappedStream()).getFD().sync();
+            }
+
+            if (scc.getLength() < 0) {
+                // If claim was not written to, set length to 0
+                scc.setLength(0L);
+            }
+
+            // if we've not yet hit the threshold for appending to a resource claim, add the claim
+            // to the writableClaimQueue so that the Resource Claim can be used again when create()
+            // is called. In this case, we don't have to actually close the file stream. Instead, we
+            // can just add it onto the queue and continue to use it for the next content claim.
+            final long resourceClaimLength = scc.getOffset() + scc.getLength();
+            if (recycle && resourceClaimLength < maxAppendableClaimLength) {
+                final ClaimLengthPair pair = new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength);
+
+                // We are checking that writableClaimStreams contains the resource claim as a key, as a sanity check.
+                // It should always be there. However, we have encountered a bug before where we archived content before
+                // we should have. As a result, the Resource Claim and the associated OutputStream were removed from the
+                // writableClaimStreams map, and this caused a NullPointerException. Worse, the call here to
+                // writableClaimQueue.offer() means that the ResourceClaim was then reused, which resulted in an endless
+                // loop of NullPointerException's being thrown. As a result, we simply ensure that the Resource Claim does
+                // in fact have an OutputStream associated with it before adding it back to the writableClaimQueue.
+                final boolean enqueued = writableClaimStreams.get(scc.getResourceClaim()) != null && writableClaimQueue.offer(pair);
+
+                if (enqueued) {
+                    LOG.debug("Claim length less than max; Adding {} back to Writable Claim Queue", this);
+                } else {
+                    writableClaimStreams.remove(scc.getResourceClaim());
+                    resourceClaimManager.freeze(scc.getResourceClaim());
+
+                    byteCountingOutputStream.close();
+
+                    LOG.debug("Claim length less than max; Closing {} because could not add back to queue", this);
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
+                    }
+                }
+            } else {
+                // we've reached the limit for this claim. Don't add it back to our queue.
+                // Instead, just remove it and move on.
+
+                // Mark the claim as no longer being able to be written to
+                resourceClaimManager.freeze(scc.getResourceClaim());
+
+                // ensure that the claim is no longer on the queue
+                writableClaimQueue.remove(new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
+
+                byteCountingOutputStream.close();
+                LOG.debug("Claim length >= max; Closing {}", this);
+                if (LOG.isTraceEnabled()) {
+                    LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
+                }
+            }
+        }
     }
 }

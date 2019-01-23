@@ -16,12 +16,13 @@
  */
 package org.apache.nifi.controller.repository.crypto
 
+
 import org.apache.nifi.controller.repository.claim.ContentClaim
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager
 import org.apache.nifi.controller.repository.util.DiskUtils
-import org.apache.nifi.provenance.AESProvenanceEventEncryptor
-import org.apache.nifi.provenance.ProvenanceEventEncryptor
 import org.apache.nifi.security.kms.KeyProvider
+import org.apache.nifi.security.repository.RepositoryEncryptorUtils
+import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider
 import org.apache.nifi.stream.io.StreamUtils
@@ -39,6 +40,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
 import javax.crypto.SecretKey
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -57,8 +59,6 @@ class EncryptedFileSystemRepositoryTest {
     private static AESKeyedCipherProvider mockCipherProvider
 
     private static String ORIGINAL_LOG_LEVEL
-
-    private ProvenanceEventEncryptor encryptor
 
     public static final File helloWorldFile = new File("src/test/resources/hello.txt")
 
@@ -130,36 +130,6 @@ class EncryptedFileSystemRepositoryTest {
     }
 
     /**
-     * Given arbitrary bytes, encrypt them and persist with the encryption metadata, then recover
-     */
-    @Test
-    void testShouldEncryptAndDecryptArbitraryBytes() {
-        // Arrange
-        final byte[] SERIALIZED_BYTES = "This is a plaintext message.".getBytes(StandardCharsets.UTF_8)
-        logger.info("Serialized bytes (${SERIALIZED_BYTES.size()}): ${Hex.toHexString(SERIALIZED_BYTES)}")
-
-        encryptor = new AESProvenanceEventEncryptor()
-        encryptor.initialize(mockKeyProvider)
-        encryptor.setCipherProvider(mockCipherProvider)
-        logger.info("Created ${encryptor}")
-
-        String keyId = "K1"
-        String recordId = "R1"
-        logger.info("Using record ID ${recordId} and key ID ${keyId}")
-
-        // Act
-        byte[] metadataAndCipherBytes = encryptor.encrypt(SERIALIZED_BYTES, recordId, keyId)
-        logger.info("Encrypted data to: \n\t${Hex.toHexString(metadataAndCipherBytes)}")
-
-        byte[] recoveredBytes = encryptor.decrypt(metadataAndCipherBytes, recordId)
-        logger.info("Decrypted data to: \n\t${Hex.toHexString(recoveredBytes)}")
-
-        // Assert
-        assert recoveredBytes == SERIALIZED_BYTES
-        logger.info("Decoded (usually would be serialized schema record): ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
-    }
-
-    /**
      * Simple test to write encrypted content to the repository, independently read the persisted file to ensure the content is encrypted, and then retrieve & decrypt via the repository.
      */
     @Test
@@ -176,33 +146,46 @@ class EncryptedFileSystemRepositoryTest {
         final OutputStream out = repository.write(claim)
         out.write(plainBytes)
         out.flush()
+        out.close()
 
         // Independently access the persisted file and verify that the content is encrypted
         String persistedFilePath = getPersistedFilePath(claim)
-        logger.info("Persisted file: ${persistedFilePath}")
+        logger.verify("Persisted file: ${persistedFilePath}")
         byte[] persistedBytes = new File(persistedFilePath).bytes
-        logger.info("Read bytes (${persistedBytes.length}): ${Hex.toHexString(persistedBytes)}")
-        logger.info("Persisted bytes (encrypted) [${Hex.toHexString(persistedBytes)}] != plain bytes [${Hex.toHexString(plainBytes)}]")
-        assert persistedBytes.length == plainBytes.length
-        assert persistedBytes != plainBytes
-        // TODO: Decrypt the persisted bytes and compare
+        logger.verify("Read bytes (${persistedBytes.length}): ${Hex.toHexString(persistedBytes)}")
 
+        // TODO: Parse out EncryptionMetadata and ciphertext
+        logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) [${Hex.toHexString(persistedBytes)[0..<16]}...] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
+        assert persistedBytes.length != plainBytes.length
+        assert persistedBytes != plainBytes
+        // TODO: Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+        byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainContent.length(), persistedBytes.length)
+        logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) [${Hex.toHexString(persistedCipherBytes)}] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
+        assert persistedCipherBytes != plainBytes
+
+        // Verify that independent decryption works (basically ROAESCTRE#decrypt())
+        RepositoryObjectEncryptionMetadata metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(persistedBytes))
+        logger.verify("Parsed encryption metadata: ${metadata}")
+        Cipher verificationCipher = RepositoryEncryptorUtils.initCipher(mockCipherProvider, EncryptionMethod.AES_CTR, Cipher.DECRYPT_MODE, mockKeyProvider.getKey(metadata.keyId), metadata.ivBytes)
+        logger.verify("Created cipher: ${verificationCipher}")
+
+        // Skip the encryption metadata
+        byte[] cipherBytes = RepositoryEncryptorUtils.extractCipherBytes(persistedBytes, metadata)
+        CipherInputStream verificationCipherStream = new CipherInputStream(new ByteArrayInputStream(cipherBytes), verificationCipher)
+
+        byte[] recoveredBytes = new byte[plainContent.length()]
+        verificationCipherStream.read(recoveredBytes)
+        logger.verify("Decrypted bytes (${recoveredBytes.length}): ${Hex.toHexString(recoveredBytes)} - ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
+        assert new String(recoveredBytes, StandardCharsets.UTF_8) == plainContent
+
+        // Use the EFSR to decrypt the same content
         final InputStream inputStream = repository.read(claim)
-        final byte[] buffer = new byte[5]
+        final byte[] buffer = new byte[plainContent.length()]
         StreamUtils.fillBuffer(inputStream, buffer)
         logger.info("Read bytes via repository (${buffer.length}): ${Hex.toHexString(buffer)}")
 
         // Assert
         assert new String(buffer, StandardCharsets.UTF_8) == plainContent
-
-        // Works up to here (inputstream does not get new bytes)
-
-//        out.write("good-bye".getBytes())
-//        out.close()
-//
-//        final byte[] buffer2 = new byte[8]
-//        StreamUtils.fillBuffer(inputStream, buffer2);
-//        assertEquals("good-bye", new String(buffer2))
     }
 
     private String getPersistedFilePath(ContentClaim claim) {

@@ -53,7 +53,7 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
     /**
      * Encrypts the serialized byte[].
      *
-     * @param plainRecord the plain record, serialized to a byte[]
+     * @param rawStream the plain record, serialized to a byte[]
      * @param recordId    an identifier for this record (eventId, generated, etc.)
      * @param keyId       the ID of the key to use
      * @return the encrypted record
@@ -85,6 +85,7 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
                 // Write the SENTINEL bytes and the encryption metadata to the raw output stream
                 plainRecord.write(EM_START_SENTINEL);
                 plainRecord.write(serializedEncryptionMetadata);
+                plainRecord.flush();
                 // plainRecord.write(EM_END_SENTINEL);
 
                 logger.debug("Encrypted streaming repository object " + recordId + " with key ID " + keyId);
@@ -100,20 +101,20 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
     /**
      * Decrypts the provided byte[] (an encrypted record with accompanying metadata).
      *
-     * @param encryptedRecord the encrypted record in byte[] form
+     * @param limitedInputStream the encrypted record in byte[] form
      * @param recordId        an identifier for this record (eventId, generated, etc.)
      * @return the decrypted record
      * @throws EncryptionException if there is an issue decrypting this record
      */
     @Override
-    public InputStream decrypt(InputStream encryptedRecord, String recordId) throws EncryptionException {
-        if (encryptedRecord == null) {
+    public InputStream decrypt(InputStream limitedInputStream, String recordId) throws EncryptionException {
+        if (limitedInputStream == null) {
             throw new EncryptionException("The encrypted provenance record cannot be missing");
         }
 
         RepositoryObjectEncryptionMetadata metadata;
         try {
-            metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(encryptedRecord);
+            metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(limitedInputStream);
         } catch (IOException | ClassNotFoundException e) {
             final String msg = "Encountered an error reading the encryption metadata: ";
             logger.error(msg, e);
@@ -135,8 +136,9 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
                 Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, method, Cipher.DECRYPT_MODE, keyProvider.getKey(metadata.keyId), metadata.ivBytes);
 
                 // Return a new CipherInputStream wrapping the encrypted stream at the present location
-                CipherInputStream cipherInputStream = new CipherInputStream(encryptedRecord, cipher);
+                CipherInputStream cipherInputStream = new CipherInputStream(limitedInputStream, cipher);
 
+                // TODO: Clean up comments & documentation
                 logger.debug("Decrypted provenance event record " + recordId + " with key ID " + metadata.keyId);
                 return cipherInputStream;
             } catch (EncryptionException | KeyManagementException e) {
