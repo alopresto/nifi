@@ -900,9 +900,9 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
             // ECROS wrapping COS wrapping BCOS wrapping FOS
             final InputStream decryptingInputStream = encryptor.decrypt(inputStream, recordId);
-            LOG.debug("Reading from {}", decryptingInputStream);
+            LOG.debug("Reading from record ID {}", recordId);
             if (LOG.isTraceEnabled()) {
-                LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for reading from " + decryptingInputStream));
+                LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for reading from record ID " + recordId));
             }
 
             return decryptingInputStream;
@@ -935,7 +935,8 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
         // BCOS wrapping FOS
         ByteCountingOutputStream claimStream = writableClaimStreams.get(scc.getResourceClaim());
-        final int initialLength = append ? (int) Math.max(0, scc.getLength()) : 0;
+        // final int initialLength = append ? (int) Math.max(0, scc.getLength()) : 0;
+        final long startingOffset = claimStream.getBytesWritten();
 
         // TODO: Refactor OS implementation out (deduplicate methods, etc.)
         try {
@@ -948,7 +949,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             encryptor.initialize(keyProvider);
 
             // ECROS wrapping COS wrapping BCOS wrapping FOS
-            final OutputStream out = new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, initialLength);
+            final OutputStream out = new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, startingOffset);
             LOG.debug("Writing to {}", out);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for writing to " + out));
@@ -1711,14 +1712,14 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         private final StandardContentClaim scc;
         private final ByteCountingOutputStream byteCountingOutputStream;
         private final CipherOutputStream cipherOutputStream;
-        private final int initialLength;
+        private final long startingOffset;
         private boolean recycle;
         private boolean closed;
 
-        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream, RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, int initialLength) throws EncryptionException {
+        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream, RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
             this.scc = scc;
             this.byteCountingOutputStream = byteCountingOutputStream;
-            this.initialLength = initialLength;
+            this.startingOffset = startingOffset;
             recycle = true;
             closed = false;
 
@@ -1744,7 +1745,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -1760,7 +1761,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -1776,7 +1777,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -1797,7 +1798,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             cipherOutputStream.close();
 
             // Add the additional bytes written to the scc.length
-            scc.setLength(byteCountingOutputStream.getBytesWritten() + initialLength);
+            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
 
             if (alwaysSync) {
                 ((FileOutputStream) byteCountingOutputStream.getWrappedStream()).getFD().sync();
