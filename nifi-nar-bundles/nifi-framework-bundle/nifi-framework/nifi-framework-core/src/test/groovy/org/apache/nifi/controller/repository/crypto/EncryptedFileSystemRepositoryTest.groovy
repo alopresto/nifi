@@ -229,6 +229,51 @@ class EncryptedFileSystemRepositoryTest {
         }
     }
 
+    /**
+     * Simple test to write multiple pieces of encrypted content, each using a different encryption key, to the repository and then retrieve & decrypt via the repository.
+     */
+    @Test
+    void testShouldEncryptAndDecryptMultipleRecordsWithDifferentKeys() {
+        // Arrange
+        boolean isLossTolerant = false
+
+        def content = [
+                "This is a plaintext message. ",
+                "Some,csv,data\ncol1,col2,col3",
+                "Easy to read 0123456789abcdef"
+        ]
+
+        // TODO: Set up mock key provider
+
+        // Act
+        def claims = content.collect { String pieceOfContent ->
+            // Create a claim for each piece of content
+            final ContentClaim claim = repository.create(isLossTolerant)
+
+            // TODO: Increment the key ID used (set "active key ID")
+
+            // Write the content out
+            final OutputStream out = repository.write(claim)
+            out.write(pieceOfContent.bytes)
+            out.flush()
+            out.close()
+
+            claim
+        }
+
+        claims.eachWithIndex { ContentClaim claim, int i ->
+            String pieceOfContent = content[i]
+            // Use the EFSR to decrypt the same content
+            final InputStream inputStream = repository.read(claim)
+            final byte[] buffer = new byte[pieceOfContent.length()]
+            StreamUtils.fillBuffer(inputStream, buffer)
+            logger.info("Read bytes via repository (${buffer.length}): ${Hex.toHexString(buffer)}")
+
+            // Assert
+            assert new String(buffer, StandardCharsets.UTF_8) == pieceOfContent
+        }
+    }
+
     private String getPersistedFilePath(ContentClaim claim) {
         [rootFile, claim.resourceClaim.section, claim.resourceClaim.id].join(File.separator)
     }
