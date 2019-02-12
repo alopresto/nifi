@@ -3733,24 +3733,14 @@ public final class StandardProcessGroup implements ProcessGroup {
             flowController.getControllerServiceProvider().removeControllerService(service);
         }
 
-        // TODO: Refactor connections, [cs], funnels, ips, ops, [rename ips, ops], labels, processors, rpgs, child pgs
         for (final String removedVersionedId : funnelsRemoved) {
             final Funnel funnel = funnelsByVersionedId.get(removedVersionedId);
             LOG.info("Removing {} from {}", funnel, group);
             group.removeFunnel(funnel);
         }
 
-        for (final String removedVersionedId : inputPortIdsRemoved) {
-            final Port port = inputPortsByVersionedId.get(removedVersionedId);
-            LOG.info("Removing {} from {}", port, group);
-            group.removeInputPort(port);
-        }
-
-        for (final String removedVersionedId : outputPortIdsRemoved) {
-            final Port port = outputPortsByVersionedId.get(removedVersionedId);
-            LOG.info("Removing {} from {}", port, group);
-            group.removeOutputPort(port);
-        }
+        removeDeletedPorts(inputPortsByVersionedId, inputPortIdsRemoved, group::removeInputPort);
+        removeDeletedPorts(outputPortsByVersionedId, outputPortIdsRemoved, group::removeOutputPort);
 
         // Now that all input/output ports have been removed, we should be able to update
         // all ports to the final name that was proposed in the new flow version.
@@ -3840,11 +3830,11 @@ public final class StandardProcessGroup implements ProcessGroup {
         }
     }
 
-    private void removeDeletedComponents(Map<String, ? extends VersionedComponent> componentMap, Set<String> removedComponentIds, Consumer<VersionedComponent> componentRemover) {
-        for (final String removedVersionedId : removedComponentIds) {
-            final VersionedComponent removedComponent = componentMap.get(removedVersionedId);
-            LOG.info("Removing {} from {}", removedComponent, this.toString());
-            componentRemover.accept(removedComponent);
+    private void removeDeletedPorts(Map<String, Port> portMap, Set<String> removedPortIds, Consumer<Port> portRemover) {
+        for (final String removedPortId : removedPortIds) {
+            final Port removedPort = portMap.get(removedPortId);
+            LOG.info("Removing {} from {}", removedPort, this.toString());
+            portRemover.accept(removedPort);
         }
     }
 
