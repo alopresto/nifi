@@ -21,6 +21,8 @@ import org.apache.commons.lang3.StringUtils
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
+import org.bouncycastle.asn1.pkcs.RSAPrivateKey
+import org.bouncycastle.asn1.pkcs.RSAPublicKey
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.Extension
 import org.bouncycastle.asn1.x509.Extensions
@@ -323,6 +325,15 @@ class TlsToolkitUtil {
             // Use the converter to get the actual certificate
             certConverter.getCertificate(certHolder)
         }
+    }
+
+    static boolean validateKeysMatch(PublicKey publicKey, PrivateKey privateKey) {
+        if (publicKey instanceof RSAPublicKey) {
+            def rsaPublicKey = publicKey as RSAPublicKey
+            def rsaPrivateKey = privateKey as RSAPrivateKey
+
+        }
+
     }
 
     static String wrapCertificateHeaders(String pemEncodedCert) {

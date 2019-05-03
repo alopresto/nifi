@@ -75,7 +75,7 @@ class TlsToolkitUtilTest extends GroovyTestCase {
 
         // Act
         times.times { int i ->
-            def password = TlsToolkitUtil.generateRandomPassword()
+            def password = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.generateRandomPassword()
             logger.info("Generated password: ${password}")
             passwords << password
         }
@@ -98,7 +98,7 @@ class TlsToolkitUtilTest extends GroovyTestCase {
 
         // Act
         times.times { int i ->
-            def password = TlsToolkitUtil.generateRandomPassword(customLength)
+            def password = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.generateRandomPassword(customLength)
             logger.info("Generated password: ${password}")
             passwords << password
         }
@@ -116,7 +116,7 @@ class TlsToolkitUtilTest extends GroovyTestCase {
 
         // Act
         def msg = shouldFail() {
-            def password = TlsToolkitUtil.generateRandomPassword(customLength)
+            def password = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.generateRandomPassword(customLength)
             logger.info("Generated password: ${password}")
         }
 
@@ -132,17 +132,17 @@ class TlsToolkitUtilTest extends GroovyTestCase {
         keystoreFile.delete()
         logger.info("Keystore exists at ${TMP_KEYSTORE_PATH}: ${keystoreFile.exists()}")
 
-        String alias = TlsToolkitUtil.DEFAULT_ALIAS
-        KeyPair keyPair = TlsToolkitUtil.generateKeyPair()
+        String alias = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.DEFAULT_ALIAS
+        KeyPair keyPair = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.generateKeyPair()
         PrivateKey privateKey = keyPair.private
-        X509Certificate caCert = CertificateUtils.generateSelfSignedX509Certificate(keyPair, TlsToolkitUtil.DEFAULT_DN, TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS)
+        X509Certificate caCert = CertificateUtils.generateSelfSignedX509Certificate(keyPair, org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.DEFAULT_DN, org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS)
 
         final String KEYSTORE_PASSWORD = "passwordpassword"
 
         // TODO: Override the output location in the constructor
 
         // Act
-        def keystore = TlsToolkitUtil.generateKeystoreFromExternalMaterial(caCert, privateKey, KEYSTORE_PASSWORD)
+        def keystore = org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil.generateKeystoreFromExternalMaterial(caCert, privateKey, KEYSTORE_PASSWORD)
         logger.info("Generated keystore: ${keystore}")
 
         // Assert

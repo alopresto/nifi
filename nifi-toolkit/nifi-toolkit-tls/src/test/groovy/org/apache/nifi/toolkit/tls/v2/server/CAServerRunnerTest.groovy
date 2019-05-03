@@ -25,7 +25,7 @@ import org.apache.commons.cli.CommandLine
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.security.util.SslContextFactory
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
-import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
+import util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Before
