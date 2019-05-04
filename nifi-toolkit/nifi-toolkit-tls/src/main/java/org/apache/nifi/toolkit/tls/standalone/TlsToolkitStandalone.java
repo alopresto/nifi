@@ -191,7 +191,7 @@ public class TlsToolkitStandalone {
                 tlsClientConfig.setDomainAlternativeNames(Collections.singletonList(domainAlternativeNames.get(instanceIndex)));
                 logger.info("Using alternate name " + domainAlternativeNames.get(instanceIndex) + " with hostname " + hostname + ".");
             } else {
-                logger.info("Hostname count does not match given alternate name count.  Verify names in resulting certificate.");
+                logger.info("Hostname count does not match given alternate name count. Verify names in resulting certificate.");
             }
 
             if (hostDir.exists()) {
