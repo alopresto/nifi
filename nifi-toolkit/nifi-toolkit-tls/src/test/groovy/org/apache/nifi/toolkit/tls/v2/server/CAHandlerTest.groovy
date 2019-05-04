@@ -20,7 +20,7 @@ package org.apache.nifi.toolkit.tls.v2.server
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
-import util.TlsToolkitUtil
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
 import org.eclipse.jetty.server.Request

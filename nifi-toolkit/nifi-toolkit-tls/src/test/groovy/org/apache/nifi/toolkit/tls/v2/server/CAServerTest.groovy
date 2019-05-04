@@ -18,6 +18,7 @@
 package org.apache.nifi.toolkit.tls.v2.server
 
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.eclipse.jetty.server.Connector
 import org.eclipse.jetty.server.Handler
@@ -135,7 +136,7 @@ class CAServerTest extends GroovyTestCase {
         logger.info("Loaded expected keystore ${EXPECTED_KEYSTORE} from ${KEYSTORE_PATH}")
 
         // Act
-        KeyStore keystore = CAServer.generateOrLocateKeystore(KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
+        KeyStore keystore = CAServer.generateOrLocateKeystore(KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, TlsToolkitUtil.DEFAULT_DN)
         logger.info("Created keystore: ${keystore}")
 
         // Assert
@@ -155,12 +156,12 @@ class CAServerTest extends GroovyTestCase {
         logger.info("Keystore exists at ${TMP_KEYSTORE_PATH}: ${keystoreFile.exists()}")
 
         // Act
-        KeyStore keystore = CAServer.generateOrLocateKeystore(TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, CAServer.DEFAULT_DN)
+        KeyStore keystore = CAServer.generateOrLocateKeystore(TMP_KEYSTORE_PATH, KEYSTORE_PASSWORD, ALIAS, TlsToolkitUtil.DEFAULT_DN)
         logger.info("Created keystore: ${keystore}")
 
         // Assert
         def caCert = keystore.getCertificate(ALIAS) as X509Certificate
-        assert caCert.subjectX500Principal as String == CAServer.DEFAULT_DN
+        assert caCert.subjectX500Principal as String == TlsToolkitUtil.DEFAULT_DN
 
         // Implicitly asserts that the password is correct
         assert keystore.getKey(ALIAS, KEYSTORE_PASSWORD.chars) instanceof PrivateKey
@@ -193,7 +194,7 @@ class CAServerTest extends GroovyTestCase {
         logger.info("CA cert in CAHandler: ${caCert}")
         logger.info("CA cert name in CAHandler: ${caHandler.getCACertificateSubjectName()}")
 
-        assert caHandler.getCACertificateSubjectName() == CAServer.DEFAULT_DN
+        assert caHandler.getCACertificateSubjectName() == TlsToolkitUtil.DEFAULT_DN
 
         // Assert that the keystore file was persisted to the provided path
         KeyStore persistedKeystore = KeyStore.getInstance("JKS")

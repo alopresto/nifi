@@ -96,7 +96,7 @@ class CAService {
      * @param sans an optional list of {@code SubjectAlternativeNames} as Strings (default empty)
      * @return the signed certificate
      */
-    static X509Certificate generateCACertificate(KeyPair keyPair, String dn, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certificateDurationDays = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS, List<String> sans = [ ]) {
+    static X509Certificate generateCACertificate(KeyPair keyPair, String dn, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certificateDurationDays = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS, List<String> sans = []) {
         logger.debug("Generating CA certificate with DN ${dn}, SANS ${sans}, signing algorithm ${signingAlgorithm}, and certificate duration days ${certificateDurationDays}")
 
         Extensions sanExtensions = null
@@ -135,15 +135,24 @@ class CAService {
         }
     }
 
-    @Override
-    String toString() {
-        "CA Service for ${caCert.subjectX500Principal.name} with token ${"*" * token.size()}"
-    }
-
+    /**
+     * Returns a Certificate Signing Request (CSR) for the provided input values.
+     *
+     * @param dn the desired Distinguished Name (DN)
+     * @param sans a list of Subject Alternative Names (without type indicator)
+     * @param keyPair the public & private keys of the desired certificate
+     * @param signingAlgorithm the desired signing algorithm
+     * @return the CSR
+     */
     static JcaPKCS10CertificationRequest generateCSR(String dn, List<String> sans, KeyPair keyPair, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM) {
         logger.info("Generating CSR for ${dn}")
         JcaPKCS10CertificationRequest csr = TlsToolkitUtil.generateCertificateSigningRequest(dn, sans, keyPair, signingAlgorithm)
         logger.info("Generated CSR for ${csr.subject}")
         csr
+    }
+
+    @Override
+    String toString() {
+        "CA Service for ${caCert.subjectX500Principal.name} with token ${"*" * token.size()}"
     }
 }

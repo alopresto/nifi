@@ -354,6 +354,7 @@ class TlsToolkitUtil {
                 keystore = loadKeystoreContainingAlias(keystorePath, keystorePassword, alias)
             } else {
                 // TODO: Pass provided SANs for creating CA
+                // TODO: Enforce password length & strength
                 keystore = generateCAKeystore(dn, alias, keystorePassword)
             }
         } catch (KeyStoreException kse) {
@@ -391,6 +392,7 @@ class TlsToolkitUtil {
     }
 
     static KeyStore generateCAKeystore(String dn, String alias, String keystorePassword, String sans = "") {
+        // TODO: Check keystorePassword for length & strength
         KeyStore keystore = KeyStore.getInstance("JKS")
         keystore.load(null, keystorePassword.chars)
         addCAToKeystore(dn, alias, keystorePassword, keystore, sans)

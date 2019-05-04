@@ -25,7 +25,7 @@ import org.apache.commons.cli.Option
 import org.apache.commons.cli.Options
 import org.apache.commons.cli.ParseException
 import org.apache.nifi.toolkit.tls.commandLine.CommandLineParseException
-import util.TlsToolkitUtil
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory

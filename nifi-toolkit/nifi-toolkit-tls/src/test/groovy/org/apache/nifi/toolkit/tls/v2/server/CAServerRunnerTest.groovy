@@ -25,11 +25,12 @@ import org.apache.commons.cli.CommandLine
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.security.util.SslContextFactory
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
-import util.TlsToolkitUtil
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.contrib.java.lang.system.ExpectedSystemExit
@@ -55,6 +56,7 @@ import java.security.cert.X509Certificate
 import static groovyx.net.http.ContentTypes.JSON
 import static groovyx.net.http.HttpBuilder.configure
 
+@Ignore("This test runs slowly ~20s because of server start ups and wait times")
 @RunWith(JUnit4.class)
 class CAServerRunnerTest extends GroovyTestCase {
     private static final Logger logger = LoggerFactory.getLogger(CAServerRunnerTest.class)
@@ -303,16 +305,11 @@ class CAServerRunnerTest extends GroovyTestCase {
         CAServerRunner.shutdownReader = generateShutdownReader(runTime)
         logger.info("Configured server to run for ~ ${runTime} s")
 
-        long start, stop
+        long start
         exit.checkAssertionAfterwards({
             logger.info("Ran main() with args: ${args}")
 
-            stop = System.nanoTime()
-            logger.stop("${stop}")
-
-            long executionTimeMs = (stop - start) / 1_000_000
-            logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
-            assert executionTimeMs > runTime * 1_000
+            assertServerRunTime(runTime, start)
         })
 
         // Act
@@ -345,12 +342,12 @@ class CAServerRunnerTest extends GroovyTestCase {
         String requestJson = buildCSRRequestJson()
         logger.info("Generated request JSON: ${requestJson}")
 
-        long start, stop
+        long start
         exit.checkAssertionAfterwards({
             logger.info("Ran main() with args: ${args}")
 
             // Assert
-            assertServerRunTime(runTime, start, stop)
+            assertServerRunTime(runTime, start)
         })
 
         // Act
@@ -390,19 +387,19 @@ class CAServerRunnerTest extends GroovyTestCase {
         // Configure the request builder
         def http = createHttpBuilder()
 
-        def args = "-c ${EXTERNAL_CA_CERT_PATH} -K ${EXTERNAL_CA_KEY_PATH} -t ${TOKEN}".split(" ")
+        def args = "-c ${EXTERNAL_CA_CERT_PATH} -K ${EXTERNAL_CA_KEY_PATH} -P ${KEYSTORE_PASSWORD} -t ${TOKEN}".split(" ")
         logger.info("Running with args: ${args}")
 
         // Build the CSR request JSON
         String requestJson = buildCSRRequestJson()
         logger.info("Generated request JSON: ${requestJson}")
 
-        long start, stop
+        long start
         exit.checkAssertionAfterwards({
             logger.info("Ran main() with args: ${args}")
 
             // Assert
-            assertServerRunTime(runTime, start, stop)
+            assertServerRunTime(runTime, start)
         })
 
         // Act
@@ -449,12 +446,12 @@ class CAServerRunnerTest extends GroovyTestCase {
         String requestJson = buildCSRRequestJson(NODE_DN, true)
         logger.info("Generated request JSON: ${requestJson}")
 
-        long start, stop
+        long start
         exit.checkAssertionAfterwards({
             logger.info("Ran main() with args: ${args}")
 
             // Assert
-            assertServerRunTime(runTime, start, stop)
+            assertServerRunTime(runTime, start)
         })
 
         // Act
@@ -498,12 +495,11 @@ class CAServerRunnerTest extends GroovyTestCase {
         certChain.last().verify(certChain.first().publicKey)
     }
 
-    private static void assertServerRunTime(int runTime, long start, long stop) {
-        stop = System.nanoTime()
+    private static void assertServerRunTime(int runTime, long start, long stop = System.nanoTime()) {
         logger.stop("${stop}")
 
         long executionTimeMs = (long) ((stop - start) / 1_000_000)
-        logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))}) s")
+        logger.info("Server ran for ${executionTimeMs} ms (${(executionTimeMs / 1_000).round(new MathContext(3))} s)")
         assert executionTimeMs > runTime * 1_000
     }
 

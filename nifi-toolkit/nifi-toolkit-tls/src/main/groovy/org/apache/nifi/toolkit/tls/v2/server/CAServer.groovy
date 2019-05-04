@@ -19,7 +19,7 @@ package org.apache.nifi.toolkit.tls.v2.server
 
 
 import org.apache.nifi.toolkit.tls.v2.ca.CAService
-import util.TlsToolkitUtil
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.eclipse.jetty.http.HttpVersion
 import org.eclipse.jetty.server.Handler
 import org.eclipse.jetty.server.HttpConfiguration
