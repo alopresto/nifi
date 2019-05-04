@@ -18,7 +18,7 @@
 package org.apache.nifi.toolkit.tls.v2.server
 
 
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.eclipse.jetty.http.HttpVersion
 import org.eclipse.jetty.server.Handler
@@ -54,8 +54,8 @@ class CAServer {
         // Generate or locate keystore
         KeyStore keystore = generateOrLocateKeystore(keystorePath, keystorePassword, alias, dn)
 
-        // Create CAService with CA cert and token
-        CAService caService = createCAService(keystore, keystorePassword, token, alias)
+        // Create NiFiCAService with CA cert and token
+        NiFiCAService caService = createCAService(keystore, keystorePassword, token, alias)
 
         // Create CAHandler
         CAHandler caHandler = new CAHandler(caService)
@@ -95,19 +95,19 @@ class CAServer {
         // TODO: Write file out
 
         // Create the CA service
-        CAService caService = createCAService(keystore, keystorePassword, token, TlsToolkitUtil.DEFAULT_ALIAS)
+        NiFiCAService caService = createCAService(keystore, keystorePassword, token, TlsToolkitUtil.DEFAULT_ALIAS)
         CAHandler caHandler = new CAHandler(caService)
         this.server = createServer(caHandler, port, keystore, keystorePassword)
     }
 
     // TODO: Add KeyStore generator for external CA?
-    // TODO: Or inject different CAService impls based on signing material?
+    // TODO: Or inject different NiFiCAService impls based on signing material?
 
-    static CAService createCAService(KeyStore keystore, String keyPassword, String token, String alias) {
+    static NiFiCAService createCAService(KeyStore keystore, String keyPassword, String token, String alias) {
         PrivateKey privateKey = keystore.getKey(alias, keyPassword.chars) as PrivateKey
         X509Certificate caCert = keystore.getCertificate(alias) as X509Certificate
         PublicKey publicKey = caCert.publicKey
-        new CAService(token, publicKey, privateKey, caCert)
+        new NiFiCAService(token, publicKey, privateKey, caCert)
     }
 
     /**
@@ -158,7 +158,7 @@ class CAServer {
 
     private static KeyStore addCAToKeystore(String dn, String alias, String keystorePassword, KeyStore keystore) {
         KeyPair caKeyPair = TlsToolkitUtil.generateKeyPair()
-        X509Certificate caCertificate = CAService.generateCACertificate(caKeyPair, dn)
+        X509Certificate caCertificate = NiFiCAService.generateCACertificate(caKeyPair, dn)
         keystore.setKeyEntry(alias, caKeyPair.private, keystorePassword.chars, [caCertificate] as Certificate[])
         keystore
     }

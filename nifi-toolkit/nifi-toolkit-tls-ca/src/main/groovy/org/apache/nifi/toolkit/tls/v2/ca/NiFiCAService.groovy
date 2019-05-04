@@ -1,0 +1,158 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.nifi.toolkit.tls.v2.ca
+
+import org.apache.nifi.security.util.CertificateUtils
+import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
+import org.bouncycastle.asn1.x509.Extensions
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
+import org.bouncycastle.util.encoders.Hex
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
+import java.security.GeneralSecurityException
+import java.security.KeyPair
+import java.security.MessageDigest
+import java.security.PrivateKey
+import java.security.PublicKey
+import java.security.cert.X509Certificate
+
+/**
+ * This class is responsible for performing the certificate authority (CA) operations for the TLS Toolkit. It delegates
+ * much of the internal operations to {@link CertificateUtils} and exposes a simple API. Static methods can be used for
+ * both client and server operations, while instance methods are for a specific CA.
+ */
+class NiFiCAService implements CAService {
+    private static final Logger logger = LoggerFactory.getLogger(NiFiCAService.class)
+
+    boolean isVerbose = false
+
+    private String token
+    private KeyPair caKeyPair
+
+    private X509Certificate caCert
+    /**
+     * Returns an instance of the service that generates a new {@link KeyPair}.
+     *
+     * @param token the MITM token to use
+     */
+    NiFiCAService(String token, String caDistinguishedName) {
+        def keyPair = TlsToolkitUtil.generateKeyPair()
+        NiFiCAService(token, keyPair, generateCACertificate(keyPair, caDistinguishedName))
+    }
+
+    /**
+     * Returns an instance of the service that uses the provided token and {@link KeyPair}.
+     *
+     * @param token the MITM token to use
+     * @param keyPair the CA key pair
+     */
+    NiFiCAService(String token, KeyPair keyPair, X509Certificate signingCertificate) {
+        this.token = token
+        this.caKeyPair = keyPair
+        this.caCert = signingCertificate
+    }
+
+    /**
+     * Returns an instance of the service that uses the provided token and forms a {@link KeyPair}
+     * from the public and private keys. Useful when the keys are loaded externally.
+     *
+     * @param token the MITM token to use
+     * @param publicKey the public key
+     * @param privateKey the private key
+     */
+    NiFiCAService(String token, PublicKey publicKey, PrivateKey privateKey, X509Certificate signingCertificate) {
+        this(token, new KeyPair(publicKey, privateKey), signingCertificate)
+    }
+
+    X509Certificate getCaCert() {
+        return caCert
+    }
+
+    // TODO: Add parameter guards (callers expected to pass valid data for now)
+
+    /**
+     * Returns the {@link java.security.cert.X509Certificate} identifying the given DN. The cert has the key usages and EKU set for certificate signing, and is signed by itself.
+     *
+     * @param keyPair the public and private key to use
+     * @param dn the Distinguished Name (hostname, email, etc.)
+     * @param signingAlgorithm "SHA256withRSA" (default), "SHA256withECDSA", etc.
+     * @param certificateDurationDays the number of days to mark this certificate valid (defaults to 1095 / 3 years)
+     * @param sans an optional list of {@code SubjectAlternativeNames} as Strings (default empty)
+     * @return the signed certificate
+     */
+    static X509Certificate generateCACertificate(KeyPair keyPair, String dn, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certificateDurationDays = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS, List<String> sans = []) {
+        logger.debug("Generating CA certificate with DN ${dn}, SANS ${sans}, signing algorithm ${signingAlgorithm}, and certificate duration days ${certificateDurationDays}")
+
+        Extensions sanExtensions = null
+        if (sans) {
+            logger.debug("${sans.size()} SAN entries provided")
+            sanExtensions = TlsToolkitUtil.generateSubjectAlternativeNamesExtensions(sans)
+        }
+
+        X509Certificate caCert = CertificateUtils.generateSelfSignedX509Certificate(keyPair, dn, sanExtensions, signingAlgorithm, certificateDurationDays)
+        logger.debug("Generated CA cert ${caCert.toString()}")
+        caCert
+    }
+
+    /**
+     * Returns the signed {@link X509Certificate}.
+     *
+     * @param csr the certificate signing request
+     * @param providedHmac the hex-encoded HMAC provided by the requester
+     * @return the signed certificate
+     */
+    X509Certificate signCSR(JcaPKCS10CertificationRequest csr, String providedHmac, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, int certDaysValid = TlsToolkitUtil.DEFAULT_CERT_VALIDITY_DAYS) {
+        // Verify the HMAC
+        logger.info("Verifying provided HMAC ${providedHmac}")
+        String expectedHmac = TlsToolkitUtil.calculateHMac(token, csr.getPublicKey())
+        if (MessageDigest.isEqual(Hex.decode(expectedHmac), Hex.decode(providedHmac))) {
+            // The HMAC is valid, sign the certificate
+            String dn = csr.getSubject().toString()
+            logger.info("Received CSR with DN ${dn} and signature ${Hex.toHexString(csr.signature)[0..<16]}...")
+            X509Certificate issuedCertificate = CertificateUtils.generateIssuedCertificate(dn, csr.getPublicKey(),
+                    CertificateUtils.getExtensionsFromCSR(csr), caCert, caKeyPair, signingAlgorithm, certDaysValid)
+
+            logger.info("Issued certificate for DN ${dn} signed by ${caCert.subjectX500Principal.name} valid until ${new Date() + certDaysValid}")
+            issuedCertificate
+        } else {
+            throw new GeneralSecurityException("The provided HMAC was not valid")
+        }
+    }
+
+    /**
+     * Returns a Certificate Signing Request (CSR) for the provided input values.
+     *
+     * @param dn the desired Distinguished Name (DN)
+     * @param sans a list of Subject Alternative Names (without type indicator)
+     * @param keyPair the public & private keys of the desired certificate
+     * @param signingAlgorithm the desired signing algorithm
+     * @return the CSR
+     */
+    static JcaPKCS10CertificationRequest generateCSR(String dn, List<String> sans, KeyPair keyPair, String signingAlgorithm = TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM) {
+        logger.info("Generating CSR for ${dn}")
+        JcaPKCS10CertificationRequest csr = TlsToolkitUtil.generateCertificateSigningRequest(dn, sans, keyPair, signingAlgorithm)
+        logger.info("Generated CSR for ${csr.subject}")
+        csr
+    }
+
+    @Override
+    String toString() {
+        "CA Service for ${caCert.subjectX500Principal.name} with token ${"*" * token.size()}"
+    }
+}

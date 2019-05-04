@@ -24,7 +24,7 @@ import groovyx.net.http.NativeHandlers
 import org.apache.commons.cli.CommandLine
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.security.util.SslContextFactory
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
@@ -539,7 +539,7 @@ class CAServerRunnerTest extends GroovyTestCase {
     private static String buildCSRRequestJson(String nodeDn = NODE_DN, boolean invalidateHmac = false) {
         // Build the CSR
         KeyPair nodeKeyPair = TlsToolkitUtil.generateKeyPair()
-        def csr = CAService.generateCSR(nodeDn, [], nodeKeyPair)
+        def csr = NiFiCAService.generateCSR(nodeDn, [], nodeKeyPair)
         logger.info("Created CSR: ${csr.subject}")
 
         // Encode the CSR as PEM (Base64)

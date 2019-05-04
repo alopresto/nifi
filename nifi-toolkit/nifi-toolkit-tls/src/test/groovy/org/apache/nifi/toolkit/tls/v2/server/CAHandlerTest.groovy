@@ -19,7 +19,7 @@ package org.apache.nifi.toolkit.tls.v2.server
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
@@ -84,10 +84,10 @@ class CAHandlerTest extends GroovyTestCase {
         return keyPairGenerator.generateKeyPair()
     }
 
-    CAService mockCAService() {
+    NiFiCAService mockCAService() {
         // Hard to mock because of static methods
-//        [:] as CAService
-        new CAService(TOKEN, "DN=${CA_CN}")
+//        [:] as NiFiCAService
+        new NiFiCAService(TOKEN, "DN=${CA_CN}")
     }
 
     // TODO: Currently the entire positive/negative flow is covered, but each component method should be exercised with edge cases
@@ -104,15 +104,15 @@ class CAHandlerTest extends GroovyTestCase {
         KeyPair caKeyPair = generateKeyPair()
 
         // Generate the CA
-        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        X509Certificate caCert = NiFiCAService.generateCACertificate(caKeyPair, CA_DN)
         logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
 
         final String TOKEN = "token" * 4
         logger.info("Using token: ${TOKEN}")
 
-        // Create the CAService
-        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
-        logger.info("Created CAService: ${cas}")
+        // Create the NiFiCAService
+        NiFiCAService cas = new NiFiCAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created NiFiCAService: ${cas}")
 
         // Create the CAHandler
         CAHandler caHandler = new CAHandler(cas)
@@ -121,7 +121,7 @@ class CAHandlerTest extends GroovyTestCase {
         // Generate the (mock) CSR
         String csrDn = "CN=node1.nifi.apache.org"
         KeyPair nodeKeyPair = generateKeyPair()
-        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        JcaPKCS10CertificationRequest csr = NiFiCAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
         // Encode the CSR in PEM (Base64)
@@ -210,15 +210,15 @@ class CAHandlerTest extends GroovyTestCase {
         KeyPair caKeyPair = generateKeyPair()
 
         // Generate the CA
-        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        X509Certificate caCert = NiFiCAService.generateCACertificate(caKeyPair, CA_DN)
         logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
 
         final String TOKEN = "token" * 4
         logger.info("Using token: ${TOKEN}")
 
-        // Create the CAService
-        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
-        logger.info("Created CAService: ${cas}")
+        // Create the NiFiCAService
+        NiFiCAService cas = new NiFiCAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created NiFiCAService: ${cas}")
 
         // Create the CAHandler
         CAHandler caHandler = new CAHandler(cas)
@@ -227,7 +227,7 @@ class CAHandlerTest extends GroovyTestCase {
         // Generate the (mock) CSR
         String csrDn = "CN=node1.nifi.apache.org"
         KeyPair nodeKeyPair = generateKeyPair()
-        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        JcaPKCS10CertificationRequest csr = NiFiCAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
         // Encode the CSR in PEM (Base64)

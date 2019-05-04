@@ -40,8 +40,8 @@ import java.security.cert.CertificateNotYetValidException
 import java.security.cert.X509Certificate
 
 @RunWith(JUnit4.class)
-class CAServiceTest extends GroovyTestCase {
-    private static final Logger logger = LoggerFactory.getLogger(CAServiceTest.class)
+class NiFiCAServiceTest extends GroovyTestCase {
+    private static final Logger logger = LoggerFactory.getLogger(NiFiCAServiceTest.class)
 
     private static final int KEY_SIZE = 2048
 
@@ -132,7 +132,7 @@ class CAServiceTest extends GroovyTestCase {
         def certAgeDays = 5
 
         // Act
-        final X509Certificate caCertificate = CAService.generateCACertificate(keyPair, DN, TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, certAgeDays, SANS)
+        final X509Certificate caCertificate = NiFiCAService.generateCACertificate(keyPair, DN, TlsToolkitUtil.DEFAULT_SIGNING_ALGORITHM, certAgeDays, SANS)
         logger.info("Issued certificate with subject: ${caCertificate.getSubjectDN().name} and SAN: ${caCertificate.getSubjectAlternativeNames().join(",")}")
 
         // Assert
@@ -172,7 +172,7 @@ class CAServiceTest extends GroovyTestCase {
         KeyPair keyPair = generateKeyPair()
 
         // Act
-        final X509Certificate caCertificate = CAService.generateCACertificate(keyPair, DN)
+        final X509Certificate caCertificate = NiFiCAService.generateCACertificate(keyPair, DN)
         logger.info("Issued certificate with subject: ${caCertificate.getSubjectDN().name} and SAN: ${caCertificate.getSubjectAlternativeNames().join(",")}")
 
         // Assert
@@ -211,7 +211,7 @@ class CAServiceTest extends GroovyTestCase {
         KeyPair nodeKeyPair = generateKeyPair()
 
         // Act
-        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        JcaPKCS10CertificationRequest csr = NiFiCAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
         // Assert
@@ -231,20 +231,20 @@ class CAServiceTest extends GroovyTestCase {
         KeyPair caKeyPair = generateKeyPair()
 
         // Generate the CA
-        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        X509Certificate caCert = NiFiCAService.generateCACertificate(caKeyPair, CA_DN)
         logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
 
         final String TOKEN = "token" * 4
         logger.info("Using token: ${TOKEN}")
 
-        // Create the CAService
-        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
-        logger.info("Created CAService: ${cas}")
+        // Create the NiFiCAService
+        NiFiCAService cas = new NiFiCAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created NiFiCAService: ${cas}")
 
         // Generate the (mock) CSR
         String csrDn = "CN=node1.nifi.apache.org"
         KeyPair nodeKeyPair = generateKeyPair()
-        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        JcaPKCS10CertificationRequest csr = NiFiCAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
         String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)
@@ -273,20 +273,20 @@ class CAServiceTest extends GroovyTestCase {
         KeyPair caKeyPair = generateKeyPair()
 
         // Generate the CA
-        X509Certificate caCert = CAService.generateCACertificate(caKeyPair, CA_DN)
+        X509Certificate caCert = NiFiCAService.generateCACertificate(caKeyPair, CA_DN)
         logger.info("Issued CA certificate with subject: ${caCert.getSubjectDN().name} and SAN: ${caCert.getSubjectAlternativeNames().join(",")}")
 
         final String TOKEN = "token" * 4
         logger.info("Using token: ${TOKEN}")
 
-        // Create the CAService
-        CAService cas = new CAService(TOKEN, caKeyPair, caCert)
-        logger.info("Created CAService: ${cas}")
+        // Create the NiFiCAService
+        NiFiCAService cas = new NiFiCAService(TOKEN, caKeyPair, caCert)
+        logger.info("Created NiFiCAService: ${cas}")
 
         // Generate the (mock) CSR
         String csrDn = "CN=node1.nifi.apache.org"
         KeyPair nodeKeyPair = generateKeyPair()
-        JcaPKCS10CertificationRequest csr = CAService.generateCSR(csrDn, [], nodeKeyPair)
+        JcaPKCS10CertificationRequest csr = NiFiCAService.generateCSR(csrDn, [], nodeKeyPair)
         logger.info("Generated CSR: ${csr.subject}")
 
         String hmac = TlsToolkitUtil.calculateHMac(TOKEN, nodeKeyPair.public)

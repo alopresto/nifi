@@ -19,7 +19,7 @@ package org.apache.nifi.toolkit.tls.v2.server
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest
 import org.eclipse.jetty.server.Request
@@ -41,9 +41,9 @@ import java.security.cert.X509Certificate
 class CAHandler extends AbstractHandler {
     private static final Logger logger = LoggerFactory.getLogger(CAHandler.class)
 
-    CAService caService
+    NiFiCAService caService
 
-    CAHandler(CAService cas) {
+    CAHandler(NiFiCAService cas) {
         this.caService = cas
         logger.info("Created a CA handler with ${cas}")
     }

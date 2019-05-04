@@ -17,7 +17,7 @@
 
 package org.apache.nifi.toolkit.tls.v2.server
 
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.apache.nifi.toolkit.tls.v2.util.TlsToolkitUtil
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.eclipse.jetty.server.Connector
@@ -118,8 +118,8 @@ class CAServerTest extends GroovyTestCase {
         logger.info("Loaded keystore ${keystore} from ${KEYSTORE_PATH}")
 
         // Act
-        CAService caService = CAServer.createCAService(keystore, KEYSTORE_PASSWORD, TOKEN, ALIAS)
-        logger.info("Created CAService: ${caService}")
+        NiFiCAService caService = CAServer.createCAService(keystore, KEYSTORE_PASSWORD, TOKEN, ALIAS)
+        logger.info("Created NiFiCAService: ${caService}")
 
         // Assert
         assert caService.caCert == keystore.getCertificate(ALIAS)

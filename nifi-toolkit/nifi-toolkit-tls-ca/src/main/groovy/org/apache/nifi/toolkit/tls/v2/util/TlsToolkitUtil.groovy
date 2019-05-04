@@ -19,7 +19,7 @@ package org.apache.nifi.toolkit.tls.v2.util
 
 import org.apache.commons.lang3.StringUtils
 import org.apache.nifi.security.util.CertificateUtils
-import org.apache.nifi.toolkit.tls.v2.ca.CAService
+import org.apache.nifi.toolkit.tls.v2.ca.NiFiCAService
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
 import org.bouncycastle.asn1.pkcs.RSAPrivateKey
 import org.bouncycastle.asn1.pkcs.RSAPublicKey
@@ -386,7 +386,7 @@ class TlsToolkitUtil {
 
     static KeyStore addCAToKeystore(String dn, String alias, String keystorePassword, KeyStore keystore, String sans = "") {
         KeyPair caKeyPair = generateKeyPair()
-        X509Certificate caCertificate = CAService.generateCACertificate(caKeyPair, dn, DEFAULT_SIGNING_ALGORITHM, DEFAULT_CERT_VALIDITY_DAYS, sans.tokenize(","))
+        X509Certificate caCertificate = NiFiCAService.generateCACertificate(caKeyPair, dn, DEFAULT_SIGNING_ALGORITHM, DEFAULT_CERT_VALIDITY_DAYS, sans.tokenize(","))
         keystore.setKeyEntry(alias, caKeyPair.private, keystorePassword.chars, [caCertificate] as Certificate[])
         keystore
     }
