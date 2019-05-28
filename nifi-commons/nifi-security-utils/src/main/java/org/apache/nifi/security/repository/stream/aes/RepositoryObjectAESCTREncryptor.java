@@ -53,7 +53,7 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
     /**
      * Encrypts the serialized byte[].
      *
-     * @param rawStream the plain record, serialized to a byte[]
+     * @param plainRecord the plain record, serialized to a byte[]
      * @param recordId    an identifier for this record (eventId, generated, etc.)
      * @param keyId       the ID of the key to use
      * @return the encrypted record

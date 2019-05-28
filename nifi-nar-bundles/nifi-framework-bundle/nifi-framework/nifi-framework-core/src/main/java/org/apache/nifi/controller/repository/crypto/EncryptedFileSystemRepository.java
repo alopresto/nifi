@@ -1716,7 +1716,8 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         private boolean recycle;
         private boolean closed;
 
-        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream, RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
+        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream,
+                                                      RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
             this.scc = scc;
             this.byteCountingOutputStream = byteCountingOutputStream;
             this.startingOffset = startingOffset;
