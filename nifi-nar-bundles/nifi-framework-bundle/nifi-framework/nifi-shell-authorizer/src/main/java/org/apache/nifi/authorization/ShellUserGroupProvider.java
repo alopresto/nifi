@@ -16,19 +16,7 @@
  */
 package org.apache.nifi.authorization;
 
-import org.apache.nifi.authorization.exception.AuthorizationAccessException;
-import org.apache.nifi.authorization.exception.AuthorizerCreationException;
-import org.apache.nifi.authorization.exception.AuthorizerDestructionException;
-import org.apache.nifi.authorization.util.ShellRunner;
-
-import org.apache.nifi.components.PropertyValue;
-import org.apache.nifi.util.FormatUtils;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
-
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,8 +26,14 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-
+import org.apache.nifi.authorization.exception.AuthorizationAccessException;
+import org.apache.nifi.authorization.exception.AuthorizerCreationException;
+import org.apache.nifi.authorization.exception.AuthorizerDestructionException;
+import org.apache.nifi.authorization.util.ShellRunner;
+import org.apache.nifi.components.PropertyValue;
+import org.apache.nifi.util.FormatUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 /*
@@ -196,13 +190,19 @@ public class ShellUserGroupProvider implements UserGroupProvider {
      */
     @Override
     public UserAndGroups getUserAndGroups(String identity) throws AuthorizationAccessException {
-        User user = getUser(identity);
+        User user = getUserByIdentity(identity);
+        logger.debug("Retrieved user {} for identity {}", new Object[]{user, identity});
+
         Set<Group> groups = new HashSet<>();
 
-        for (Group g: getGroups()) {
+        for (Group g : getGroups()) {
             if (user != null && g.getUsers().contains(user.getIdentity())) {
                 groups.add(g);
             }
+        }
+
+        if (groups.isEmpty()) {
+            logger.debug("User {} belongs to no groups", user);
         }
 
         return new UserAndGroups() {
@@ -327,7 +327,7 @@ public class ShellUserGroupProvider implements UserGroupProvider {
     /**
      * Refresh a single user.
      *
-     * @param command Shell command to read a single user.  Pre-formatted by caller.
+     * @param command     Shell command to read a single user.  Pre-formatted by caller.
      * @param description Shell command description.
      */
     private void refreshOneUser(String command, String description) {
@@ -363,7 +363,7 @@ public class ShellUserGroupProvider implements UserGroupProvider {
     /**
      * Refresh a single group.
      *
-     * @param command Shell command to read a single group.  Pre-formatted by caller.
+     * @param command     Shell command to read a single group.  Pre-formatted by caller.
      * @param description Shell command description.
      */
     private void refreshOneGroup(String command, String description) {
@@ -405,7 +405,7 @@ public class ShellUserGroupProvider implements UserGroupProvider {
         try {
             userLines = ShellRunner.runShell(selectedShellCommands.getUsersList(), "Get Users List");
             groupLines = ShellRunner.runShell(selectedShellCommands.getGroupsList(), "Get Groups List");
-        } catch (final IOException ioexc)  {
+        } catch (final IOException ioexc) {
             logger.error("refreshUsersAndGroups shell exception: " + ioexc);
             return;
         }
@@ -435,87 +435,87 @@ public class ShellUserGroupProvider implements UserGroupProvider {
     /**
      * This method parses the output of the `getUsersList()` shell command, where we expect the output
      * to look like `user-name:user-id:primary-group-id`.
-     *
+     * <p>
      * This method splits each output line on the ":" and attempts to build a User object
      * from the resulting name, uid, and primary gid.  Unusable records are logged.
      */
     private void rebuildUsers(List<String> userLines, Map<String, User> idToUser, Map<String, User> usernameToUser, Map<String, User> gidToUser) {
         userLines.forEach(line -> {
-                String[] record = line.split(":");
-                if (record.length > 2) {
-                    String name = record[0], id = record[1], gid = record[2];
+            String[] record = line.split(":");
+            if (record.length > 2) {
+                String name = record[0], id = record[1], gid = record[2];
 
-                    if (name != null && id != null && !name.equals("") && !id.equals("")) {
+                if (name != null && id != null && !name.equals("") && !id.equals("")) {
 
-                        User user = new User.Builder().identity(name).identifier(id).build();
-                        idToUser.put(id, user);
-                        usernameToUser.put(name, user);
+                    User user = new User.Builder().identity(name).identifier(id).build();
+                    idToUser.put(id, user);
+                    usernameToUser.put(name, user);
 
-                        if (gid != null && !gid.equals("")) {
-                            gidToUser.put(gid, user);
-                        } else {
-                            logger.warn("Null or empty primary group id for: " + name);
-                        }
-
+                    if (gid != null && !gid.equals("")) {
+                        gidToUser.put(gid, user);
                     } else {
-                        logger.warn("Null or empty user name: " + name + " or id: " + id);
+                        logger.warn("Null or empty primary group id for: " + name);
                     }
+
                 } else {
-                    logger.warn("Unexpected record format.  Expected 3 or more colon separated values per line.");
+                    logger.warn("Null or empty user name: " + name + " or id: " + id);
                 }
-            });
+            } else {
+                logger.warn("Unexpected record format.  Expected 3 or more colon separated values per line.");
+            }
+        });
     }
 
     /**
      * This method parses the output of the `getGroupsList()` shell command, where we expect the output
      * to look like `group-name:group-id`.
-     *
+     * <p>
      * This method splits each output line on the ":" and attempts to build a Group object
      * from the resulting name and gid.  Unusable records are logged.
-     *
+     * <p>
      * This command also runs the `getGroupMembers(username)` command once per group.  The expected output
      * of that command should look like `group-name-1,group-name-2`.
      */
     private void rebuildGroups(List<String> groupLines, Map<String, Group> groupsById) {
         groupLines.forEach(line -> {
-                String[] record = line.split(":");
-                if (record.length > 1) {
-                    Set<String> users = new HashSet<>();
-                    String name = record[0], id = record[1];
+            String[] record = line.split(":");
+            if (record.length > 1) {
+                Set<String> users = new HashSet<>();
+                String name = record[0], id = record[1];
 
-                    try {
-                        List<String> memberLines = ShellRunner.runShell(selectedShellCommands.getGroupMembers(name));
-                        // Use the first line only, and log if the line count isn't exactly one:
-                        if (!memberLines.isEmpty()) {
-                            users.addAll(Arrays.asList(memberLines.get(0).split(",")));
-                        } else {
-                            logger.debug("list membership returned zero lines.");
-                        }
-                        if (memberLines.size() > 1) {
-                            logger.error("list membership returned too many lines, only used the first.");
-                        }
-
-                    } catch (final IOException ioexc) {
-                        logger.error("list membership shell exception: " + ioexc);
-                    }
-
-                    if (name != null && id != null && !name.equals("") && !id.equals("")) {
-                        Group group = new Group.Builder().name(name).identifier(id).addUsers(users).build();
-                        groupsById.put(id, group);
-                        logger.debug("Refreshed group: " + group);
+                try {
+                    List<String> memberLines = ShellRunner.runShell(selectedShellCommands.getGroupMembers(name));
+                    // Use the first line only, and log if the line count isn't exactly one:
+                    if (!memberLines.isEmpty()) {
+                        users.addAll(Arrays.asList(memberLines.get(0).split(",")));
                     } else {
-                        logger.warn("Null or empty group name: " + name + " or id: " + id);
+                        logger.debug("list membership returned zero lines.");
                     }
-                } else {
-                    logger.warn("Unexpected record format.  Expected 1 or more comma separated values.");
+                    if (memberLines.size() > 1) {
+                        logger.error("list membership returned too many lines, only used the first.");
+                    }
+
+                } catch (final IOException ioexc) {
+                    logger.error("list membership shell exception: " + ioexc);
                 }
-            });
+
+                if (name != null && id != null && !name.equals("") && !id.equals("")) {
+                    Group group = new Group.Builder().name(name).identifier(id).addUsers(users).build();
+                    groupsById.put(id, group);
+                    logger.debug("Refreshed group: " + group);
+                } else {
+                    logger.warn("Null or empty group name: " + name + " or id: " + id);
+                }
+            } else {
+                logger.warn("Unexpected record format.  Expected 1 or more comma separated values.");
+            }
+        });
     }
 
     /**
      * This method parses the output of the `getGroupsList()` shell command, where we expect the output
      * to look like `group-name:group-id`.
-     *
+     * <p>
      * This method splits each output line on the ":" and attempts to build a Group object
      * from the resulting name and gid.
      */
