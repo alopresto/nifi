@@ -73,7 +73,6 @@ import org.apache.nifi.engine.FlowEngine;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.kms.KeyProvider;
-import org.apache.nifi.security.kms.StaticKeyProvider;
 import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncryptor;
 import org.apache.nifi.security.repository.stream.aes.RepositoryObjectAESCTREncryptor;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
@@ -89,6 +88,7 @@ import org.slf4j.LoggerFactory;
 
 // TODO: Extend FileSystemRepository
 public class EncryptedFileSystemRepository implements ContentRepository {
+    // TODO: Make logger and LOG consistent
     private static final Logger logger = LoggerFactory.getLogger(EncryptedFileSystemRepository.class);
 
     // Naive implementation via duplication of FileSystemRepository
@@ -143,6 +143,9 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
     private final NiFiProperties nifiProperties;
 
+    private String activeKeyId;
+    private KeyProvider keyProvider;
+
     /**
      * Default no args constructor for service loading only
      */
@@ -158,6 +161,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         maxAppendableClaimLength = 0;
         maxFlowFilesPerClaim = 0;
         writableClaimQueue = null;
+        keyProvider = null;
     }
 
     public EncryptedFileSystemRepository(final NiFiProperties nifiProperties) throws IOException {
@@ -261,6 +265,9 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         initializeRepository();
 
         containerCleanupExecutor = new FlowEngine(containers.size(), "Cleanup FileSystemRepository Container", true);
+
+        // TODO: Set active key ID
+        // TODO: Initialize key provider
     }
 
     @Override
@@ -890,16 +897,11 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
         // TODO: Refactor OS implementation out (deduplicate methods, etc.)
         try {
-            RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
             // TODO: Instantiate from nifi.properties
-            String keyId = "K1";
-            String keyHex = "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210";
-            String recordId = "R1";
-            KeyProvider keyProvider = new StaticKeyProvider(keyId, keyHex);
-            encryptor.initialize(keyProvider);
+            String recordId = getRecordId(claim);
+            logger.debug("Creating decrypted input stream to read flowfile content with record ID: " + recordId);
 
-            // ECROS wrapping COS wrapping BCOS wrapping FOS
-            final InputStream decryptingInputStream = encryptor.decrypt(inputStream, recordId);
+            final InputStream decryptingInputStream = getDecryptedInputStream(inputStream, recordId);
             LOG.debug("Reading from record ID {}", recordId);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for reading from record ID " + recordId));
@@ -910,6 +912,14 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             logger.error("Encountered an error instantiating the encrypted content repository input stream: " + e.getMessage());
             throw new IOException("Error creating encrypted content repository input stream", e);
         }
+    }
+
+    public InputStream getDecryptedInputStream(InputStream inputStream, String recordId) throws KeyManagementException, EncryptionException {
+        RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
+        encryptor.initialize(keyProvider);
+
+        // ECROS wrapping COS wrapping BCOS wrapping FOS
+        return encryptor.decrypt(inputStream, recordId);
     }
 
     @Override
@@ -940,16 +950,11 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
         // TODO: Refactor OS implementation out (deduplicate methods, etc.)
         try {
-            RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
             // TODO: Instantiate from nifi.properties
-            String keyId = "K1";
-            String keyHex = "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210";
-            String recordId = "R1";
-            KeyProvider keyProvider = new StaticKeyProvider(keyId, keyHex);
-            encryptor.initialize(keyProvider);
-
-            // ECROS wrapping COS wrapping BCOS wrapping FOS
-            final OutputStream out = new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, startingOffset);
+            String keyId = getActiveKeyId();
+            String recordId = getRecordId(claim);
+            logger.debug("Creating encrypted output stream (keyId: " + keyId + ") to write flowfile content with record ID: " + recordId);
+            final OutputStream out = getEncryptedOutputStream(scc, claimStream, startingOffset, keyId, recordId);
             LOG.debug("Writing to {}", out);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for writing to " + out));
@@ -960,6 +965,44 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             logger.error("Encountered an error instantiating the encrypted content repository output stream: " + e.getMessage());
             throw new IOException("Error creating encrypted content repository output stream", e);
         }
+    }
+
+    private String getActiveKeyId() {
+        return activeKeyId;
+    }
+
+    public void setActiveKeyId(String activeKeyId) {
+        // TODO: Validate input
+        this.activeKeyId = activeKeyId;
+    }
+
+    /**
+     * Returns an identifier for this {@link ContentClaim} to be used when serializing/retrieving the encrypted content.
+     * For version 1, the identifier is {@code "nifi-ecr-rc-" + the resource claim ID + offset}. If any piece of the
+     * CC -> RC -> ID chain is null or empty, the current system time in nanoseconds is used with a different
+     * prefix ({@code "nifi-ecr-ts-"}).
+     *
+     * @param claim the content claim
+     * @return the string identifier
+     */
+    public static String getRecordId(ContentClaim claim) {
+        // For version 1, use the content claim's resource claim ID as the record ID rather than introducing a new field in the metadata
+        if (claim != null && claim.getResourceClaim() != null
+                && !StringUtils.isBlank(claim.getResourceClaim().getId())) {
+            return "nifi-ecr-rc-" + claim.getResourceClaim().getId() + "+" + claim.getOffset();
+        } else {
+            String tempId = "nifi-ecr-ts-" + System.nanoTime();
+            logger.error("Cannot determine record ID from null content claim or claim with missing/empty resource claim ID; using timestamp-generated ID: " + tempId + "+0");
+            return tempId;
+        }
+    }
+
+    private OutputStream getEncryptedOutputStream(StandardContentClaim scc, ByteCountingOutputStream claimStream, long startingOffset, String keyId, String recordId) throws KeyManagementException, EncryptionException {
+        RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
+        encryptor.initialize(keyProvider);
+
+        // ECROS wrapping COS wrapping BCOS wrapping FOS
+        return new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, startingOffset);
     }
 
     @Override
@@ -1716,7 +1759,8 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         private boolean recycle;
         private boolean closed;
 
-        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream byteCountingOutputStream,
+        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc,
+                                                      ByteCountingOutputStream byteCountingOutputStream,
                                                       RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
             this.scc = scc;
             this.byteCountingOutputStream = byteCountingOutputStream;
@@ -1730,7 +1774,7 @@ public class EncryptedFileSystemRepository implements ContentRepository {
 
         @Override
         public String toString() {
-            return "FileSystemRepository Stream [" + scc + "]";
+            return "EncryptedFileSystemRepository Stream [" + scc + "]";
         }
 
         @Override

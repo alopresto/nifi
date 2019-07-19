@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.controller.repository.crypto
 
-
 import org.apache.nifi.controller.repository.claim.ContentClaim
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager
 import org.apache.nifi.controller.repository.util.DiskUtils
@@ -25,7 +24,6 @@ import org.apache.nifi.security.repository.RepositoryEncryptorUtils
 import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider
-import org.apache.nifi.stream.io.StreamUtils
 import org.apache.nifi.util.NiFiProperties
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.util.encoders.Hex
@@ -55,6 +53,9 @@ class EncryptedFileSystemRepositoryTest {
     private static final String KEY_HEX_256 = KEY_HEX_128 * 2
     private static final String KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? KEY_HEX_256 : KEY_HEX_128
 
+    private static final String KEY_HEX_2 = "00" * (isUnlimitedStrengthCryptoAvailable() ? 32 : 16)
+    private static final String KEY_HEX_3 = "AA" * (isUnlimitedStrengthCryptoAvailable() ? 32 : 16)
+
     private static KeyProvider mockKeyProvider
     private static AESKeyedCipherProvider mockCipherProvider
 
@@ -68,6 +69,13 @@ class EncryptedFileSystemRepositoryTest {
     private NiFiProperties nifiProperties
     private static final String LOG_PACKAGE = "org.slf4j.simpleLogger.log.org.apache.nifi.controller.repository.crypto"
 
+    // Mapping of key IDs to keys
+    final def KEYS = [
+            "K1":new SecretKeySpec(Hex.decode(KEY_HEX), "AES"),
+            "K2":new SecretKeySpec(Hex.decode(KEY_HEX_2), "AES"),
+            "K3":new SecretKeySpec(Hex.decode(KEY_HEX_3), "AES"),
+    ]
+
     @BeforeClass
     static void setUpOnce() throws Exception {
         ORIGINAL_LOG_LEVEL = System.getProperty(LOG_PACKAGE)
@@ -78,16 +86,6 @@ class EncryptedFileSystemRepositoryTest {
         logger.metaClass.methodMissing = { String name, args ->
             logger.info("[${name?.toUpperCase()}] ${(args as List).join(" ")}")
         }
-
-        mockKeyProvider = [
-                getKey   : { String keyId ->
-                    logger.mock("Requesting key ID: ${keyId}")
-                    new SecretKeySpec(Hex.decode(KEY_HEX), "AES")
-                },
-                keyExists: { String keyId ->
-                    logger.mock("Checking existence of ${keyId}")
-                    true
-                }] as KeyProvider
 
         mockCipherProvider = [
                 getCipher: { EncryptionMethod em, SecretKey key, byte[] ivBytes, boolean encryptMode ->
@@ -138,6 +136,11 @@ class EncryptedFileSystemRepositoryTest {
         boolean isLossTolerant = false
         final ContentClaim claim = repository.create(isLossTolerant)
 
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
         String plainContent = "hello"
         byte[] plainBytes = plainContent.bytes
         logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
@@ -166,6 +169,7 @@ class EncryptedFileSystemRepositoryTest {
         // Verify that independent decryption works (basically ROAESCTRE#decrypt())
         RepositoryObjectEncryptionMetadata metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(persistedBytes))
         logger.verify("Parsed encryption metadata: ${metadata}")
+        assert metadata.keyId == mockKeyProvider.getAvailableKeyIds().first()
         Cipher verificationCipher = RepositoryEncryptorUtils.initCipher(mockCipherProvider, EncryptionMethod.AES_CTR, Cipher.DECRYPT_MODE, mockKeyProvider.getKey(metadata.keyId), metadata.ivBytes)
         logger.verify("Created cipher: ${verificationCipher}")
 
@@ -180,12 +184,11 @@ class EncryptedFileSystemRepositoryTest {
 
         // Use the EFSR to decrypt the same content
         final InputStream inputStream = repository.read(claim)
-        final byte[] buffer = new byte[plainContent.length()]
-        StreamUtils.fillBuffer(inputStream, buffer)
-        logger.info("Read bytes via repository (${buffer.length}): ${Hex.toHexString(buffer)}")
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
 
         // Assert
-        assert new String(buffer, StandardCharsets.UTF_8) == plainContent
+        assert new String(retrievedContent, StandardCharsets.UTF_8) == plainContent
     }
 
     /**
@@ -195,6 +198,11 @@ class EncryptedFileSystemRepositoryTest {
     void testShouldEncryptAndDecryptMultipleRecords() {
         // Arrange
         boolean isLossTolerant = false
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
 
         def content = [
                 "This is a plaintext message. ",
@@ -220,12 +228,11 @@ class EncryptedFileSystemRepositoryTest {
             String pieceOfContent = content[i]
             // Use the EFSR to decrypt the same content
             final InputStream inputStream = repository.read(claim)
-            final byte[] buffer = new byte[pieceOfContent.length()]
-            StreamUtils.fillBuffer(inputStream, buffer)
-            logger.info("Read bytes via repository (${buffer.length}): ${Hex.toHexString(buffer)}")
+            byte[] retrievedContent = inputStream.bytes
+            logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
 
             // Assert
-            assert new String(buffer, StandardCharsets.UTF_8) == pieceOfContent
+            assert new String(retrievedContent, StandardCharsets.UTF_8) == pieceOfContent
         }
     }
 
@@ -238,19 +245,26 @@ class EncryptedFileSystemRepositoryTest {
         boolean isLossTolerant = false
 
         def content = [
-                "This is a plaintext message. ",
-                "Some,csv,data\ncol1,col2,col3",
-                "Easy to read 0123456789abcdef"
+                "K1": "This is a plaintext message. ",
+                "K2": "Some,csv,data\ncol1,col2,col3",
+                "K3": "Easy to read 0123456789abcdef"
         ]
 
-        // TODO: Set up mock key provider
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+
+        int i = 0
 
         // Act
-        def claims = content.collect { String pieceOfContent ->
+        def claims = content.collectEntries { String keyId, String pieceOfContent ->
+            // Increment the key ID used (set "active key ID")
+            repository.setActiveKeyId(keyId)
+            logger.info("Set key ID for content ${i++} to ${keyId}")
+
             // Create a claim for each piece of content
             final ContentClaim claim = repository.create(isLossTolerant)
 
-            // TODO: Increment the key ID used (set "active key ID")
 
             // Write the content out
             final OutputStream out = repository.write(claim)
@@ -258,20 +272,59 @@ class EncryptedFileSystemRepositoryTest {
             out.flush()
             out.close()
 
-            claim
+            [keyId, claim]
+        } as Map<String, ContentClaim>
+
+        // Manually verify different key IDs used for each claim
+        claims.each { String keyId, ContentClaim claim ->
+            // Independently access the persisted file and verify that the content is encrypted
+            logger.info("Manual verification of record ID ${EncryptedFileSystemRepository.getRecordId(claim)}")
+            String persistedFilePath = getPersistedFilePath(claim)
+            logger.verify("Persisted file: ${persistedFilePath}")
+            byte[] persistedBytes = new File(persistedFilePath).bytes
+            logger.verify("Read bytes (${persistedBytes.length}): ${Hex.toHexString(persistedBytes)}")
+
+            // Skip to the section for this content claim
+            long start = claim.offset
+            long end = claim.offset + claim.length
+            byte[] contentSection = persistedBytes[start..<end]
+            logger.verify("Extracted ${contentSection.length} bytes from ${start} to <${end}")
+
+            // Verify that the persisted keyId is what was expected
+            RepositoryObjectEncryptionMetadata metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(contentSection))
+            logger.verify("Parsed encryption metadata: ${metadata}")
+            assert metadata.keyId == keyId
         }
 
-        claims.eachWithIndex { ContentClaim claim, int i ->
-            String pieceOfContent = content[i]
+        // Assert that the claims can be decrypted
+        claims.each { String keyId, ContentClaim claim ->
+            String pieceOfContent = content[keyId]
             // Use the EFSR to decrypt the same content
             final InputStream inputStream = repository.read(claim)
-            final byte[] buffer = new byte[pieceOfContent.length()]
-            StreamUtils.fillBuffer(inputStream, buffer)
-            logger.info("Read bytes via repository (${buffer.length}): ${Hex.toHexString(buffer)}")
+            byte[] retrievedContent = inputStream.bytes
+            logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
 
             // Assert
-            assert new String(buffer, StandardCharsets.UTF_8) == pieceOfContent
+            assert new String(retrievedContent, StandardCharsets.UTF_8) == pieceOfContent
         }
+    }
+
+    private KeyProvider createMockKeyProvider() {
+        KeyProvider mockKeyProvider = [
+                getKey            : { String keyId ->
+                    logger.mock("Requesting key ${keyId}")
+                    KEYS[keyId]
+                },
+                keyExists         : { String keyId ->
+                    logger.mock("Checking existence of ${keyId}")
+                    KEYS.containsKey(keyId)
+                },
+                getAvailableKeyIds: { ->
+                    logger.mock("Listing available keys")
+                    KEYS.keySet() as List
+                }
+        ] as KeyProvider
+        mockKeyProvider
     }
 
     private String getPersistedFilePath(ContentClaim claim) {
