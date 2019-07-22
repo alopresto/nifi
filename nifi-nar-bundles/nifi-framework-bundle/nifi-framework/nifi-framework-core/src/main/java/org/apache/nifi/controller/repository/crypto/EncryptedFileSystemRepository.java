@@ -967,13 +967,19 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         }
     }
 
-    private String getActiveKeyId() {
+    String getActiveKeyId() {
         return activeKeyId;
     }
 
     public void setActiveKeyId(String activeKeyId) {
-        // TODO: Validate input
-        this.activeKeyId = activeKeyId;
+        // Key must not be blank and key provider must make key available
+        if (StringUtils.isNotBlank(activeKeyId) && keyProvider.keyExists(activeKeyId)) {
+            this.activeKeyId = activeKeyId;
+            logger.debug("Set active key ID to '" + activeKeyId + "'");
+        } else {
+            logger.warn("Attempted to set active key ID to '" + activeKeyId + "' but that is not a valid or available key ID. Keeping active key ID as '" + this.activeKeyId + "'");
+
+        }
     }
 
     /**

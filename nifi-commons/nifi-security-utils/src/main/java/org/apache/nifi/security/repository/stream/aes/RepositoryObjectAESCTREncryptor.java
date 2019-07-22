@@ -131,6 +131,7 @@ public class RepositoryObjectAESCTREncryptor extends AbstractAESEncryptor implem
             throw new EncryptionException("The requested key ID " + metadata.keyId + " is not available");
         } else {
             try {
+                // TODO: Clean up log references to provenance
                 logger.debug("Decrypting provenance record " + recordId + " with key ID " + metadata.keyId);
                 EncryptionMethod method = EncryptionMethod.forAlgorithm(metadata.algorithm);
                 Cipher cipher = RepositoryEncryptorUtils.initCipher(aesKeyedCipherProvider, method, Cipher.DECRYPT_MODE, keyProvider.getKey(metadata.keyId), metadata.ivBytes);

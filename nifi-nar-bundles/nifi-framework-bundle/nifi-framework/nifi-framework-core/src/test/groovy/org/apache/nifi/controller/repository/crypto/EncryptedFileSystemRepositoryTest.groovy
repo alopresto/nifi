@@ -45,6 +45,8 @@ import javax.crypto.spec.SecretKeySpec
 import java.nio.charset.StandardCharsets
 import java.security.Security
 
+import static groovy.test.GroovyAssert.shouldFail
+
 @RunWith(JUnit4.class)
 class EncryptedFileSystemRepositoryTest {
     private static final Logger logger = LoggerFactory.getLogger(EncryptedFileSystemRepositoryTest.class)
@@ -71,9 +73,9 @@ class EncryptedFileSystemRepositoryTest {
 
     // Mapping of key IDs to keys
     final def KEYS = [
-            "K1":new SecretKeySpec(Hex.decode(KEY_HEX), "AES"),
-            "K2":new SecretKeySpec(Hex.decode(KEY_HEX_2), "AES"),
-            "K3":new SecretKeySpec(Hex.decode(KEY_HEX_3), "AES"),
+            "K1": new SecretKeySpec(Hex.decode(KEY_HEX), "AES"),
+            "K2": new SecretKeySpec(Hex.decode(KEY_HEX_2), "AES"),
+            "K3": new SecretKeySpec(Hex.decode(KEY_HEX_3), "AES"),
     ]
 
     @BeforeClass
@@ -307,6 +309,101 @@ class EncryptedFileSystemRepositoryTest {
             // Assert
             assert new String(retrievedContent, StandardCharsets.UTF_8) == pieceOfContent
         }
+    }
+
+    /**
+     * Simple test to write encrypted content to the repository, independently read the persisted file to ensure the content is encrypted, and then retrieve & decrypt via the repository.
+     */
+    @Test
+    void testShouldValidateActiveKeyId() {
+        // Arrange
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+
+        def validKeyIds = mockKeyProvider.getAvailableKeyIds()
+        def invalidKeyIds = [null, "", "   ", "K4"]
+
+
+        // Act
+        validKeyIds.each { String keyId ->
+            repository.setActiveKeyId(keyId)
+
+            // Assert
+            assert repository.getActiveKeyId() == keyId
+        }
+
+        // Reset to empty
+        repository.@activeKeyId = null
+        invalidKeyIds.collect { String invalidKeyId ->
+            repository.setActiveKeyId(invalidKeyId)
+
+            // Assert
+            assert repository.getActiveKeyId() == null
+        }
+    }
+
+    /**
+     * Simple test to show blocking on uninitialized key ID and key provider.
+     */
+    @Test
+    void testWriteShouldRequireActiveKeyId() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        String plainContent = "hello"
+        byte[] plainBytes = plainContent.bytes
+        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
+
+        // Act
+        def msg = shouldFail(Exception) {
+            final OutputStream out = repository.write(claim)
+            out.write(plainBytes)
+            out.flush()
+            out.close()
+        }
+
+        // Assert
+        assert msg.localizedMessage == "Error creating encrypted content repository output stream"
+        assert msg.cause.localizedMessage =~ "The provenance record and key ID cannot be missing"
+    }
+
+    /**
+     * Simple test to show no blocking on uninitialized key ID to retrieve content.
+     */
+    @Test
+    void testReadShouldNotRequireActiveKeyId() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.availableKeyIds.first())
+
+        String plainContent = "hello"
+        byte[] plainBytes = plainContent.bytes
+        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
+
+        // Write the encrypted content to the repository
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        // Reset the active key ID to null
+        repository.@activeKeyId = null
+
+        // Act
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
+
+        // Assert
+        assert new String(retrievedContent, StandardCharsets.UTF_8) == plainContent
     }
 
     private KeyProvider createMockKeyProvider() {
