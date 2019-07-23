@@ -59,6 +59,10 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import javax.crypto.CipherOutputStream;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.controller.repository.ContentNotFoundException;
@@ -71,8 +75,11 @@ import org.apache.nifi.controller.repository.claim.StandardContentClaim;
 import org.apache.nifi.controller.repository.io.LimitedInputStream;
 import org.apache.nifi.engine.FlowEngine;
 import org.apache.nifi.processor.DataUnit;
+import org.apache.nifi.properties.NiFiPropertiesLoader;
+import org.apache.nifi.security.kms.CryptoUtils;
 import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.kms.KeyProviderFactory;
 import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncryptor;
 import org.apache.nifi.security.repository.stream.aes.RepositoryObjectAESCTREncryptor;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
@@ -164,16 +171,16 @@ public class EncryptedFileSystemRepository implements ContentRepository {
         keyProvider = null;
     }
 
-    public EncryptedFileSystemRepository(final NiFiProperties nifiProperties) throws IOException {
-        this.nifiProperties = nifiProperties;
+    public EncryptedFileSystemRepository(final NiFiProperties niFiProperties) throws IOException {
+        this.nifiProperties = niFiProperties;
         // determine the file repository paths and ensure they exist
-        final Map<String, Path> fileRespositoryPaths = nifiProperties.getContentRepositoryPaths();
+        final Map<String, Path> fileRespositoryPaths = niFiProperties.getContentRepositoryPaths();
         for (final Path path : fileRespositoryPaths.values()) {
             Files.createDirectories(path);
         }
-        this.maxFlowFilesPerClaim = nifiProperties.getMaxFlowFilesPerClaim();
+        this.maxFlowFilesPerClaim = niFiProperties.getMaxFlowFilesPerClaim();
         this.writableClaimQueue = new LinkedBlockingQueue<>(maxFlowFilesPerClaim);
-        final long configuredAppendableClaimLength = DataUnit.parseDataSize(nifiProperties.getMaxAppendableClaimSize(), DataUnit.B).longValue();
+        final long configuredAppendableClaimLength = DataUnit.parseDataSize(niFiProperties.getMaxAppendableClaimSize(), DataUnit.B).longValue();
         final long appendableClaimLengthCap = DataUnit.parseDataSize(APPENDABLE_CLAIM_LENGTH_CAP, DataUnit.B).longValue();
         if (configuredAppendableClaimLength > appendableClaimLengthCap) {
             LOG.warn("Configured property '{}' with value {} exceeds cap of {}. Setting value to {}",
@@ -195,10 +202,10 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             archivedFiles.put(containerName, new LinkedBlockingQueue<>(100000));
         }
 
-        final String enableArchiving = nifiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_ENABLED);
-        final String maxArchiveRetentionPeriod = nifiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_MAX_RETENTION_PERIOD);
-        final String maxArchiveSize = nifiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_MAX_USAGE_PERCENTAGE);
-        final String archiveBackPressureSize = nifiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_BACK_PRESSURE_PERCENTAGE);
+        final String enableArchiving = niFiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_ENABLED);
+        final String maxArchiveRetentionPeriod = niFiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_MAX_RETENTION_PERIOD);
+        final String maxArchiveSize = niFiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_MAX_USAGE_PERCENTAGE);
+        final String archiveBackPressureSize = niFiProperties.getProperty(NiFiProperties.CONTENT_ARCHIVE_BACK_PRESSURE_PERCENTAGE);
 
         if ("true".equalsIgnoreCase(enableArchiving)) {
             archiveData = true;
@@ -260,14 +267,81 @@ public class EncryptedFileSystemRepository implements ContentRepository {
             maxArchiveMillis = StringUtils.isEmpty(maxArchiveRetentionPeriod) ? Long.MAX_VALUE : FormatUtils.getTimeDuration(maxArchiveRetentionPeriod, TimeUnit.MILLISECONDS);
         }
 
-        this.alwaysSync = Boolean.parseBoolean(nifiProperties.getProperty("nifi.content.repository.always.sync"));
+        this.alwaysSync = Boolean.parseBoolean(niFiProperties.getProperty("nifi.content.repository.always.sync"));
         LOG.info("Initializing FileSystemRepository with 'Always Sync' set to {}", alwaysSync);
         initializeRepository();
 
         containerCleanupExecutor = new FlowEngine(containers.size(), "Cleanup FileSystemRepository Container", true);
 
-        // TODO: Set active key ID
-        // TODO: Initialize key provider
+        // Initialize key provider
+        initializeEncryptionServices(niFiProperties);
+    }
+
+    private void initializeEncryptionServices(NiFiProperties niFiProperties) throws IOException {
+        // Initialize the encryption-specific fields
+        if (supportsEncryption(niFiProperties)) {
+            try {
+                KeyProvider keyProvider;
+                if (KeyProviderFactory.requiresMasterKey(niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS))) {
+                    SecretKey masterKey = getMasterKey();
+                    keyProvider = buildKeyProvider(niFiProperties, masterKey);
+                } else {
+                    keyProvider = buildKeyProvider(niFiProperties);
+                }
+                this.keyProvider = keyProvider;
+            } catch (KeyManagementException e) {
+                String msg = "Encountered an error building the key provider";
+                logger.error(msg, e);
+                throw new IOException(msg, e);
+            }
+        } else {
+            throw new IOException("The provided configuration does not support a encrypted repository");
+        }
+        // Set active key ID
+        setActiveKeyId(niFiProperties.getContentRepositoryEncryptionKeyId());
+    }
+
+    private static boolean supportsEncryption(NiFiProperties niFiProperties) {
+        // TODO: Refactor duplicate code from RepositoryConfiguration to CryptoUtils
+        // TODO: Add DTO class(es) for EncryptedRepositoryConfiguration to CryptoUtils package
+        String keyProviderImplementation = niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS);
+        String keyProviderLocation = niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION);
+        String keyId = niFiProperties.getContentRepositoryEncryptionKeyId();
+        Map<String, String> encryptionKeys = niFiProperties.getContentRepositoryEncryptionKeys();
+
+        boolean keyProviderIsConfigured = CryptoUtils.isValidKeyProvider(keyProviderImplementation, keyProviderLocation, keyId, encryptionKeys);
+
+        return keyProviderIsConfigured;
+    }
+
+    private static KeyProvider buildKeyProvider(NiFiProperties niFiProperties) throws KeyManagementException {
+        return buildKeyProvider(niFiProperties,null);
+    }
+
+    private static KeyProvider buildKeyProvider(NiFiProperties niFiProperties, SecretKey masterKey) throws KeyManagementException {
+        String keyProviderImplementation = niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS);
+        String keyProviderLocation = niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION);
+        String keyId = niFiProperties.getContentRepositoryEncryptionKeyId();
+        Map<String, String> encryptionKeys = niFiProperties.getContentRepositoryEncryptionKeys();
+
+        if (keyProviderImplementation == null) {
+            throw new KeyManagementException("Cannot create Key Provider because the NiFi Properties is missing the following property: "
+                    + NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS);
+        }
+
+        return KeyProviderFactory.buildKeyProvider(keyProviderImplementation, keyProviderLocation, keyId, encryptionKeys, masterKey);
+    }
+
+    private static SecretKey getMasterKey() throws KeyManagementException {
+        // TODO: Move to CryptoUtils
+        try {
+            // Get the master encryption key from bootstrap.conf
+            String masterKeyHex = NiFiPropertiesLoader.extractKeyFromBootstrapFile();
+            return new SecretKeySpec(Hex.decodeHex(masterKeyHex.toCharArray()), "AES");
+        } catch (IOException | DecoderException e) {
+            logger.error("Encountered an error: ", e);
+            throw new KeyManagementException(e);
+        }
     }
 
     @Override

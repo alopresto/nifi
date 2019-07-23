@@ -20,6 +20,7 @@ import org.apache.nifi.controller.repository.claim.ContentClaim
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager
 import org.apache.nifi.controller.repository.util.DiskUtils
 import org.apache.nifi.security.kms.KeyProvider
+import org.apache.nifi.security.kms.StaticKeyProvider
 import org.apache.nifi.security.repository.RepositoryEncryptorUtils
 import org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata
 import org.apache.nifi.security.util.EncryptionMethod
@@ -53,30 +54,40 @@ class EncryptedFileSystemRepositoryTest {
 
     private static final String KEY_HEX_128 = "0123456789ABCDEFFEDCBA9876543210"
     private static final String KEY_HEX_256 = KEY_HEX_128 * 2
-    private static final String KEY_HEX = isUnlimitedStrengthCryptoAvailable() ? KEY_HEX_256 : KEY_HEX_128
+    private static final String KEY_HEX_1 = isUnlimitedStrengthCryptoAvailable() ? KEY_HEX_256 : KEY_HEX_128
 
     private static final String KEY_HEX_2 = "00" * (isUnlimitedStrengthCryptoAvailable() ? 32 : 16)
     private static final String KEY_HEX_3 = "AA" * (isUnlimitedStrengthCryptoAvailable() ? 32 : 16)
 
-    private static KeyProvider mockKeyProvider
+    private static final String KEY_ID_1 = "K1"
+    private static final String KEY_ID_2 = "K2"
+    private static final String KEY_ID_3 = "K3"
+
     private static AESKeyedCipherProvider mockCipherProvider
 
     private static String ORIGINAL_LOG_LEVEL
 
-    public static final File helloWorldFile = new File("src/test/resources/hello.txt")
-
     private EncryptedFileSystemRepository repository = null
-    private StandardResourceClaimManager claimManager = null
     private final File rootFile = new File("target/content_repository")
     private NiFiProperties nifiProperties
     private static final String LOG_PACKAGE = "org.slf4j.simpleLogger.log.org.apache.nifi.controller.repository.crypto"
 
     // Mapping of key IDs to keys
     final def KEYS = [
-            "K1": new SecretKeySpec(Hex.decode(KEY_HEX), "AES"),
-            "K2": new SecretKeySpec(Hex.decode(KEY_HEX_2), "AES"),
-            "K3": new SecretKeySpec(Hex.decode(KEY_HEX_3), "AES"),
+            (KEY_ID_1): new SecretKeySpec(Hex.decode(KEY_HEX_1), "AES"),
+            (KEY_ID_2): new SecretKeySpec(Hex.decode(KEY_HEX_2), "AES"),
+            (KEY_ID_3): new SecretKeySpec(Hex.decode(KEY_HEX_3), "AES"),
     ]
+    private static final String DEFAULT_NIFI_PROPS_PATH = "/conf/nifi.properties"
+
+    private static final Map<String, String> DEFAULT_ENCRYPTION_PROPS = [
+            (NiFiProperties.CONTENT_REPOSITORY_IMPLEMENTATION): "org.apache.nifi.controller.repository.crypto.EncryptedFileSystemRepository",
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_ID): KEY_ID_1,
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY): KEY_HEX_1,
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS): StaticKeyProvider.class.name,
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION): ""
+    ]
+
 
     @BeforeClass
     static void setUpOnce() throws Exception {
@@ -101,16 +112,23 @@ class EncryptedFileSystemRepositoryTest {
 
     @Before
     void setUp() throws Exception {
-        // TODO: Mock NiFiProperties w/ encrypted configs
-        System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, EncryptedFileSystemRepositoryTest.class.getResource("/conf/nifi.properties").getFile())
-        nifiProperties = NiFiProperties.createBasicNiFiProperties(null, null)
+        // Use mock NiFiProperties w/ encrypted configs
+        repository = initializeRepository()
+    }
+
+    private EncryptedFileSystemRepository initializeRepository(String nifiPropertiesPath = DEFAULT_NIFI_PROPS_PATH, Map<String, String> additionalProperties = DEFAULT_ENCRYPTION_PROPS) {
+        nifiProperties = NiFiProperties.createBasicNiFiProperties(EncryptedFileSystemRepositoryTest.class.getResource(nifiPropertiesPath).path, additionalProperties)
         if (rootFile.exists()) {
             DiskUtils.deleteRecursively(rootFile)
         }
-        repository = new EncryptedFileSystemRepository(nifiProperties)
-        claimManager = new StandardResourceClaimManager()
+
+        EncryptedFileSystemRepository repository = new EncryptedFileSystemRepository(nifiProperties)
+        StandardResourceClaimManager claimManager = new StandardResourceClaimManager()
         repository.initialize(claimManager)
         repository.purge()
+        logger.info("Created EFSR with nifi.properties [${nifiPropertiesPath}] and ${additionalProperties.size()} additional properties: ${additionalProperties}")
+
+        repository
     }
 
     @After
@@ -350,6 +368,8 @@ class EncryptedFileSystemRepositoryTest {
     @Test
     void testWriteShouldRequireActiveKeyId() {
         // Arrange
+        repository.@activeKeyId = null
+
         boolean isLossTolerant = false
         final ContentClaim claim = repository.create(isLossTolerant)
 
@@ -367,7 +387,7 @@ class EncryptedFileSystemRepositoryTest {
 
         // Assert
         assert msg.localizedMessage == "Error creating encrypted content repository output stream"
-        assert msg.cause.localizedMessage =~ "The provenance record and key ID cannot be missing"
+        assert msg.cause.localizedMessage =~ "The .* record and key ID cannot be missing"
     }
 
     /**
@@ -396,6 +416,45 @@ class EncryptedFileSystemRepositoryTest {
 
         // Reset the active key ID to null
         repository.@activeKeyId = null
+
+        // Act
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
+
+        // Assert
+        assert new String(retrievedContent, StandardCharsets.UTF_8) == plainContent
+    }
+
+    /**
+     * Test to configure repository instance from nifi.properties.
+     */
+    @Test
+    void testConstructorShouldReadFromNiFiProperties() {
+        // Arrange
+
+        // Remove the generic repository instance
+        repository.purge()
+        repository.cleanup()
+        repository.shutdown()
+        repository = null
+
+        // Create a new repository with the encryption properties
+        repository = initializeRepository(DEFAULT_NIFI_PROPS_PATH, DEFAULT_ENCRYPTION_PROPS)
+
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Assert implicit configuration of necessary fields by encrypting and decrypting one record
+        String plainContent = "hello"
+        byte[] plainBytes = plainContent.bytes
+        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
+
+        // Write the encrypted content to the repository
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
 
         // Act
         final InputStream inputStream = repository.read(claim)
