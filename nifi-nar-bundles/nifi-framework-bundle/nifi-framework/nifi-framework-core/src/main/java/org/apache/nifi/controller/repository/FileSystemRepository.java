@@ -892,138 +892,7 @@ public class FileSystemRepository implements ContentRepository {
         final ByteCountingOutputStream bcos = claimStream;
 
         // TODO: Refactor OS implementation out (deduplicate methods, etc.)
-        final OutputStream out = new OutputStream() {
-            private long bytesWritten = 0L;
-            private boolean recycle = true;
-            private boolean closed = false;
-
-            @Override
-            public String toString() {
-                return "FileSystemRepository Stream [" + scc + "]";
-            }
-
-            @Override
-            public synchronized void write(final int b) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(b);
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten++;
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void write(final byte[] b) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(b);
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten += b.length;
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void write(final byte[] b, final int off, final int len) throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                try {
-                    bcos.write(b, off, len);
-                } catch (final IOException ioe) {
-                    recycle = false;
-                    throw new IOException("Failed to write to " + this, ioe);
-                }
-
-                bytesWritten += len;
-
-                scc.setLength(bytesWritten + initialLength);
-            }
-
-            @Override
-            public synchronized void flush() throws IOException {
-                if (closed) {
-                    throw new IOException("Stream is closed");
-                }
-
-                bcos.flush();
-            }
-
-            @Override
-            public synchronized void close() throws IOException {
-                closed = true;
-
-                if (alwaysSync) {
-                    ((FileOutputStream) bcos.getWrappedStream()).getFD().sync();
-                }
-
-                if (scc.getLength() < 0) {
-                    // If claim was not written to, set length to 0
-                    scc.setLength(0L);
-                }
-
-                // if we've not yet hit the threshold for appending to a resource claim, add the claim
-                // to the writableClaimQueue so that the Resource Claim can be used again when create()
-                // is called. In this case, we don't have to actually close the file stream. Instead, we
-                // can just add it onto the queue and continue to use it for the next content claim.
-                final long resourceClaimLength = scc.getOffset() + scc.getLength();
-                if (recycle && resourceClaimLength < maxAppendableClaimLength) {
-                    final ClaimLengthPair pair = new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength);
-
-                    // We are checking that writableClaimStreams contains the resource claim as a key, as a sanity check.
-                    // It should always be there. However, we have encountered a bug before where we archived content before
-                    // we should have. As a result, the Resource Claim and the associated OutputStream were removed from the
-                    // writableClaimStreams map, and this caused a NullPointerException. Worse, the call here to
-                    // writableClaimQueue.offer() means that the ResourceClaim was then reused, which resulted in an endless
-                    // loop of NullPointerException's being thrown. As a result, we simply ensure that the Resource Claim does
-                    // in fact have an OutputStream associated with it before adding it back to the writableClaimQueue.
-                    final boolean enqueued = writableClaimStreams.get(scc.getResourceClaim()) != null && writableClaimQueue.offer(pair);
-
-                    if (enqueued) {
-                        LOG.debug("Claim length less than max; Adding {} back to Writable Claim Queue", this);
-                    } else {
-                        writableClaimStreams.remove(scc.getResourceClaim());
-                        resourceClaimManager.freeze(scc.getResourceClaim());
-
-                        bcos.close();
-
-                        LOG.debug("Claim length less than max; Closing {} because could not add back to queue", this);
-                        if (LOG.isTraceEnabled()) {
-                            LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                        }
-                    }
-                } else {
-                    // we've reached the limit for this claim. Don't add it back to our queue.
-                    // Instead, just remove it and move on.
-
-                    // Mark the claim as no longer being able to be written to
-                    resourceClaimManager.freeze(scc.getResourceClaim());
-
-                    // ensure that the claim is no longer on the queue
-                    writableClaimQueue.remove(new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
-
-                    bcos.close();
-                    LOG.debug("Claim lenth >= max; Closing {}", this);
-                    if (LOG.isTraceEnabled()) {
-                        LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                    }
-                }
-            }
-        };
+        final OutputStream out = new ContentRepositoryOutputStream(scc, bcos, initialLength);
 
         LOG.debug("Writing to {}", out);
         if (LOG.isTraceEnabled()) {
@@ -1818,5 +1687,152 @@ public class FileSystemRepository implements ContentRepository {
             }
         }
         return cleanupInterval;
+    }
+
+    protected class ContentRepositoryOutputStream extends OutputStream {
+        protected final StandardContentClaim scc;
+
+        protected final ByteCountingOutputStream bcos;
+
+        protected final int initialLength;
+        protected long bytesWritten;
+        protected boolean recycle;
+        protected boolean closed;
+
+        public ContentRepositoryOutputStream(StandardContentClaim scc, ByteCountingOutputStream bcos, int initialLength) {
+            this.scc = scc;
+            this.bcos = bcos;
+            this.initialLength = initialLength;
+            bytesWritten = 0L;
+            recycle = true;
+            closed = false;
+        }
+
+        @Override
+        public String toString() {
+            return "FileSystemRepository Stream [" + scc + "]";
+        }
+
+        @Override
+        public synchronized void write(final int b) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                bcos.write(b);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            bytesWritten++;
+            scc.setLength(bytesWritten + initialLength);
+        }
+
+        @Override
+        public synchronized void write(final byte[] b) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                bcos.write(b);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            bytesWritten += b.length;
+            scc.setLength(bytesWritten + initialLength);
+        }
+
+        @Override
+        public synchronized void write(final byte[] b, final int off, final int len) throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            try {
+                bcos.write(b, off, len);
+            } catch (final IOException ioe) {
+                recycle = false;
+                throw new IOException("Failed to write to " + this, ioe);
+            }
+
+            bytesWritten += len;
+
+            scc.setLength(bytesWritten + initialLength);
+        }
+
+        @Override
+        public synchronized void flush() throws IOException {
+            if (closed) {
+                throw new IOException("Stream is closed");
+            }
+
+            bcos.flush();
+        }
+
+        @Override
+        public synchronized void close() throws IOException {
+            closed = true;
+
+            if (alwaysSync) {
+                ((FileOutputStream) bcos.getWrappedStream()).getFD().sync();
+            }
+
+            if (scc.getLength() < 0) {
+                // If claim was not written to, set length to 0
+                scc.setLength(0L);
+            }
+
+            // if we've not yet hit the threshold for appending to a resource claim, add the claim
+            // to the writableClaimQueue so that the Resource Claim can be used again when create()
+            // is called. In this case, we don't have to actually close the file stream. Instead, we
+            // can just add it onto the queue and continue to use it for the next content claim.
+            final long resourceClaimLength = scc.getOffset() + scc.getLength();
+            if (recycle && resourceClaimLength < maxAppendableClaimLength) {
+                final ClaimLengthPair pair = new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength);
+
+                // We are checking that writableClaimStreams contains the resource claim as a key, as a sanity check.
+                // It should always be there. However, we have encountered a bug before where we archived content before
+                // we should have. As a result, the Resource Claim and the associated OutputStream were removed from the
+                // writableClaimStreams map, and this caused a NullPointerException. Worse, the call here to
+                // writableClaimQueue.offer() means that the ResourceClaim was then reused, which resulted in an endless
+                // loop of NullPointerException's being thrown. As a result, we simply ensure that the Resource Claim does
+                // in fact have an OutputStream associated with it before adding it back to the writableClaimQueue.
+                final boolean enqueued = writableClaimStreams.get(scc.getResourceClaim()) != null && writableClaimQueue.offer(pair);
+
+                if (enqueued) {
+                    LOG.debug("Claim length less than max; Adding {} back to Writable Claim Queue", this);
+                } else {
+                    writableClaimStreams.remove(scc.getResourceClaim());
+                    resourceClaimManager.freeze(scc.getResourceClaim());
+
+                    bcos.close();
+
+                    LOG.debug("Claim length less than max; Closing {} because could not add back to queue", this);
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
+                    }
+                }
+            } else {
+                // we've reached the limit for this claim. Don't add it back to our queue.
+                // Instead, just remove it and move on.
+
+                // Mark the claim as no longer being able to be written to
+                resourceClaimManager.freeze(scc.getResourceClaim());
+
+                // ensure that the claim is no longer on the queue
+                writableClaimQueue.remove(new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
+
+                bcos.close();
+                LOG.debug("Claim lenth >= max; Closing {}", this);
+                if (LOG.isTraceEnabled()) {
+                    LOG.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
+                }
+            }
+        }
     }
 }

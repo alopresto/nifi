@@ -220,22 +220,15 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
     }
 
     // TODO: Refactor inline OutputStream from FileSystemRepository to ContentRepositoryOutputStream and ECROS will extend
-    private class EncryptedContentRepositoryOutputStream extends OutputStream {
-        private final StandardContentClaim scc;
-        private final ByteCountingOutputStream byteCountingOutputStream;
+    private class EncryptedContentRepositoryOutputStream extends ContentRepositoryOutputStream {
         private final CipherOutputStream cipherOutputStream;
         private final long startingOffset;
-        private boolean recycle;
-        private boolean closed;
 
         public EncryptedContentRepositoryOutputStream(StandardContentClaim scc,
                                                       ByteCountingOutputStream byteCountingOutputStream,
                                                       RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
-            this.scc = scc;
-            this.byteCountingOutputStream = byteCountingOutputStream;
+            super(scc, byteCountingOutputStream, 0);
             this.startingOffset = startingOffset;
-            recycle = true;
-            closed = false;
 
             // Set up cipher stream
             this.cipherOutputStream = (CipherOutputStream) encryptor.encrypt(new NonCloseableOutputStream(byteCountingOutputStream), recordId, keyId);
@@ -259,7 +252,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
+            scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -275,7 +268,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
+            scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -291,7 +284,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                 throw new IOException("Failed to write to " + this, ioe);
             }
 
-            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
+            scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -312,10 +305,10 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
             cipherOutputStream.close();
 
             // Add the additional bytes written to the scc.length
-            scc.setLength(byteCountingOutputStream.getBytesWritten() - startingOffset);
+            scc.setLength(bcos.getBytesWritten() - startingOffset);
 
             if (isAlwaysSync()) {
-                ((FileOutputStream) byteCountingOutputStream.getWrappedStream()).getFD().sync();
+                ((FileOutputStream) bcos.getWrappedStream()).getFD().sync();
             }
 
             if (scc.getLength() < 0) {
@@ -346,7 +339,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                     getWritableClaimStreams().remove(scc.getResourceClaim());
                     getResourceClaimManager().freeze(scc.getResourceClaim());
 
-                    byteCountingOutputStream.close();
+                    bcos.close();
 
                     logger.debug("Claim length less than max; Closing {} because could not add back to queue", this);
                     if (logger.isTraceEnabled()) {
@@ -363,7 +356,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                 // ensure that the claim is no longer on the queue
                 getWritableClaimQueue().remove(new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
 
-                byteCountingOutputStream.close();
+                bcos.close();
                 logger.debug("Claim length >= max; Closing {}", this);
                 if (logger.isTraceEnabled()) {
                     logger.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
