@@ -883,21 +883,8 @@ public class FileSystemRepository implements ContentRepository {
         return write(claim, false);
     }
 
-    private OutputStream write(final ContentClaim claim, final boolean append) throws IOException {
-        if (claim == null) {
-            throw new NullPointerException("ContentClaim cannot be null");
-        }
-
-        if (!(claim instanceof StandardContentClaim)) {
-            // we know that we will only create Content Claims that are of type StandardContentClaim, so if we get anything
-            // else, just throw an Exception because it is not valid for this Repository
-            throw new IllegalArgumentException("Cannot write to " + claim + " because that Content Claim does belong to this Content Repository");
-        }
-
-        final StandardContentClaim scc = (StandardContentClaim) claim;
-        if (claim.getLength() > 0) {
-            throw new IllegalArgumentException("Cannot write to " + claim + " because it has already been written to.");
-        }
+    private OutputStream write(final ContentClaim claim, final boolean append) {
+        StandardContentClaim scc = validateContentClaimForWriting(claim);
 
         ByteCountingOutputStream claimStream = writableClaimStreams.get(scc.getResourceClaim());
         final int initialLength = append ? (int) Math.max(0, scc.getLength()) : 0;
@@ -1044,6 +1031,24 @@ public class FileSystemRepository implements ContentRepository {
         }
 
         return out;
+    }
+
+    public static StandardContentClaim validateContentClaimForWriting(ContentClaim claim) {
+        if (claim == null) {
+            throw new NullPointerException("ContentClaim cannot be null");
+        }
+
+        if (!(claim instanceof StandardContentClaim)) {
+            // we know that we will only create Content Claims that are of type StandardContentClaim, so if we get anything
+            // else, just throw an Exception because it is not valid for this Repository
+            throw new IllegalArgumentException("Cannot write to " + claim + " because that Content Claim does belong to this Content Repository");
+        }
+
+        if (claim.getLength() > 0) {
+            throw new IllegalArgumentException("Cannot write to " + claim + " because it has already been written to.");
+        }
+
+        return (StandardContentClaim) claim;
     }
 
     @Override

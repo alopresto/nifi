@@ -88,7 +88,6 @@ class EncryptedFileSystemRepositoryTest {
             (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION): ""
     ]
 
-
     @BeforeClass
     static void setUpOnce() throws Exception {
         ORIGINAL_LOG_LEVEL = System.getProperty(LOG_PACKAGE)

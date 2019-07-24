@@ -16,22 +16,17 @@
  */
 package org.apache.nifi.controller.repository.crypto;
 
-import java.io.ByteArrayInputStream;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Path;
 import java.security.KeyManagementException;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.controller.repository.FileSystemRepository;
 import org.apache.nifi.controller.repository.claim.ContentClaim;
 import org.apache.nifi.controller.repository.claim.StandardContentClaim;
-import org.apache.nifi.controller.repository.io.LimitedInputStream;
 import org.apache.nifi.security.kms.CryptoUtils;
 import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.kms.KeyProvider;
@@ -42,7 +37,6 @@ import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncrypto
 import org.apache.nifi.security.repository.stream.aes.RepositoryObjectAESCTREncryptor;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
 import org.apache.nifi.stream.io.NonCloseableOutputStream;
-import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,42 +114,13 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
 
     @Override
     public InputStream read(final ContentClaim claim) throws IOException {
-        if (claim == null) {
-            return new ByteArrayInputStream(new byte[0]);
-        }
-        final Path path = getPath(claim, true);
-        final FileInputStream fis = new FileInputStream(path.toFile());
-        if (claim.getOffset() > 0L) {
-            try {
-                StreamUtils.skip(fis, claim.getOffset());
-            } catch (IOException ioe) {
-                IOUtils.closeQuietly(fis);
-                throw ioe;
-            }
+        InputStream inputStream = super.read(claim);
 
-        }
-
-        InputStream inputStream;
-
-        // see javadocs for claim.getLength() as to why we do this.
-        // TODO: No Javadoc?
-        /*
-        When claim length is <0, indicates claim is not finished being written to with contents of flowfile
-        NIFI-5879
-         */
-        if (claim.getLength() >= 0) {
-            inputStream = new LimitedInputStream(fis, claim.getLength());
-        } else {
-            inputStream = fis;
-        }
-
-        // TODO: Refactor OS implementation out (deduplicate methods, etc.)
         try {
-            // TODO: Instantiate from nifi.properties
             String recordId = getRecordId(claim);
             logger.debug("Creating decrypted input stream to read flowfile content with record ID: " + recordId);
 
-            final InputStream decryptingInputStream = getDecryptedInputStream(inputStream, recordId);
+            final InputStream decryptingInputStream = getDecryptingInputStream(inputStream, recordId);
             logger.debug("Reading from record ID {}", recordId);
             if (logger.isTraceEnabled()) {
                 logger.trace("Stack trace: ", new RuntimeException("Stack Trace for reading from record ID " + recordId));
@@ -168,7 +133,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         }
     }
 
-    public InputStream getDecryptedInputStream(InputStream inputStream, String recordId) throws KeyManagementException, EncryptionException {
+    private InputStream getDecryptingInputStream(InputStream inputStream, String recordId) throws KeyManagementException, EncryptionException {
         RepositoryObjectStreamEncryptor encryptor = new RepositoryObjectAESCTREncryptor();
         encryptor.initialize(keyProvider);
 
@@ -182,29 +147,13 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
     }
 
     private OutputStream write(final ContentClaim claim, final boolean append) throws IOException {
-        if (claim == null) {
-            throw new NullPointerException("ContentClaim cannot be null");
-        }
-
-        if (!(claim instanceof StandardContentClaim)) {
-            // we know that we will only create Content Claims that are of type StandardContentClaim, so if we get anything
-            // else, just throw an Exception because it is not valid for this Repository
-            throw new IllegalArgumentException("Cannot write to " + claim + " because that Content Claim does belong to this Content Repository");
-        }
-
-        final StandardContentClaim scc = (StandardContentClaim) claim;
-        if (claim.getLength() > 0) {
-            throw new IllegalArgumentException("Cannot write to " + claim + " because it has already been written to.");
-        }
+        StandardContentClaim scc = validateContentClaimForWriting(claim);
 
         // BCOS wrapping FOS
         ByteCountingOutputStream claimStream = getWritableClaimStreamByResourceClaim(scc.getResourceClaim());
-        // final int initialLength = append ? (int) Math.max(0, scc.getLength()) : 0;
         final long startingOffset = claimStream.getBytesWritten();
 
-        // TODO: Refactor OS implementation out (deduplicate methods, etc.)
         try {
-            // TODO: Instantiate from nifi.properties
             String keyId = getActiveKeyId();
             String recordId = getRecordId(claim);
             logger.debug("Creating encrypted output stream (keyId: " + keyId + ") to write flowfile content with record ID: " + recordId);
