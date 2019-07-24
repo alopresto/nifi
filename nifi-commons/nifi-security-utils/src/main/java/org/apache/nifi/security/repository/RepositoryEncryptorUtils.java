@@ -22,14 +22,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.security.KeyManagementException;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import org.apache.nifi.security.kms.EncryptionException;
+import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.kms.KeyProviderFactory;
+import org.apache.nifi.security.repository.config.RepositoryEncryptionConfiguration;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider;
 import org.apache.nifi.stream.io.NonCloseableInputStream;
+import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +48,8 @@ public class RepositoryEncryptorUtils {
     private static final List<String> SUPPORTED_VERSIONS = Arrays.asList(VERSION);
     private static final int MIN_METADATA_LENGTH = IV_LENGTH + 3 + 3; // 3 delimiters and 3 non-zero elements
     private static final int METADATA_DEFAULT_LENGTH = (20 + 17 + IV_LENGTH + VERSION.length()) * 2; // Default to twice the expected length
+
+    // TODO: Add Javadoc
 
     public static byte[] serializeEncryptionMetadata(RepositoryObjectEncryptionMetadata metadata) throws IOException {
         final ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -99,5 +106,16 @@ public class RepositoryEncryptorUtils {
         // If the length is unknown (streaming/content), calculate the metadata length + header length and start from there
         int cipherBytesStart = metadata.cipherByteLength > 0 ? encryptedRecord.length - metadata.cipherByteLength : metadata.length() + CONTENT_HEADER_SIZE;
         return Arrays.copyOfRange(encryptedRecord, cipherBytesStart, encryptedRecord.length);
+    }
+
+    public static KeyProvider buildKeyProvider(NiFiProperties niFiProperties, SecretKey masterKey, RepositoryType repositoryType) throws KeyManagementException {
+        RepositoryEncryptionConfiguration rec = RepositoryEncryptionConfiguration.fromNiFiProperties(niFiProperties, repositoryType);
+
+        if (rec.getKeyProviderImplementation() == null) {
+            throw new KeyManagementException("Cannot create key provider because the NiFi properties are missing the following property: "
+                    + NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS);
+        }
+
+        return KeyProviderFactory.buildKeyProvider(rec, masterKey);
     }
 }

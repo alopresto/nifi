@@ -35,10 +35,6 @@ public class NiFiPropertiesLoader {
 
     private static final Logger logger = LoggerFactory.getLogger(NiFiPropertiesLoader.class);
 
-    private static final String RELATIVE_PATH = "conf/nifi.properties";
-
-    private static final String BOOTSTRAP_KEY_PREFIX = "nifi.bootstrap.sensitive.key=";
-
     private NiFiProperties instance;
     private String keyHex;
 

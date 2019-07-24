@@ -67,6 +67,7 @@ public class CryptoUtils {
     private static final List<Integer> UNLIMITED_KEY_LENGTHS = Arrays.asList(32, 48, 64);
 
     public static final int IV_LENGTH = 16;
+    private static final String ENCRYPTED_FSR_CLASS_NAME = "org.apache.nifi.controller.repository.crypto.EncryptedFileSystemRepository";
 
     public static boolean isUnlimitedStrengthCryptoAvailable() {
         try {
@@ -286,7 +287,9 @@ public class CryptoUtils {
     }
 
     /**
-     * Returns {@code true} if the provenance repository is correctly configured for an encrypted implementation. Requires the repository implementation to support encryption and at least one valid key to be configured.
+     * Returns {@code true} if the provenance repository is correctly configured for an
+     * encrypted implementation. Requires the repository implementation to support encryption
+     * and at least one valid key to be configured.
      *
      * @param niFiProperties the {@link NiFiProperties} instance to validate
      * @return true if encryption is successfully configured for the provenance repository
@@ -307,7 +310,9 @@ public class CryptoUtils {
     }
 
     /**
-     * Returns {@code true} if the content repository is correctly configured for an encrypted implementation. Requires the repository implementation to support encryption and at least one valid key to be configured.
+     * Returns {@code true} if the content repository is correctly configured for an encrypted
+     * implementation. Requires the repository implementation to support encryption and at least
+     * one valid key to be configured.
      *
      * @param niFiProperties the {@link NiFiProperties} instance to validate
      * @return true if encryption is successfully configured for the content repository
@@ -315,7 +320,7 @@ public class CryptoUtils {
     public static boolean isContentRepositoryEncryptionConfigured(NiFiProperties niFiProperties) {
         final String implementationClassName = niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_IMPLEMENTATION);
         // Referencing EFSR.class.getName() would require a dependency on the module
-        boolean encryptedRepo = "org.apache.nifi.controller.repository.EncryptedFileSystemRepository".equals(implementationClassName);
+        boolean encryptedRepo = ENCRYPTED_FSR_CLASS_NAME.equals(implementationClassName);
         if (encryptedRepo) {
             return isValidKeyProvider(
                     niFiProperties.getProperty(NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS),
@@ -327,6 +332,12 @@ public class CryptoUtils {
         }
     }
 
+    /**
+     * Returns the master key from the {@code bootstrap.conf} file used to encrypt various sensitive properties and data encryption keys.
+     *
+     * @return the master key
+     * @throws KeyManagementException if the key cannot be read
+     */
     public static SecretKey getMasterKey() throws KeyManagementException {
         try {
             // Get the master encryption key from bootstrap.conf
@@ -391,6 +402,13 @@ public class CryptoUtils {
         }
     }
 
+    /**
+     * Returns the default file path to {@code $NIFI_HOME/conf/nifi.properties}. If the system
+     * property {@code nifi.properties.file.path} is not set, it will be set to the relative
+     * path {@code conf/nifi.properties}.
+     *
+     * @return the path to the nifi.properties file
+     */
     public static String getDefaultFilePath() {
         String systemPath = System.getProperty(NiFiProperties.PROPERTIES_FILE_PATH);
 
