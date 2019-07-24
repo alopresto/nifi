@@ -16,10 +16,10 @@
  */
 package org.apache.nifi.controller.repository.crypto;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.security.KeyManagementException;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
@@ -56,7 +56,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
     }
 
     public EncryptedFileSystemRepository(final NiFiProperties niFiProperties) throws IOException {
-       super(niFiProperties);
+        super(niFiProperties);
 
         // Initialize key provider
         initializeEncryptionServices(niFiProperties);
@@ -219,12 +219,16 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         return new EncryptedContentRepositoryOutputStream(scc, claimStream, encryptor, recordId, keyId, startingOffset);
     }
 
-    // TODO: Refactor inline OutputStream from FileSystemRepository to ContentRepositoryOutputStream and ECROS will extend
+    /**
+     * Private class which wraps the {@link org.apache.nifi.controller.repository.FileSystemRepository.ContentRepositoryOutputStream}'s
+     * internal {@link ByteCountingOutputStream} with a {@link CipherOutputStream}
+     * to handle streaming encryption operations.
+     */
     private class EncryptedContentRepositoryOutputStream extends ContentRepositoryOutputStream {
         private final CipherOutputStream cipherOutputStream;
         private final long startingOffset;
 
-        public EncryptedContentRepositoryOutputStream(StandardContentClaim scc,
+        EncryptedContentRepositoryOutputStream(StandardContentClaim scc,
                                                       ByteCountingOutputStream byteCountingOutputStream,
                                                       RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
             super(scc, byteCountingOutputStream, 0);
@@ -241,38 +245,36 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
 
         @Override
         public synchronized void write(final int b) throws IOException {
-            if (closed) {
-                throw new IOException("Stream is closed");
-            }
-
-            try {
-                cipherOutputStream.write(b);
-            } catch (final IOException ioe) {
-                recycle = false;
-                throw new IOException("Failed to write to " + this, ioe);
-            }
+            ByteBuffer bb = ByteBuffer.allocate(4);
+            bb.putInt(b);
+            writeBytes(bb.array(), 0, 4);
 
             scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
         public synchronized void write(final byte[] b) throws IOException {
-            if (closed) {
-                throw new IOException("Stream is closed");
-            }
-
-            try {
-                cipherOutputStream.write(b);
-            } catch (final IOException ioe) {
-                recycle = false;
-                throw new IOException("Failed to write to " + this, ioe);
-            }
+            writeBytes(b, 0, b.length);
 
             scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
         public synchronized void write(final byte[] b, final int off, final int len) throws IOException {
+            writeBytes(b, off, len);
+
+            scc.setLength(bcos.getBytesWritten() - startingOffset);
+        }
+
+        /**
+         * Internal method used to reduce duplication throughout code.
+         *
+         * @param b the byte array to write
+         * @param off the offset in bytes
+         * @param len the length in bytes to write
+         * @throws IOException if there is a problem writing the output
+         */
+        private void writeBytes(byte[] b, int off, int len) throws IOException {
             if (closed) {
                 throw new IOException("Stream is closed");
             }
@@ -283,8 +285,6 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
                 recycle = false;
                 throw new IOException("Failed to write to " + this, ioe);
             }
-
-            scc.setLength(bcos.getBytesWritten() - startingOffset);
         }
 
         @Override
@@ -307,61 +307,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
             // Add the additional bytes written to the scc.length
             scc.setLength(bcos.getBytesWritten() - startingOffset);
 
-            if (isAlwaysSync()) {
-                ((FileOutputStream) bcos.getWrappedStream()).getFD().sync();
-            }
-
-            if (scc.getLength() < 0) {
-                // If claim was not written to, set length to 0
-                scc.setLength(0L);
-            }
-
-            // if we've not yet hit the threshold for appending to a resource claim, add the claim
-            // to the writableClaimQueue so that the Resource Claim can be used again when create()
-            // is called. In this case, we don't have to actually close the file stream. Instead, we
-            // can just add it onto the queue and continue to use it for the next content claim.
-            final long resourceClaimLength = scc.getOffset() + scc.getLength();
-            if (recycle && resourceClaimLength < getMaxAppendableClaimLength()) {
-                final ClaimLengthPair pair = new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength);
-
-                // We are checking that writableClaimStreams contains the resource claim as a key, as a sanity check.
-                // It should always be there. However, we have encountered a bug before where we archived content before
-                // we should have. As a result, the Resource Claim and the associated OutputStream were removed from the
-                // writableClaimStreams map, and this caused a NullPointerException. Worse, the call here to
-                // getWritableClaimQueue().offer() means that the ResourceClaim was then reused, which resulted in an endless
-                // loop of NullPointerException's being thrown. As a result, we simply ensure that the Resource Claim does
-                // in fact have an OutputStream associated with it before adding it back to the getWritableClaimQueue().
-                final boolean enqueued = getWritableClaimStreamByResourceClaim(scc.getResourceClaim()) != null && getWritableClaimQueue().offer(pair);
-
-                if (enqueued) {
-                    logger.debug("Claim length less than max; Adding {} back to Writable Claim Queue", this);
-                } else {
-                    getWritableClaimStreams().remove(scc.getResourceClaim());
-                    getResourceClaimManager().freeze(scc.getResourceClaim());
-
-                    bcos.close();
-
-                    logger.debug("Claim length less than max; Closing {} because could not add back to queue", this);
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                    }
-                }
-            } else {
-                // we've reached the limit for this claim. Don't add it back to our queue.
-                // Instead, just remove it and move on.
-
-                // Mark the claim as no longer being able to be written to
-                getResourceClaimManager().freeze(scc.getResourceClaim());
-
-                // ensure that the claim is no longer on the queue
-                getWritableClaimQueue().remove(new ClaimLengthPair(scc.getResourceClaim(), resourceClaimLength));
-
-                bcos.close();
-                logger.debug("Claim length >= max; Closing {}", this);
-                if (logger.isTraceEnabled()) {
-                    logger.trace("Stack trace: ", new RuntimeException("Stack Trace for closing " + this));
-                }
-            }
+            super.close();
         }
     }
 }
