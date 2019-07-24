@@ -57,7 +57,6 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
-
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.controller.repository.claim.ContentClaim;
@@ -1190,6 +1189,30 @@ public class FileSystemRepository implements ContentRepository {
         return writableClaimStreams.size();
     }
 
+    protected ConcurrentMap<ResourceClaim, ByteCountingOutputStream> getWritableClaimStreams() {
+        return writableClaimStreams;
+    }
+
+    protected ByteCountingOutputStream getWritableClaimStreamByResourceClaim(ResourceClaim rc) {
+        return writableClaimStreams.get(rc);
+    }
+
+    protected ResourceClaimManager getResourceClaimManager() {
+        return resourceClaimManager;
+    }
+
+    protected BlockingQueue<ClaimLengthPair> getWritableClaimQueue() {
+        return writableClaimQueue;
+    }
+
+    protected long getMaxAppendableClaimLength() {
+        return maxAppendableClaimLength;
+    }
+
+    protected boolean isAlwaysSync() {
+        return alwaysSync;
+    }
+
     // marked protected for visibility and ability to override for unit tests.
     protected boolean archive(final Path curPath) throws IOException {
         // check if already archived
@@ -1715,7 +1738,7 @@ public class FileSystemRepository implements ContentRepository {
         }
     }
 
-    private static class ClaimLengthPair {
+    protected static class ClaimLengthPair {
 
         private final ResourceClaim claim;
         private final Long length;
