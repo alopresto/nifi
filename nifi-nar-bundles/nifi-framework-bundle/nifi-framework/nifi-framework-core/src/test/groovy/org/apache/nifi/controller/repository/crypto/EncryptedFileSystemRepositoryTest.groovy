@@ -211,6 +211,54 @@ class EncryptedFileSystemRepositoryTest {
     }
 
     /**
+     * Simple test to write encrypted image content to the repository, independently read the persisted file to ensure the content is encrypted, and then retrieve & decrypt via the repository.
+     */
+    @Test
+    void testShouldEncryptAndDecryptImage() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File image = new File("src/test/resources/encrypted_content_repo.png")
+        byte[] plainBytes = image.bytes
+        logger.info("Writing \"${image.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        // Act
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedFilePath = getPersistedFilePath(claim)
+        logger.verify("Persisted file: ${persistedFilePath}")
+        byte[] persistedBytes = new File(persistedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Parse out EncryptionMetadata and ciphertext
+        logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) ${pba(persistedBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedBytes.length != plainBytes.length
+        assert persistedBytes != plainBytes
+        // TODO: Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+        byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainBytes.length, persistedBytes.length)
+        logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) ${pba(persistedCipherBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedCipherBytes != plainBytes
+
+        // Use the EFSR to decrypt the same content
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
+
+        // Assert
+        assert retrievedContent == plainBytes
+    }
+
+    /**
      * Simple test to write multiple pieces of encrypted content to the repository and then retrieve & decrypt via the repository.
      */
     @Test
@@ -248,7 +296,7 @@ class EncryptedFileSystemRepositoryTest {
             // Use the EFSR to decrypt the same content
             final InputStream inputStream = repository.read(claim)
             byte[] retrievedContent = inputStream.bytes
-            logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
+            logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
 
             // Assert
             assert new String(retrievedContent, StandardCharsets.UTF_8) == pieceOfContent
@@ -301,7 +349,7 @@ class EncryptedFileSystemRepositoryTest {
             String persistedFilePath = getPersistedFilePath(claim)
             logger.verify("Persisted file: ${persistedFilePath}")
             byte[] persistedBytes = new File(persistedFilePath).bytes
-            logger.verify("Read bytes (${persistedBytes.length}): ${Hex.toHexString(persistedBytes)}")
+            logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
 
             // Skip to the section for this content claim
             long start = claim.offset
@@ -374,7 +422,7 @@ class EncryptedFileSystemRepositoryTest {
 
         String plainContent = "hello"
         byte[] plainBytes = plainContent.bytes
-        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
+        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${pba(plainBytes)}")
 
         // Act
         def msg = shouldFail(Exception) {
@@ -405,7 +453,7 @@ class EncryptedFileSystemRepositoryTest {
 
         String plainContent = "hello"
         byte[] plainBytes = plainContent.bytes
-        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${Hex.toHexString(plainBytes)}")
+        logger.info("Writing \"${plainContent}\" (${plainContent.length()}): ${pba(plainBytes)}")
 
         // Write the encrypted content to the repository
         final OutputStream out = repository.write(claim)
@@ -419,7 +467,7 @@ class EncryptedFileSystemRepositoryTest {
         // Act
         final InputStream inputStream = repository.read(claim)
         byte[] retrievedContent = inputStream.bytes
-        logger.info("Read bytes via repository (${retrievedContent.length}): ${Hex.toHexString(retrievedContent)}")
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
 
         // Assert
         assert new String(retrievedContent, StandardCharsets.UTF_8) == plainContent
@@ -484,5 +532,9 @@ class EncryptedFileSystemRepositoryTest {
 
     private String getPersistedFilePath(ContentClaim claim) {
         [rootFile, claim.resourceClaim.section, claim.resourceClaim.id].join(File.separator)
+    }
+
+    private static String pba(byte[] bytes, int length = 16) {
+        "[${Hex.toHexString(bytes)[0..<length]}${bytes.length > length ? "..." : ""}]"
     }
 }
