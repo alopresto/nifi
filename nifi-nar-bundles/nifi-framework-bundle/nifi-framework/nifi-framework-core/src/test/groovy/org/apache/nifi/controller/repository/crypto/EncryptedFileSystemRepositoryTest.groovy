@@ -81,11 +81,11 @@ class EncryptedFileSystemRepositoryTest {
     private static final String DEFAULT_NIFI_PROPS_PATH = "/conf/nifi.properties"
 
     private static final Map<String, String> DEFAULT_ENCRYPTION_PROPS = [
-            (NiFiProperties.CONTENT_REPOSITORY_IMPLEMENTATION): "org.apache.nifi.controller.repository.crypto.EncryptedFileSystemRepository",
-            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_ID): KEY_ID_1,
-            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY): KEY_HEX_1,
+            (NiFiProperties.CONTENT_REPOSITORY_IMPLEMENTATION)                              : "org.apache.nifi.controller.repository.crypto.EncryptedFileSystemRepository",
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_ID)                           : KEY_ID_1,
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY)                              : KEY_HEX_1,
             (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS): StaticKeyProvider.class.name,
-            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION): ""
+            (NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION)            : ""
     ]
 
     @BeforeClass
@@ -512,6 +512,98 @@ class EncryptedFileSystemRepositoryTest {
         assert new String(retrievedContent, StandardCharsets.UTF_8) == plainContent
     }
 
+    /**
+     * Simple test to ensure that when content is imported from an InputStream, it is encrypted.
+     */
+    @Test
+    void testImportFromInputStreamShouldEncryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File image = new File("src/test/resources/bgBannerFoot.png")
+        byte[] plainBytes = image.bytes
+        logger.info("Writing \"${image.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        // Act
+        final long bytesRead = repository.importFrom(image.newInputStream(), claim)
+        logger.info("Read ${bytesRead} bytes from ${image.name} into ${claim.resourceClaim.id}")
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedFilePath = getPersistedFilePath(claim)
+        logger.verify("Persisted file: ${persistedFilePath}")
+        byte[] persistedBytes = new File(persistedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Parse out EncryptionMetadata and ciphertext
+        logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) ${pba(persistedBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedBytes.length != plainBytes.length
+        assert persistedBytes != plainBytes
+        // Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+        byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainBytes.length, persistedBytes.length)
+        logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) ${pba(persistedCipherBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedCipherBytes != plainBytes
+
+        // Use the EFSR to decrypt the same content
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
+
+        // Assert
+        assert retrievedContent == plainBytes
+    }
+
+    /**
+     * Simple test to ensure that when content is imported from a path, it is encrypted.
+     */
+    @Test
+    void testImportFromPathShouldEncryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File image = new File("src/test/resources/bgBannerFoot.png")
+        byte[] plainBytes = image.bytes
+        logger.info("Writing \"${image.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        // Act
+        final long bytesRead = repository.importFrom(image.toPath(), claim)
+        logger.info("Read ${bytesRead} bytes from ${image.name} into ${claim.resourceClaim.id}")
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedFilePath = getPersistedFilePath(claim)
+        logger.verify("Persisted file: ${persistedFilePath}")
+        byte[] persistedBytes = new File(persistedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Parse out EncryptionMetadata and ciphertext
+        logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) ${pba(persistedBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedBytes.length != plainBytes.length
+        assert persistedBytes != plainBytes
+        // Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+        byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainBytes.length, persistedBytes.length)
+        logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) ${pba(persistedCipherBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
+        assert persistedCipherBytes != plainBytes
+
+        // Use the EFSR to decrypt the same content
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
+
+        // Assert
+        assert retrievedContent == plainBytes
+    }
+
     private KeyProvider createMockKeyProvider() {
         KeyProvider mockKeyProvider = [
                 getKey            : { String keyId ->
@@ -535,6 +627,6 @@ class EncryptedFileSystemRepositoryTest {
     }
 
     private static String pba(byte[] bytes, int length = 16) {
-        "[${Hex.toHexString(bytes)[0..<length]}${bytes.length > length ? "..." : ""}]"
+        "[${Hex.toHexString(bytes)[0..<(Math.min(length, bytes.length))]}${bytes.length > length ? "..." : ""}]"
     }
 }

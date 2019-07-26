@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.security.KeyManagementException;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
@@ -37,6 +38,7 @@ import org.apache.nifi.security.repository.stream.RepositoryObjectStreamEncrypto
 import org.apache.nifi.security.repository.stream.aes.RepositoryObjectAESCTREncryptor;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
 import org.apache.nifi.stream.io.NonCloseableOutputStream;
+import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,6 +114,35 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         return KeyProviderFactory.buildKeyProvider(RepositoryEncryptionConfiguration.fromNiFiProperties(niFiProperties, RepositoryType.CONTENT), masterKey);
     }
 
+    /**
+     * Returns the number of bytes read after importing content from the provided
+     * {@link InputStream} into the {@link ContentClaim}. This method has the same logic as
+     * the parent method, but must be overridden to use the subclass's
+     * {@link #write(ContentClaim)} method which performs the encryption. The
+     * overloaded method {@link super#importFrom(Path, ContentClaim)} does not need to be
+     * overridden because it delegates to this one.
+     *
+     * @param content the InputStream containing the desired content
+     * @param claim the ContentClaim to put the content into
+     * @return the number of bytes read
+     * @throws IOException if there is a problem reading from the stream
+     */
+    @Override
+    public long importFrom(final InputStream content, final ContentClaim claim) throws IOException {
+        try (final OutputStream out = write(claim)) {
+            return StreamUtils.copy(content, out);
+        }
+    }
+
+    /**
+     * Returns an InputStream (actually a {@link javax.crypto.CipherInputStream}) which wraps
+     * the {@link java.io.FileInputStream} from the content repository claim on disk. This
+     * allows a consuming caller to automatically decrypt the content as it is read.
+     *
+     * @param claim the content claim to read
+     * @return the decrypting input stream
+     * @throws IOException if there is a problem reading from disk or configuring the cipher
+     */
     @Override
     public InputStream read(final ContentClaim claim) throws IOException {
         InputStream inputStream = super.read(claim);
@@ -141,12 +172,17 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         return encryptor.decrypt(inputStream, recordId);
     }
 
+    /**
+     * Returns an OutputStream (actually a {@link javax.crypto.CipherOutputStream}) which wraps
+     * the {@link ByteCountingOutputStream} to the content repository claim on disk. This
+     * allows a consuming caller to automatically encrypt the content as it is written.
+     *
+     * @param claim the content claim to write to
+     * @return the encrypting output stream
+     * @throws IOException if there is a problem writing to disk or configuring the cipher
+     */
     @Override
     public OutputStream write(final ContentClaim claim) throws IOException {
-        return write(claim, false);
-    }
-
-    private OutputStream write(final ContentClaim claim, final boolean append) throws IOException {
         StandardContentClaim scc = validateContentClaimForWriting(claim);
 
         // BCOS wrapping FOS
