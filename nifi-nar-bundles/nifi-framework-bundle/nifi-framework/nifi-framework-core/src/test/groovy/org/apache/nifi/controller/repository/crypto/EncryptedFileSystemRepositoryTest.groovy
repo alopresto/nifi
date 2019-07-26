@@ -44,6 +44,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 import java.security.Security
 
 import static groovy.test.GroovyAssert.shouldFail
@@ -603,6 +604,186 @@ class EncryptedFileSystemRepositoryTest {
         // Assert
         assert retrievedContent == plainBytes
     }
+
+    // TODO: Test exportTo
+
+    /**
+     * Simple test to ensure that when content is exported to an OutputStream, it is decrypted.
+     */
+    @Test
+    void testExportToOutputStreamShouldDecryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File image = new File("src/test/resources/bgBannerFoot.png")
+        byte[] plainBytes = image.bytes
+        logger.info("Writing \"${image.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        final OutputStream outputStream = new ByteArrayOutputStream()
+
+        // Act
+        final long bytesWritten = repository.exportTo(claim, outputStream)
+        logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into OutputStream")
+
+        // Independently access the output stream and verify that the content is plain text
+        byte[] exportedBytes = outputStream.toByteArray()
+        logger.info("Read bytes from output stream (${exportedBytes.length}): ${pba(exportedBytes)}")
+
+        // Assert
+        assert exportedBytes == plainBytes
+    }
+
+    /**
+     * Simple test to ensure that when a subset of content is exported to an OutputStream, it is decrypted.
+     */
+    @Test
+    void testExportSubsetToOutputStreamShouldDecryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File longText = new File("src/test/resources/longtext.txt")
+        byte[] plainBytes = longText.bytes
+        logger.info("Writing \"${longText.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        final OutputStream outputStream = new ByteArrayOutputStream()
+
+        // Act
+        long offset = 100
+        long length = 50
+        logger.info("Exporting claim ${claim} (offset: ${offset}, length: ${length}) to output stream")
+        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset+length)] as byte[])}")
+
+        final long bytesWritten = repository.exportTo(claim, outputStream, offset, length)
+        logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into OutputStream")
+
+        // Independently access the output stream and verify that the content is plain text
+        byte[] exportedBytes = outputStream.toByteArray()
+        logger.info("Read bytes from output stream (${exportedBytes.length}): ${pba(exportedBytes)}")
+
+        // Assert
+        assert exportedBytes == plainBytes[offset..<(offset + length)] as byte[]
+        assert exportedBytes.length == length
+        assert bytesWritten == length
+    }
+
+    /**
+     * Simple test to ensure that when content is exported to a path, it is decrypted.
+     */
+    @Test
+    void testExportToPathShouldDecryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File image = new File("src/test/resources/bgBannerFoot.png")
+        byte[] plainBytes = image.bytes
+        logger.info("Writing \"${image.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        final File tempOutputFile = new File("target/exportedContent")
+        final Path tempPath = tempOutputFile.toPath()
+
+        // Act
+        final long bytesWritten = repository.exportTo(claim, tempPath, false)
+        logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into path ${tempPath}")
+
+        // Independently access the path and verify that the content is plain text
+        byte[] exportedBytes = tempOutputFile.bytes
+        logger.info("Read bytes from path (${exportedBytes.length}): ${pba(exportedBytes)}")
+
+        // Assert
+        try {
+            assert exportedBytes == plainBytes
+        } finally {
+            // Clean up
+            tempOutputFile.delete()
+        }
+    }
+
+    /**
+     * Simple test to ensure that when a subset of content is exported to a path, it is decrypted.
+     */
+    @Test
+    void testExportSubsetToPathShouldDecryptContent() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File longText = new File("src/test/resources/longtext.txt")
+        byte[] plainBytes = longText.bytes
+        logger.info("Writing \"${longText.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        final File tempOutputFile = new File("target/exportedContent")
+        final Path tempPath = tempOutputFile.toPath()
+
+        // Act
+        long offset = 100
+        long length = 50
+        logger.info("Exporting claim ${claim} (offset: ${offset}, length: ${length}) to output stream")
+        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset+length)] as byte[])}")
+
+        final long bytesWritten = repository.exportTo(claim, tempPath, false, offset, length)
+        logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into path ${tempPath}")
+
+        // Independently access the path and verify that the content is plain text
+        byte[] exportedBytes = tempOutputFile.bytes
+        logger.info("Read bytes from path (${exportedBytes.length}): ${pba(exportedBytes)}")
+
+        // Assert
+        try {
+            assert exportedBytes == plainBytes[offset..<(offset + length)] as byte[]
+            assert exportedBytes.length == length
+            assert bytesWritten == length
+        } finally {
+            // Clean up
+            tempOutputFile.delete()
+        }
+    }
+
+    // TODO: Test clone
+    // TODO: Test merge
+    // TODO: Test archiving & cleanup
 
     private KeyProvider createMockKeyProvider() {
         KeyProvider mockKeyProvider = [

@@ -123,7 +123,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
      * overridden because it delegates to this one.
      *
      * @param content the InputStream containing the desired content
-     * @param claim the ContentClaim to put the content into
+     * @param claim   the ContentClaim to put the content into
      * @return the number of bytes read
      * @throws IOException if there is a problem reading from the stream
      */
@@ -132,6 +132,68 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         try (final OutputStream out = write(claim)) {
             return StreamUtils.copy(content, out);
         }
+    }
+
+    /**
+     * Exports the content of the given claim to the given destination. Returns the number of bytes written. <strong>This method decrypts the encrypted content and writes it in plaintext.</strong>
+     *
+     * @param claim       to export from
+     * @param destination where to export data
+     * @return the size of the claim in bytes
+     * @throws IOException if an IO error occurs
+     */
+    @Override
+    public long exportTo(final ContentClaim claim, final OutputStream destination) throws IOException {
+        logger.warn("Exporting content from {} to output stream {}. This content will be decrypted", claim.getResourceClaim().getId(), destination);
+        return super.exportTo(claim, destination);
+    }
+
+    /**
+     * Exports a subset of the content of the given claim, starting at offset
+     * and copying length bytes, to the given destination. Returns the number of bytes written. <strong>This method decrypts the encrypted content and writes it in plaintext.</strong>
+     *
+     * @param claim       to export from
+     * @param destination where to export data
+     * @param offset      the offset into the claim at which the copy should begin
+     * @param length      the number of bytes to copy
+     * @return the size of the claim in bytes
+     * @throws IOException if an IO error occurs
+     */
+    @Override
+    public long exportTo(final ContentClaim claim, final OutputStream destination, final long offset, final long length) throws IOException {
+        logger.warn("Exporting content from {} (offset: {}, length: {}) to output stream {}. This content will be decrypted", claim.getResourceClaim().getId(), offset, length, destination);
+        return super.exportTo(claim, destination, offset, length);
+    }
+
+    /**
+     * Exports the content of the given claim to the given destination. Returns the number of bytes written. <strong>This method decrypts the encrypted content and writes it in plaintext.</strong>
+     *
+     * @param claim       to export from
+     * @param destination where to export data
+     * @return the size of the claim in bytes
+     * @throws IOException if an IO error occurs
+     */
+    @Override
+    public long exportTo(final ContentClaim claim, final Path destination, final boolean append) throws IOException {
+        logger.warn("Exporting content from {} to path {}. This content will be decrypted", claim.getResourceClaim().getId(), destination);
+        return super.exportTo(claim, destination, append);
+    }
+
+    /**
+     * Exports a subset of the content of the given claim, starting at offset
+     * and copying length bytes, to the given destination. <strong>This method decrypts the encrypted content and writes it in plaintext.</strong>
+     *
+     * @param claim       to export from
+     * @param destination where to export data
+     * @param offset      the offset into the claim at which the copy should begin
+     * @param length      the number of bytes to copy
+     * @return the number of bytes copied
+     * @throws IOException if an IO error occurs
+     */
+    @Override
+    public long exportTo(final ContentClaim claim, final Path destination, final boolean append, final long offset, final long length) throws IOException {
+        logger.warn("Exporting content from {} (offset: {}, length: {}) to path {}. This content will be decrypted", claim.getResourceClaim().getId(), offset, length, destination);
+        return super.exportTo(claim, destination, append, offset, length);
     }
 
     /**
@@ -265,8 +327,8 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         private final long startingOffset;
 
         EncryptedContentRepositoryOutputStream(StandardContentClaim scc,
-                                                      ByteCountingOutputStream byteCountingOutputStream,
-                                                      RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
+                                               ByteCountingOutputStream byteCountingOutputStream,
+                                               RepositoryObjectStreamEncryptor encryptor, String recordId, String keyId, long startingOffset) throws EncryptionException {
             super(scc, byteCountingOutputStream, 0);
             this.startingOffset = startingOffset;
 
@@ -305,7 +367,7 @@ public class EncryptedFileSystemRepository extends FileSystemRepository {
         /**
          * Internal method used to reduce duplication throughout code.
          *
-         * @param b the byte array to write
+         * @param b   the byte array to write
          * @param off the offset in bytes
          * @param len the length in bytes to write
          * @throws IOException if there is a problem writing the output
