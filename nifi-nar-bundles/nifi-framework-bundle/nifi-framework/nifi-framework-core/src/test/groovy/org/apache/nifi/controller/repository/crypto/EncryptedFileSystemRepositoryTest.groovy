@@ -177,11 +177,11 @@ class EncryptedFileSystemRepositoryTest {
         byte[] persistedBytes = new File(persistedFilePath).bytes
         logger.verify("Read bytes (${persistedBytes.length}): ${Hex.toHexString(persistedBytes)}")
 
-        // TODO: Parse out EncryptionMetadata and ciphertext
         logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) [${Hex.toHexString(persistedBytes)[0..<16]}...] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
         assert persistedBytes.length != plainBytes.length
         assert persistedBytes != plainBytes
-        // TODO: Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+
+        // Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
         byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainContent.length(), persistedBytes.length)
         logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) [${Hex.toHexString(persistedCipherBytes)}] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
         assert persistedCipherBytes != plainBytes
@@ -241,11 +241,12 @@ class EncryptedFileSystemRepositoryTest {
         byte[] persistedBytes = new File(persistedFilePath).bytes
         logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
 
-        // Parse out EncryptionMetadata and ciphertext
+        // Verify the persisted bytes are not the plain bytes
         logger.verify("Persisted bytes (encrypted) (${persistedBytes.length}) ${pba(persistedBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
         assert persistedBytes.length != plainBytes.length
         assert persistedBytes != plainBytes
-        // TODO: Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+
+        // Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
         byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainBytes.length, persistedBytes.length)
         logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) ${pba(persistedCipherBytes)} != plain bytes (${plainBytes.length}) ${pba(plainBytes)}")
         assert persistedCipherBytes != plainBytes
@@ -605,8 +606,6 @@ class EncryptedFileSystemRepositoryTest {
         assert retrievedContent == plainBytes
     }
 
-    // TODO: Test exportTo
-
     /**
      * Simple test to ensure that when content is exported to an OutputStream, it is decrypted.
      */
@@ -781,7 +780,85 @@ class EncryptedFileSystemRepositoryTest {
         }
     }
 
-    // TODO: Test clone
+    /**
+     * Simple test to clone encrypted content claim and ensure that the cloned encryption metadata accurately reflects the new claim and allows for decryption.
+     */
+    @Test
+    void testCloneShouldUpdateEncryptionMetadata() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim = repository.create(isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File textFile = new File("src/test/resources/longtext.txt")
+        byte[] plainBytes = textFile.bytes
+        logger.info("Writing \"${textFile.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        // Write to the content repository (encrypted)
+        final OutputStream out = repository.write(claim)
+        out.write(plainBytes)
+        out.flush()
+        out.close()
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedFilePath = getPersistedFilePath(claim)
+        logger.verify("Persisted file: ${persistedFilePath}")
+        byte[] persistedBytes = new File(persistedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Verify that the cipher bytes are the same length but not the same bytes (strip encryption metadata)
+        byte[] persistedCipherBytes = Arrays.copyOfRange(persistedBytes, persistedBytes.length - plainBytes.length, persistedBytes.length)
+        logger.verify("Persisted bytes (encrypted) (last ${persistedCipherBytes.length}) [${Hex.toHexString(persistedCipherBytes)}] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
+        assert persistedCipherBytes != plainBytes
+
+        // Extract the persisted encryption metadata
+        RepositoryObjectEncryptionMetadata metadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(persistedBytes))
+        logger.verify("Parsed encryption metadata: ${metadata}")
+        assert metadata.keyId == mockKeyProvider.getAvailableKeyIds().first()
+
+        // Act
+
+        // Clone the content claim
+        logger.info("Preparing to clone claim ${claim}")
+        ContentClaim clonedClaim = repository.clone(claim, isLossTolerant)
+        logger.info("Cloned claim ${claim} to ${clonedClaim}")
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedClonedFilePath = getPersistedFilePath(clonedClaim)
+        logger.verify("Persisted file: ${persistedClonedFilePath}")
+        int originalPersistedBytesLength = persistedBytes.length
+        persistedBytes = new File(persistedClonedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Verify that the cipher bytes are the same length but not the same bytes (skipping the initial persisted claim)
+        byte[] persistedClonedBytes = Arrays.copyOfRange(persistedBytes, originalPersistedBytesLength, persistedBytes.length)
+        logger.verify("Persisted cloned bytes (encrypted) (last ${persistedClonedBytes.length}) [${Hex.toHexString(persistedClonedBytes)}] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
+        assert persistedClonedBytes != plainBytes
+
+        // Extract the persisted encryption metadata for the cloned claim
+        RepositoryObjectEncryptionMetadata clonedMetadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(persistedClonedBytes))
+        logger.verify("Parsed cloned encryption metadata: ${clonedMetadata}")
+        assert clonedMetadata.keyId == mockKeyProvider.getAvailableKeyIds().first()
+
+        // Use the EFSR to decrypt the original claim content
+        final InputStream inputStream = repository.read(claim)
+        byte[] retrievedContent = inputStream.bytes
+        logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
+
+        // Use the EFSR to decrypt the cloned claim content
+        final InputStream clonedInputStream = repository.read(clonedClaim)
+        byte[] retrievedClonedContent = clonedInputStream.bytes
+        logger.info("Read cloned bytes via repository (${retrievedClonedContent.length}): ${pba(retrievedClonedContent)}")
+
+        // Assert
+        assert retrievedContent == plainBytes
+        assert retrievedClonedContent == plainBytes
+    }
+
     // TODO: Test merge
     // TODO: Test archiving & cleanup
 
