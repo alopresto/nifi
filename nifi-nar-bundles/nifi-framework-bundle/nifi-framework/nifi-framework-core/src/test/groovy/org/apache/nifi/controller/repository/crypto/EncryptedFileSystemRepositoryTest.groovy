@@ -766,7 +766,59 @@ class EncryptedFileSystemRepositoryTest {
         verifyClaimDecryption(mergedClaim, EXPECTED_MERGED_CONTENT.bytes, "merged")
     }
 
-    // TODO: Repeat test with source claims with different keys
+    /**
+     * Simple test to merge two encrypted content claims (each encrypted with a different key) and ensure that the merged encryption metadata accurately reflects the new claim and allows for decryption.
+     */
+    @Test
+    void testMergeWithDifferentSourceKeysShouldUpdateEncryptionMetadata() {
+        // Arrange
+        int claimCount = 2
+        def claims = createClaims(claimCount, isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = injectDefaultMockKeyProviderToRepository()
+
+        File textFile = new File("src/test/resources/longtext.txt")
+        byte[] plainBytes = textFile.bytes
+        String plainContent = textFile.text
+
+        // Split the long text into two claims
+        def content = splitTextIntoSections(plainContent, claimCount)
+
+        // Write each piece of content to the respective claim (using a different key)
+        writeContentToClaim(claims.first(), content.first().bytes)
+
+        // Set new active key
+        repository.setActiveKeyId(mockKeyProvider.availableKeyIds[1])
+
+        // Write the second piece of content
+        writeContentToClaim(claims.last(), content.last().bytes)
+
+        // Act
+
+        // Switch to a new key for the merged claim
+        repository.setActiveKeyId(mockKeyProvider.availableKeyIds.last())
+
+        // Merge the two content claims
+        logger.info("Preparing to merge claims ${claims}")
+        ContentClaim mergedClaim = repository.create(isLossTolerant)
+        // The header, footer, and demarcator are null in this case
+        long bytesWrittenDuringMerge = repository.merge(claims, mergedClaim, null, null, null)
+        logger.info("Merged ${claims.size()} claims (${bytesWrittenDuringMerge} bytes) to ${mergedClaim}")
+
+        // Assert
+
+        // Verify the bytes on disk are encrypted successfully
+        independentlyVerifyTextClaimEncryption(mergedClaim, plainBytes, mockKeyProvider, mockKeyProvider.availableKeyIds.last(), plainContent, "merged")
+
+        // Use the EFSR to decrypt the original claims content
+        claims.eachWithIndex { ContentClaim claim, int i ->
+            verifyClaimDecryption(claim, content[i].bytes)
+        }
+
+        // Use the EFSR to decrypt the merged claim content
+        verifyClaimDecryption(mergedClaim, plainBytes, "merged")
+    }
 
     // TODO: Test archiving & cleanup
 
