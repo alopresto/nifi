@@ -677,7 +677,8 @@ class EncryptedFileSystemRepositoryTest {
     @Test
     void testMergeShouldUpdateEncryptionMetadata() {
         // Arrange
-        def claims = createClaims(2, isLossTolerant)
+        int claimCount = 2
+        def claims = createClaims(claimCount, isLossTolerant)
 
         // Set up mock key provider and inject into repository
         KeyProvider mockKeyProvider = injectDefaultMockKeyProviderToRepository()
@@ -687,10 +688,7 @@ class EncryptedFileSystemRepositoryTest {
         String plainContent = textFile.text
 
         // Split the long text into two claims
-        int contentHalfLength = plainContent.size().intdiv(2)
-        String content1 = plainContent[0..<contentHalfLength]
-        String content2 = plainContent[contentHalfLength..-1]
-        def content = [content1, content2]
+        def content = splitTextIntoSections(plainContent, claimCount)
 
         // Write each piece of content to the respective claim
         writeContentToClaims(formClaimMap(claims, content))
@@ -718,10 +716,79 @@ class EncryptedFileSystemRepositoryTest {
         verifyClaimDecryption(mergedClaim, plainBytes, "merged")
     }
 
-    // TODO: Repeat test with source claims with header, footer, and demarcator to determine if/how they are encrypted
+    /**
+     * Simple test to merge encrypted content claims and ensure that the merged encryption metadata accurately reflects the new claim and allows for decryption, including the header, demarcator, and footer.
+     */
+    @Test
+    void testMergeWithMarkersShouldUpdateEncryptionMetadata() {
+        // Arrange
+        int claimCount = 4
+        def claims = createClaims(claimCount, isLossTolerant)
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = injectDefaultMockKeyProviderToRepository()
+
+        File textFile = new File("src/test/resources/longtext.txt")
+        String plainContent = textFile.text
+
+        // Split the long text into two claims
+        List<String> content = splitTextIntoSections(plainContent, claimCount)
+
+        // Write each piece of content to the respective claim
+        writeContentToClaims(formClaimMap(claims, content))
+
+        // Define the markers
+        String header = "---Header---\n"
+        String demarcator = "\n---Boundary---\n"
+        String footer = "\n---Footer---"
+        final String EXPECTED_MERGED_CONTENT = header + content.join(demarcator) + footer
+
+        // Act
+
+        // Merge the content claims
+        logger.info("Preparing to merge claims ${claims}")
+        ContentClaim mergedClaim = repository.create(isLossTolerant)
+        // The header, footer, and demarcator are populated in this case
+        long bytesWrittenDuringMerge = repository.merge(claims, mergedClaim, header.bytes, footer.bytes, demarcator.bytes)
+        logger.info("Merged ${claims.size()} claims (${bytesWrittenDuringMerge} bytes) to ${mergedClaim}")
+
+        // Assert
+
+        // Verify the bytes on disk are encrypted successfully
+        independentlyVerifyTextClaimEncryption(mergedClaim, EXPECTED_MERGED_CONTENT.bytes, mockKeyProvider, mockKeyProvider.availableKeyIds.first(), EXPECTED_MERGED_CONTENT, "merged")
+
+        // Use the EFSR to decrypt the original claims content
+        claims.eachWithIndex { ContentClaim claim, int i ->
+            verifyClaimDecryption(claim, content[i].bytes)
+        }
+
+        // Use the EFSR to decrypt the merged claim content
+        verifyClaimDecryption(mergedClaim, EXPECTED_MERGED_CONTENT.bytes, "merged")
+    }
+
     // TODO: Repeat test with source claims with different keys
 
     // TODO: Test archiving & cleanup
+
+    /**
+     * Returns a {@code List<String>} with length {@code N}, where N is the number of elements requested. Each element
+     * will be roughly the same size.
+     *
+     * @param plainContent the original String content
+     * @param requestedElements the number of pieces of content to return
+     * @return a list containing {@code requestedElements} elements
+     */
+    private static List<String> splitTextIntoSections(String plainContent, int requestedElements = 2) {
+        Number contentSectionLength = plainContent.size().intdiv(requestedElements)
+        def content = []
+        int start, end = 0
+        requestedElements.times { int i ->
+            start = i * contentSectionLength
+            end = (i + 1) * contentSectionLength
+            content << plainContent[start..<end]
+        }
+        content
+    }
 
     /**
      * Helper method to configure the default mock {@link KeyProvider}, inject it into the
