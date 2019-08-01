@@ -672,7 +672,7 @@ class EncryptedFileSystemRepositoryTest {
         long offset = 100
         long length = 50
         logger.info("Exporting claim ${claim} (offset: ${offset}, length: ${length}) to output stream")
-        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset+length)] as byte[])}")
+        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset + length)] as byte[])}")
 
         final long bytesWritten = repository.exportTo(claim, outputStream, offset, length)
         logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into OutputStream")
@@ -760,7 +760,7 @@ class EncryptedFileSystemRepositoryTest {
         long offset = 100
         long length = 50
         logger.info("Exporting claim ${claim} (offset: ${offset}, length: ${length}) to output stream")
-        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset+length)] as byte[])}")
+        logger.info("Expecting these bytes from plain content: ${pba(plainBytes[offset..<(offset + length)] as byte[])}")
 
         final long bytesWritten = repository.exportTo(claim, tempPath, false, offset, length)
         logger.info("Wrote ${bytesWritten} bytes from ${claim.resourceClaim.id} into path ${tempPath}")
@@ -860,6 +860,107 @@ class EncryptedFileSystemRepositoryTest {
     }
 
     // TODO: Test merge
+
+    /**
+     * Simple test to merge two encrypted content claims and ensure that the merged encryption metadata accurately reflects the new claim and allows for decryption.
+     */
+    @Test
+    void testMergeShouldUpdateEncryptionMetadata() {
+        // Arrange
+        boolean isLossTolerant = false
+        final ContentClaim claim1 = repository.create(isLossTolerant)
+        final ContentClaim claim2 = repository.create(isLossTolerant)
+        def claims = [claim1, claim2]
+
+        // Set up mock key provider and inject into repository
+        KeyProvider mockKeyProvider = createMockKeyProvider()
+        repository.keyProvider = mockKeyProvider
+        repository.setActiveKeyId(mockKeyProvider.getAvailableKeyIds().first())
+
+        File textFile = new File("src/test/resources/longtext.txt")
+        byte[] plainBytes = textFile.bytes
+        String plainContent = textFile.text
+        int contentHalfLength = plainContent.size().intdiv(2)
+        String content1 = plainContent[0..<contentHalfLength]
+        String content2 = plainContent[contentHalfLength..-1]
+        def content = [content1, content2]
+
+        // TODO: Use small content for ease of decryption analysis
+//        content = ["This is the first piece of content. ", "This is the second piece of content. "]
+//        plainContent = content.join("")
+//        plainBytes = plainContent.bytes
+
+        logger.info("Writing \"${textFile.name}\" (${plainBytes.length}): ${pba(plainBytes)}")
+
+        // Write each piece of content to the respective claim
+        claims.eachWithIndex { ContentClaim claim, int i ->
+            // Write to the content repository (encrypted)
+            final OutputStream out = repository.write(claim)
+            out.write(content[i].bytes)
+            out.flush()
+            out.close()
+        }
+
+        // Act
+
+        // Merge the two content claims
+        logger.info("Preparing to merge claims ${claims}")
+        ContentClaim mergedClaim = repository.create(isLossTolerant)
+        // The header, footer, and demarcator are null in this case
+        long bytesWrittenDuringMerge = repository.merge(claims, mergedClaim, null, null, null)
+        logger.info("Merged ${claims.size()} claims (${bytesWrittenDuringMerge} bytes) to ${mergedClaim}")
+
+        // Independently access the persisted file and verify that the content is encrypted
+        String persistedMergedFilePath = getPersistedFilePath(mergedClaim)
+        logger.verify("Persisted file: ${persistedMergedFilePath}")
+        def persistedBytes = new File(persistedMergedFilePath).bytes
+        logger.verify("Read bytes (${persistedBytes.length}): ${pba(persistedBytes)}")
+
+        // Extract the merged claim (using the claim offset)
+        byte[] persistedMergedBytes = Arrays.copyOfRange(persistedBytes, mergedClaim.offset as int, persistedBytes.length)
+        logger.verify("Persisted merged bytes (encrypted) (last ${persistedMergedBytes.length}) [${Hex.toHexString(persistedMergedBytes)}] != plain bytes (${plainBytes.length}) [${Hex.toHexString(plainBytes)}]")
+        assert persistedMergedBytes != plainBytes
+
+        // Extract the persisted encryption metadata for the merged claim
+        RepositoryObjectEncryptionMetadata mergedMetadata = RepositoryEncryptorUtils.extractEncryptionMetadata(new ByteArrayInputStream(persistedMergedBytes))
+        logger.verify("Parsed merged encryption metadata: ${mergedMetadata}")
+        assert mergedMetadata.keyId == mockKeyProvider.getAvailableKeyIds().first()
+
+        // Ensure the persisted bytes are encrypted
+        Cipher verificationCipher = RepositoryEncryptorUtils.initCipher(mockCipherProvider, EncryptionMethod.AES_CTR, Cipher.DECRYPT_MODE, mockKeyProvider.getKey(mergedMetadata.keyId), mergedMetadata.ivBytes)
+        logger.verify("Created cipher: ${verificationCipher}")
+
+        // Skip the encryption metadata
+        byte[] mergedCipherBytes = RepositoryEncryptorUtils.extractCipherBytes(persistedMergedBytes, mergedMetadata)
+        CipherInputStream verificationCipherStream = new CipherInputStream(new ByteArrayInputStream(mergedCipherBytes), verificationCipher)
+
+        // Use #bytes rather than #read(byte[]) because read only gets 512 bytes at a time (the internal buffer size)
+        byte[] recoveredBytes = verificationCipherStream.bytes
+        logger.verify("Decrypted bytes (${recoveredBytes.length}): ${Hex.toHexString(recoveredBytes)} - ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
+        assert new String(recoveredBytes, StandardCharsets.UTF_8) == plainContent
+
+        // Use the EFSR to decrypt the original claims content
+        claims.eachWithIndex { ContentClaim claim, int i ->
+            final InputStream inputStream = repository.read(claim)
+            byte[] retrievedContent = inputStream.bytes
+            logger.info("Read bytes via repository (${retrievedContent.length}): ${pba(retrievedContent)}")
+
+            // Assert
+            assert retrievedContent == content[i].bytes
+        }
+
+        // Use the EFSR to decrypt the merged claim content
+        final InputStream mergedInputStream = repository.read(mergedClaim)
+        byte[] retrievedMergedContent = mergedInputStream.bytes
+        logger.info("Read merged bytes via repository (${retrievedMergedContent.length}): ${pba(retrievedMergedContent)}")
+
+        // Assert
+        assert retrievedMergedContent == plainBytes
+    }
+
+    // TODO: Repeat test with source claims with header, footer, and demarcator to determine if/how they are encrypted
+    // TODO: Repeat test with source claims with different keys
+
     // TODO: Test archiving & cleanup
 
     private KeyProvider createMockKeyProvider() {
