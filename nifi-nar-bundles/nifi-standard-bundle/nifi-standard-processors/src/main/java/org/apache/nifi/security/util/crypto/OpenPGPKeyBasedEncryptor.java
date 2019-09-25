@@ -101,7 +101,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
      * This is used in the EncryptContent custom validation to check if the passphrase can extract a private key from the secret key ring. After BC was upgraded from 1.46 to 1.53, the API changed
      * so this is performed differently but the functionality is equivalent.
      *
-     * @param provider the provider name
+     * @param provider          the provider name
      * @param secretKeyringFile the file path to the keyring
      * @param passphrase        the passphrase
      * @return true if the passphrase can successfully extract any private key
@@ -180,9 +180,8 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
 
         // Read in from the public keyring file
         try (FileInputStream keyInputStream = new FileInputStream(publicKeyringFile)) {
-
             // Form the PublicKeyRing collection (1.53 way with fingerprint calculator)
-            PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(keyInputStream, new BcKeyFingerprintCalculator());
+            PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
 
             // Iterate over all public keyrings
             Iterator<PGPPublicKeyRing> iter = pgpPublicKeyRingCollection.getKeyRings();
@@ -205,6 +204,56 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                     }
                 }
             }
+        }
+
+        // If this point is reached, no public key could be extracted with the given userId
+        throw new PGPException("Could not find a public key with the given userId");
+    }
+
+    /*
+     * Get the DSA public key for a specific user id from a keyring.
+     */
+    @SuppressWarnings("rawtypes")
+    public static PGPPublicKey getDSAPublicKey(String userId, String publicKeyringFile) throws IOException, PGPException {
+        // TODO: Reevaluate the mechanism for executing this task as performance can suffer here and only a specific key needs to be validated
+
+        // TODO: Explores new approach to reading keyring and retrieving key
+
+        // Read in from the public keyring file
+        FileInputStream keyInputStream = new FileInputStream(publicKeyringFile);
+
+        // Form the PublicKeyRing collection (1.53 way with fingerprint calculator)
+        try {
+            PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
+
+            // Iterate over all public keyrings
+            logger.debug("Read a public keyring collection containing {} keyrings", pgpPublicKeyRingCollection.size());
+            Iterator<PGPPublicKeyRing> iter = pgpPublicKeyRingCollection.getKeyRings();
+            PGPPublicKeyRing keyRing;
+            while (iter.hasNext()) {
+                keyRing = iter.next();
+
+                // Iterate over each public key in this keyring
+                Iterator<PGPPublicKey> keyIter = keyRing.getPublicKeys();
+                while (keyIter.hasNext()) {
+                    PGPPublicKey publicKey = keyIter.next();
+
+                    // Iterate over each userId attached to the public key
+                    Iterator userIdIterator = publicKey.getUserIDs();
+                    while (userIdIterator.hasNext()) {
+                        String id = (String) userIdIterator.next();
+                        if (userId.equalsIgnoreCase(id)) {
+                            return publicKey;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Everything from the constructor to iterations can throw an exception and they are often vague
+            logger.error("Encountered an exception reading from the key ring collection: ", e);
+        } finally {
+            // Close the stream
+            keyInputStream.close();
         }
 
         // If this point is reached, no public key could be extracted with the given userId
