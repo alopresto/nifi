@@ -32,6 +32,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
 import org.apache.nifi.processors.standard.EncryptContent;
 import org.apache.nifi.processors.standard.EncryptContent.Encryptor;
+import org.apache.nifi.security.kms.CryptoUtils;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.openpgp.PGPCompressedData;
 import org.bouncycastle.openpgp.PGPCompressedDataGenerator;
@@ -59,6 +60,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyDecryptorBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePublicKeyDataDecryptorFactoryBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePublicKeyKeyEncryptionMethodGenerator;
+import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -214,7 +216,7 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
      * Get the DSA public key for a specific user id from a keyring.
      */
     @SuppressWarnings("rawtypes")
-    public static PGPPublicKey getDSAPublicKey(String userId, String publicKeyringFile) throws IOException, PGPException {
+    public static PGPPublicKey getDSAPublicKey(String identifier, String publicKeyringFile) throws IOException, PGPException {
         // TODO: Reevaluate the mechanism for executing this task as performance can suffer here and only a specific key needs to be validated
 
         // TODO: Explores new approach to reading keyring and retrieving key
@@ -222,42 +224,130 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
         // Read in from the public keyring file
         FileInputStream keyInputStream = new FileInputStream(publicKeyringFile);
 
-        // Form the PublicKeyRing collection (1.53 way with fingerprint calculator)
-        try {
-            PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
+        boolean isArmoredPublicKey = publicKeyringFile.endsWith(".asc");
 
-            // Iterate over all public keyrings
-            logger.debug("Read a public keyring collection containing {} keyrings", pgpPublicKeyRingCollection.size());
-            Iterator<PGPPublicKeyRing> iter = pgpPublicKeyRingCollection.getKeyRings();
-            PGPPublicKeyRing keyRing;
-            while (iter.hasNext()) {
-                keyRing = iter.next();
+        if (isArmoredPublicKey) {
+            // Try to read the public key directly
+            try {
+                PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
 
-                // Iterate over each public key in this keyring
-                Iterator<PGPPublicKey> keyIter = keyRing.getPublicKeys();
-                while (keyIter.hasNext()) {
-                    PGPPublicKey publicKey = keyIter.next();
+                // Check if the keyring contains the specified key by user ID or fingerprint
+                if (isFingerprint(identifier)) {
+                    final String fingerprint = formatFingerprint(identifier);
+                    logger.debug("Identifier {} matched fingerprint format {}", identifier, fingerprint);
+                    final byte[] fingerprintBytes = toFingerprint(identifier);
+                    if (pgpPublicKeyRingCollection.contains(fingerprintBytes)) {
+                        logger.debug("Key ring collection contains key with fingerprint {}", fingerprint);
+                        return pgpPublicKeyRingCollection.getPublicKey(fingerprintBytes);
+                    } else {
+                        logger.error("Key ring collection does not contain key with fingerprint {}", fingerprint);
+                    }
+                } else {
+                    // Iterate over all public keyrings to find by user ID
+                    logger.debug("Read a public keyring collection containing {} keyrings", pgpPublicKeyRingCollection.size());
+                    Iterator<PGPPublicKeyRing> iter = pgpPublicKeyRingCollection.getKeyRings();
+                    PGPPublicKeyRing keyRing;
+                    while (iter.hasNext()) {
+                        keyRing = iter.next();
 
-                    // Iterate over each userId attached to the public key
-                    Iterator userIdIterator = publicKey.getUserIDs();
-                    while (userIdIterator.hasNext()) {
-                        String id = (String) userIdIterator.next();
-                        if (userId.equalsIgnoreCase(id)) {
-                            return publicKey;
+                        // Iterate over each public key in this keyring
+                        Iterator<PGPPublicKey> keyIter = keyRing.getPublicKeys();
+                        while (keyIter.hasNext()) {
+                            PGPPublicKey publicKey = keyIter.next();
+
+                            // Iterate over each userId attached to the public key
+                            Iterator userIdIterator = publicKey.getUserIDs();
+                            while (userIdIterator.hasNext()) {
+                                String id = (String) userIdIterator.next();
+                                if (identifier.equalsIgnoreCase(id)) {
+                                    return publicKey;
+                                }
+                            }
                         }
                     }
                 }
+            } catch (Exception e) {
+                // Everything from the constructor to iterations can throw an exception and they are often vague
+                logger.error("Encountered an exception reading from the key ring collection: ", e);
+            } finally {
+                // Close the stream
+                keyInputStream.close();
             }
-        } catch (Exception e) {
-            // Everything from the constructor to iterations can throw an exception and they are often vague
-            logger.error("Encountered an exception reading from the key ring collection: ", e);
-        } finally {
-            // Close the stream
-            keyInputStream.close();
+        } else {
+            // Try to parse the key ring collection
+
+            // Form the PublicKeyRing collection (1.53 way with fingerprint calculator)
+            try {
+                PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
+
+                // Iterate over all public keyrings
+                logger.debug("Read a public keyring collection containing {} keyrings", pgpPublicKeyRingCollection.size());
+                Iterator<PGPPublicKeyRing> iter = pgpPublicKeyRingCollection.getKeyRings();
+                PGPPublicKeyRing keyRing;
+                while (iter.hasNext()) {
+                    keyRing = iter.next();
+
+                    // Iterate over each public key in this keyring
+                    Iterator<PGPPublicKey> keyIter = keyRing.getPublicKeys();
+                    while (keyIter.hasNext()) {
+                        PGPPublicKey publicKey = keyIter.next();
+
+                        // Iterate over each userId attached to the public key
+                        Iterator userIdIterator = publicKey.getUserIDs();
+                        while (userIdIterator.hasNext()) {
+                            String id = (String) userIdIterator.next();
+                            if (identifier.equalsIgnoreCase(id)) {
+                                return publicKey;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Everything from the constructor to iterations can throw an exception and they are often vague
+                logger.error("Encountered an exception reading from the key ring collection: ", e);
+            } finally {
+                // Close the stream
+                keyInputStream.close();
+            }
         }
 
         // If this point is reached, no public key could be extracted with the given userId
-        throw new PGPException("Could not find a public key with the given userId");
+        throw new PGPException("Could not find a public key with the given identifier");
+    }
+
+    /**
+     * Returns the fingerprint as a {@code byte[]}.
+     *
+     * @param identifier
+     * @return
+     */
+    private static byte[] toFingerprint(String identifier) {
+        return Hex.decode(formatFingerprint(identifier));
+    }
+
+    /**
+     * Trims leading {@code 0x} if present, removes whitespace throughout.
+     *
+     * @param identifier the key identifier
+     * @return the formatted fingerprint
+     */
+    private static String formatFingerprint(String identifier) {
+        return identifier.replaceAll("(0[xX]|\\s)", "");
+    }
+
+    /**
+     * Returns {@code true} if the input is usable as a fingerprint. The fingerprint format
+     * can be 0xABCDEF01 or 0123 4567.... Other than the leading {@code 0x}, all characters
+     * must be hexadecimal digits, the length should be (maybe an even) number of between 8
+     * and 40 characters. Common lengths are 8, 16, and 40 characters, sometimes with spaces
+     * inserted.
+     *
+     * @param identifier the user ID, fingerprint, short ID, or long ID to check
+     * @return true if this is a (whole or segment of a) key fingerprint
+     */
+    private static boolean isFingerprint(String identifier) {
+        String trimmedString = formatFingerprint(identifier);
+        return CryptoUtils.isHexString(trimmedString) && trimmedString.length() >= 8 && trimmedString.length() <= 40;
     }
 
     private static class OpenPGPDecryptCallback implements StreamCallback {

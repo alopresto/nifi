@@ -75,7 +75,9 @@ class OpenPGPKeyBasedEncryptorGroovyTest {
 
     private static final String DSA_SECRET_KEYRING_PATH = "src/test/resources/TestEncryptContent/dsa-pubring.gpg"
     private static final String DSA_PUBLIC_KEYRING_PATH = "src/test/resources/TestEncryptContent/dsa-pubring.gpg"
+    private static final String DSA_PUBLIC_KEY_ARMORED_PATH = "src/test/resources/TestEncryptContent/dsa-public.asc"
     private static final String DSA_USER_ID = "NiFi Test DSA/EG Key Pair (Unit test resource for OpenPGPKeyBasedEncryptor) <test@nifi.apache.org>"
+    private static final String DSA_FINGERPRINT_SHORT = "9a 51 95 f4 f2 a4 a8 83"
 
     private static final String DSA_SMALL_PUBLIC_KEYRING_PATH = "src/test/resources/TestEncryptContent/dsa-small-pubring.gpg"
     private static final String DSA_SMALL_USER_ID = "NiFi Test DSA/EG Key Pair (Unit test resource for OpenPGPKeyBasedEncryptor - 1024 bytes) <test@nifi.apache.org>"
@@ -136,6 +138,42 @@ class OpenPGPKeyBasedEncryptorGroovyTest {
     void testShouldRetrieveElGamalSubKeyByUserId() throws Exception {
 
     }
+
+    @Test
+    void testShouldPerformEncryptionWithExportedArmoredPublicDSAKeyByUserId() throws Exception {
+        // Arrange
+        String userId = DSA_USER_ID
+        String keyPath = DSA_PUBLIC_KEY_ARMORED_PATH
+
+        // Act
+        PGPPublicKey publicKey = OpenPGPKeyBasedEncryptor.getDSAPublicKey(userId, keyPath)
+        logger.info("Read public key ${publicKey.dump()} for user ID: ${userId}")
+
+        // Assert
+        assert publicKey.algorithm == PGPPublicKey.DSA
+    }
+
+    @Test
+    void testShouldPerformEncryptionWithExportedArmoredPublicDSAKeyByFingerprint() throws Exception {
+        // Arrange
+        String fingerprint = DSA_FINGERPRINT_SHORT
+        String keyPath = DSA_PUBLIC_KEY_ARMORED_PATH
+
+        // Act
+        PGPPublicKey publicKey = OpenPGPKeyBasedEncryptor.getDSAPublicKey(fingerprint, keyPath)
+        logger.info("Read public key ${publicKey.dump()} for fingerprint: ${fingerprint}")
+
+        // Assert
+        assert publicKey.algorithm == PGPPublicKey.DSA
+    }
+
+    @Test
+    void testShouldPerformEncryptionWithExportedBinaryPublicDSAKey() throws Exception {
+
+    }
+
+    // TODO: Test various fingerprint formats (positive flow, negative flow, short ID, long ID, full, caps, spacing, leading indicator, etc.)
+    // TODO: Test various user ID formats (full uid, name, email, caps, etc.)
 
     @Test
     void testShouldReadDSAKeyRing() throws Exception {
