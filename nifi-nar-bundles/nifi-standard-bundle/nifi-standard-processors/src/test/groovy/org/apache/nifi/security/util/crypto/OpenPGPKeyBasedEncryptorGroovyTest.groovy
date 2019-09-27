@@ -26,6 +26,7 @@ import org.bouncycastle.openpgp.PGPEncryptedData
 import org.bouncycastle.openpgp.PGPKeyPair
 import org.bouncycastle.openpgp.PGPKeyRingGenerator
 import org.bouncycastle.openpgp.PGPPublicKey
+import org.bouncycastle.openpgp.PGPPublicKeyRing
 import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
 import org.bouncycastle.openpgp.PGPSignature
 import org.bouncycastle.openpgp.PGPUtil
@@ -78,6 +79,10 @@ class OpenPGPKeyBasedEncryptorGroovyTest {
     private static final String DSA_PUBLIC_KEY_ARMORED_PATH = "src/test/resources/TestEncryptContent/dsa-public.asc"
     private static final String DSA_USER_ID = "NiFi Test DSA/EG Key Pair (Unit test resource for OpenPGPKeyBasedEncryptor) <test@nifi.apache.org>"
     private static final String DSA_FINGERPRINT_SHORT = "9a 51 95 f4 f2 a4 a8 83"
+
+    // Determined via Groovy, not visible through gpg command-line tools
+    private static final String EL_GAMAL_SUB_KEY_FINGERPRINT = "cf27d9cfe0d4147b45742253d159c672fff2cb9d"
+    private static final String EL_GAMAL_SUB_KEY_SHORT_ID = EL_GAMAL_SUB_KEY_FINGERPRINT[-8..-1]
 
     private static final String DSA_SMALL_PUBLIC_KEYRING_PATH = "src/test/resources/TestEncryptContent/dsa-small-pubring.gpg"
     private static final String DSA_SMALL_USER_ID = "NiFi Test DSA/EG Key Pair (Unit test resource for OpenPGPKeyBasedEncryptor - 1024 bytes) <test@nifi.apache.org>"
@@ -154,7 +159,7 @@ class OpenPGPKeyBasedEncryptorGroovyTest {
     }
 
     @Test
-    void testShouldPerformEncryptionWithExportedArmoredPublicDSAKeyByFingerprint() throws Exception {
+    void testShouldFindKeyWithExportedArmoredPublicDSAKeyByFingerprint() throws Exception {
         // Arrange
         String fingerprint = DSA_FINGERPRINT_SHORT
         String keyPath = DSA_PUBLIC_KEY_ARMORED_PATH
@@ -170,6 +175,85 @@ class OpenPGPKeyBasedEncryptorGroovyTest {
     @Test
     void testShouldPerformEncryptionWithExportedBinaryPublicDSAKey() throws Exception {
 
+    }
+
+    @Test
+    void testShouldFindMatchingKeysByPartialFingerprint() throws Exception {
+        // Arrange
+        String fingerprint = DSA_FINGERPRINT_SHORT
+        String keyPath = DSA_PUBLIC_KEY_ARMORED_PATH
+        FileInputStream keyInputStream = new FileInputStream(keyPath)
+        PGPPublicKeyRingCollection krc = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator())
+        Iterator<PGPPublicKeyRing> keyRingIterator = krc.getKeyRings()
+        PGPPublicKeyRing keyRing = keyRingIterator.next()
+        logger.debug("Only one key ring: ${keyRing.dump()}")
+
+        // Act
+        def matchedKeys = OpenPGPKeyBasedEncryptor.findKeysByPartialFingerprintMatch(fingerprint, keyRing)
+
+        assert matchedKeys.size() > 0
+        PGPPublicKey publicKey = matchedKeys.first()
+        logger.info("Read public key ${publicKey.dump()} for fingerprint: ${fingerprint}")
+
+        // Assert
+        assert publicKey.algorithm == PGPPublicKey.DSA
+    }
+
+    @Test
+    void testShouldFindElGamalSubKeyByPartialFingerprint() throws Exception {
+        // Arrange
+        String fingerprint = EL_GAMAL_SUB_KEY_SHORT_ID
+        String keyPath = DSA_PUBLIC_KEY_ARMORED_PATH
+        FileInputStream keyInputStream = new FileInputStream(keyPath)
+        PGPPublicKeyRingCollection krc = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator())
+        Iterator<PGPPublicKeyRing> keyRingIterator = krc.getKeyRings()
+        PGPPublicKeyRing keyRing = keyRingIterator.next()
+        logger.debug("Only one key ring: ${keyRing.dump()}")
+
+        // Act
+        def matchedKeys = OpenPGPKeyBasedEncryptor.findKeysByPartialFingerprintMatch(fingerprint, keyRing)
+
+        assert matchedKeys.size() > 0
+        PGPPublicKey publicKey = matchedKeys.first()
+        logger.info("Read public key ${publicKey.dump()} for fingerprint: ${fingerprint}")
+
+        // Assert
+        assert publicKey.algorithm in [PGPPublicKey.ELGAMAL_ENCRYPT, PGPPublicKey.ELGAMAL_GENERAL]
+    }
+
+    // TODO: Should be able to specify key type (via enum) in search function
+
+    @Test
+    void testFingerprintShouldEndWith() throws Exception {
+        // Arrange
+        final byte[] FULL_FINGERPRINT = OpenPGPKeyBasedEncryptor.toFingerprint("0011 2233 4455 6677 8899 AABB CCDD EEFF 0123 4567")
+        logger.info("Full fingerprint: ${Hex.encodeHexString(FULL_FINGERPRINT)}")
+
+        // Act
+        (0..FULL_FINGERPRINT.length - 8).each { int l ->
+            def keyIdentifier = FULL_FINGERPRINT[l..-1] as byte[]
+            logger.info("Testing ${Hex.encodeHexString(FULL_FINGERPRINT)} (${FULL_FINGERPRINT.length}) ends with ${Hex.encodeHexString(keyIdentifier)} (${keyIdentifier.length}})")
+
+            // Assert
+            assert OpenPGPKeyBasedEncryptor.fingerprintEndsWith(FULL_FINGERPRINT, keyIdentifier)
+        }
+    }
+
+    @Test
+    void testVerifyFingerprintShouldNotEndWith() throws Exception {
+        // Arrange
+        final byte[] FULL_FINGERPRINT = OpenPGPKeyBasedEncryptor.toFingerprint("0011 2233 4455 6677 8899 AABB CCDD EEFF 0123 4567")
+        logger.info("Full fingerprint: ${Hex.encodeHexString(FULL_FINGERPRINT)}")
+
+        // Act
+        (0..FULL_FINGERPRINT.length - 8).each { int l ->
+            def keyIdentifier = FULL_FINGERPRINT[l..-1] as byte[]
+            keyIdentifier[-1] = ~keyIdentifier[-1] as byte
+            logger.info("Testing ${Hex.encodeHexString(FULL_FINGERPRINT)} (${FULL_FINGERPRINT.length}) ends with ${Hex.encodeHexString(keyIdentifier)} (${keyIdentifier.length})")
+
+            // Assert
+            assert !OpenPGPKeyBasedEncryptor.fingerprintEndsWith(FULL_FINGERPRINT, keyIdentifier)
+        }
     }
 
     // TODO: Test various fingerprint formats (positive flow, negative flow, short ID, long ID, full, caps, spacing, leading indicator, etc.)

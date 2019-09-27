@@ -25,8 +25,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.NoSuchProviderException;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.zip.Deflater;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
@@ -232,15 +236,35 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
                 PGPPublicKeyRingCollection pgpPublicKeyRingCollection = new PGPPublicKeyRingCollection(PGPUtil.getDecoderStream(keyInputStream), new BcKeyFingerprintCalculator());
 
                 // Check if the keyring contains the specified key by user ID or fingerprint
-                if (isFingerprint(identifier)) {
-                    final String fingerprint = formatFingerprint(identifier);
-                    logger.debug("Identifier {} matched fingerprint format {}", identifier, fingerprint);
-                    final byte[] fingerprintBytes = toFingerprint(identifier);
-                    if (pgpPublicKeyRingCollection.contains(fingerprintBytes)) {
-                        logger.debug("Key ring collection contains key with fingerprint {}", fingerprint);
-                        return pgpPublicKeyRingCollection.getPublicKey(fingerprintBytes);
+                if (isHexIdentifier(identifier)) {
+                    String hexIdentifier = formatHexIdentifier(identifier);
+                    logger.debug("The provided identifier {} is a valid hex identifier {}", identifier, hexIdentifier);
+
+                    // Check if this is the complete fingerprint or just a portion (short/long ID)
+                    if (isFingerprint(hexIdentifier)) {
+                        logger.debug("Identifier {} matched fingerprint format {}", identifier, hexIdentifier);
+                        final byte[] fingerprintBytes = toFingerprint(identifier);
+                        if (pgpPublicKeyRingCollection.contains(fingerprintBytes)) {
+                            logger.debug("Key ring collection contains key with fingerprint {}", hexIdentifier);
+                            return pgpPublicKeyRingCollection.getPublicKey(fingerprintBytes);
+                        } else {
+                            logger.error("Key ring collection does not contain key with fingerprint {}", hexIdentifier);
+                        }
                     } else {
-                        logger.error("Key ring collection does not contain key with fingerprint {}", fingerprint);
+                        // The provided value is a short or long ID (last 4 or 8 bytes of the fingerprint)
+                        Iterator<PGPPublicKeyRing> keyRingIterator = pgpPublicKeyRingCollection.getKeyRings();
+                        while (keyRingIterator.hasNext()) {
+                            PGPPublicKeyRing keyRing = keyRingIterator.next();
+                            logger.debug("Examining public key ring {}", keyRing);
+                            List<PGPPublicKey> keys = findKeysByPartialFingerprintMatch(hexIdentifier, keyRing);
+
+                            logger.debug("Found {} keys that match the key identifier {}", keys.size(), hexIdentifier);
+
+                            if (keys.size() > 0) {
+                                logger.debug("Returning public key with fingerprint {}", formatHexIdentifier(Hex.toHexString(keys.get(0).getFingerprint())));
+                                return keys.get(0);
+                            }
+                        }
                     }
                 } else {
                     // Iterate over all public keyrings to find by user ID
@@ -315,14 +339,54 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
         throw new PGPException("Could not find a public key with the given identifier");
     }
 
+    public static List<PGPPublicKey> findKeysByPartialFingerprintMatch(String hexIdentifier, PGPPublicKeyRing keyRing) {
+        // Form the iterator into a list for easier searching (performance impact but clearer syntax)
+        Iterator<PGPPublicKey> keyIterator = keyRing.getPublicKeys();
+        List<PGPPublicKey> keyList = new ArrayList<>();
+        keyIterator.forEachRemaining(keyList::add);
+
+        // Find all keys with fingerprints that end in the identifier
+        final byte[] keyIdentifierBytes = toFingerprint(hexIdentifier);
+        return keyList.stream()
+                .filter(k -> fingerprintEndsWith(k.getFingerprint(), keyIdentifierBytes))
+                .collect(Collectors.toList());
+    }
+
     /**
-     * Returns the fingerprint as a {@code byte[]}.
+     * Returns {@code true} if the fingerprint ends with the provided key identifier. Requires at least 4 bytes for both parameters.
      *
-     * @param identifier
-     * @return
+     * @param fingerprint        the key fingerprint
+     * @param keyIdentifierBytes the short or long ID
+     * @return true if the fingerprint ends with the key identifier
      */
-    private static byte[] toFingerprint(String identifier) {
-        return Hex.decode(formatFingerprint(identifier));
+    static boolean fingerprintEndsWith(byte[] fingerprint, byte[] keyIdentifierBytes) {
+        if (fingerprint.length < 4 || keyIdentifierBytes.length < 4) {
+            throw new IllegalArgumentException("At least 4 bytes must be provided for both key identifiers");
+        }
+
+        int byteLength = keyIdentifierBytes.length;
+        byte[] lastNBytesOfFingerprint;
+
+        // Don't duplicate the fingerprint byte[] if the key identifier is the same length as the full fingerprint
+        if (byteLength == fingerprint.length) {
+            lastNBytesOfFingerprint = fingerprint;
+        } else {
+            lastNBytesOfFingerprint = new byte[byteLength];
+            System.arraycopy(fingerprint, fingerprint.length - byteLength, lastNBytesOfFingerprint, 0, byteLength);
+        }
+
+        return Arrays.equals(lastNBytesOfFingerprint, keyIdentifierBytes);
+    }
+
+    /**
+     * Returns the hex identifier (sometimes a full {@code fingerprint}) as a {@code byte[]}. The input may include
+     * spaces and leading {@code 0x} but the output will not.
+     *
+     * @param identifier the string fingerprint
+     * @return the hex-decoded byte[]
+     */
+    static byte[] toFingerprint(String identifier) {
+        return Hex.decode(formatHexIdentifier(identifier));
     }
 
     /**
@@ -331,12 +395,25 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
      * @param identifier the key identifier
      * @return the formatted fingerprint
      */
-    private static String formatFingerprint(String identifier) {
+    private static String formatHexIdentifier(String identifier) {
         return identifier.replaceAll("(0[xX]|\\s)", "");
     }
 
     /**
      * Returns {@code true} if the input is usable as a fingerprint. The fingerprint format
+     * can be 0xABCDEF01 or 0123 4567.... Other than the leading {@code 0x}, all characters
+     * must be hexadecimal digits, and the length must be 40 characters after spaces are removed.
+     *
+     * @param identifier the user ID, fingerprint, short ID, or long ID to check
+     * @return true if this is a complete key fingerprint
+     */
+    private static boolean isFingerprint(String identifier) {
+        String trimmedString = formatHexIdentifier(identifier);
+        return CryptoUtils.isHexString(trimmedString) && trimmedString.length() == 40;
+    }
+
+    /**
+     * Returns {@code true} if the input is usable as a hex-formatted identifier. The identifier format
      * can be 0xABCDEF01 or 0123 4567.... Other than the leading {@code 0x}, all characters
      * must be hexadecimal digits, the length should be (maybe an even) number of between 8
      * and 40 characters. Common lengths are 8, 16, and 40 characters, sometimes with spaces
@@ -345,8 +422,8 @@ public class OpenPGPKeyBasedEncryptor implements Encryptor {
      * @param identifier the user ID, fingerprint, short ID, or long ID to check
      * @return true if this is a (whole or segment of a) key fingerprint
      */
-    private static boolean isFingerprint(String identifier) {
-        String trimmedString = formatFingerprint(identifier);
+    private static boolean isHexIdentifier(String identifier) {
+        String trimmedString = formatHexIdentifier(identifier);
         return CryptoUtils.isHexString(trimmedString) && trimmedString.length() >= 8 && trimmedString.length() <= 40;
     }
 
