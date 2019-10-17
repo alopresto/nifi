@@ -2079,6 +2079,34 @@ public class TestQuery {
         verifyEmpty("${nullString:padRight(10, \"@\")}", attributes);
     }
 
+    @Test
+    public void testRepeat() {
+        final Map<String, String> attributes = new HashMap<>();
+        attributes.put("str", "abc");
+
+        verifyEquals("${not_exist:repeat(1, 2)}", attributes, "");
+        verifyEquals("${str:repeat(1, 2)}", attributes, "abc");
+        verifyEquals("${str:repeat(4)}", attributes, "abcabcabcabc");
+        try {
+            verifyEquals("${str:repeat(-1)}", attributes, "");
+            fail("Should have failed on numRepeats < 0");
+        } catch(AttributeExpressionLanguageException aele) {
+            // Do nothing, it is expected
+        }
+        try {
+            verifyEquals("${str:repeat(0)}", attributes, "");
+            fail("Should have failed on numRepeats = 0");
+        } catch(AttributeExpressionLanguageException aele) {
+            // Do nothing, it is expected
+        }
+        try {
+            verifyEquals("${str:repeat(2,1)}", attributes, "");
+            fail("Should have failed on minRepeats > maxRepeats");
+        } catch(AttributeExpressionLanguageException aele) {
+            // Do nothing, it is expected
+        }
+    }
+
     private void verifyEquals(final String expression, final Map<String, String> attributes, final Object expectedResult) {
         verifyEquals(expression,attributes, null, ParameterLookup.EMPTY, expectedResult);
     }
