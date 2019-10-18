@@ -16,6 +16,31 @@
  */
 package org.apache.nifi.attribute.expression.language;
 
+import static java.lang.Double.NEGATIVE_INFINITY;
+import static java.lang.Double.NaN;
+import static java.lang.Double.POSITIVE_INFINITY;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import org.antlr.runtime.tree.Tree;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.attribute.expression.language.Query.Range;
@@ -33,32 +58,6 @@ import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
-
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-
-import static java.lang.Double.NEGATIVE_INFINITY;
-import static java.lang.Double.NaN;
-import static java.lang.Double.POSITIVE_INFINITY;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 public class TestQuery {
 
@@ -1502,9 +1501,9 @@ public class TestQuery {
         verifyEmpty("${literal('0x1.1'):toDecimal()}", attributes);
 
         // Special cases
-        verifyEquals("${literal('" + Double.toString(POSITIVE_INFINITY) + "'):toDecimal():plus(1):plus(2)}", attributes, POSITIVE_INFINITY);
-        verifyEquals("${literal('" + Double.toString(NEGATIVE_INFINITY) + "'):toDecimal():plus(1):plus(2)}", attributes, NEGATIVE_INFINITY);
-        verifyEquals("${literal('" + Double.toString(NaN) + "'):toDecimal():plus(1):plus(2)}", attributes, NaN);
+        verifyEquals("${literal('" + POSITIVE_INFINITY + "'):toDecimal():plus(1):plus(2)}", attributes, POSITIVE_INFINITY);
+        verifyEquals("${literal('" + NEGATIVE_INFINITY + "'):toDecimal():plus(1):plus(2)}", attributes, NEGATIVE_INFINITY);
+        verifyEquals("${literal('" + NaN + "'):toDecimal():plus(1):plus(2)}", attributes, NaN);
     }
 
     @Test
@@ -1852,14 +1851,14 @@ public class TestQuery {
 
     @Test
     public void testLiteralFunction() {
-        final Map<String, String> attrs = Collections.<String, String>emptyMap();
+        final Map<String, String> attrs = Collections.emptyMap();
         verifyEquals("${literal(2):gt(1)}", attrs, true);
         verifyEquals("${literal('hello'):substring(0, 1):equals('h')}", attrs, true);
     }
 
     @Test
     public void testRandomFunction() {
-        final Map<String, String> attrs = Collections.<String, String>emptyMap();
+        final Map<String, String> attrs = Collections.emptyMap();
         final Long negOne = Long.valueOf(-1L);
         final HashSet<Long> results = new HashSet<>(100);
         for (int i = 0; i < results.size(); i++) {
@@ -2085,7 +2084,18 @@ public class TestQuery {
         attributes.put("str", "abc");
 
         verifyEquals("${not_exist:repeat(1, 2)}", attributes, "");
-        verifyEquals("${str:repeat(1, 2)}", attributes, "abc");
+        verifyEquals("${str:repeat(1, 1)}", attributes, "abc");
+
+        // Custom verify because the result could be one of multiple options
+        String multipleResultExpression = "${str:repeat(1, 3)}";
+        String multipleResultExpectedResult1 = "abc";
+        String multipleResultExpectedResult2 = "abcabc";
+        String multipleResultExpectedResult3 = "abcabcabc";
+        List<String> multipleResultExpectedResults = Arrays.asList(multipleResultExpectedResult1, multipleResultExpectedResult2, multipleResultExpectedResult3);
+        Query.validateExpression(multipleResultExpression, false);
+        final String actualResult = Query.evaluateExpressions(multipleResultExpression, attributes, null, null, ParameterLookup.EMPTY);
+        assertTrue(multipleResultExpectedResults.contains(actualResult));
+
         verifyEquals("${str:repeat(4)}", attributes, "abcabcabcabc");
         try {
             verifyEquals("${str:repeat(-1)}", attributes, "");
@@ -2154,7 +2164,7 @@ public class TestQuery {
 
     private void verifyEmpty(final String expression, final Map<String, String> attributes) {
         Query.validateExpression(expression, false);
-        assertEquals(String.valueOf(""), Query.evaluateExpressions(expression, attributes, null));
+        assertEquals("", Query.evaluateExpressions(expression, attributes, null));
     }
 
     private String getResourceAsString(String resourceName) throws IOException {
