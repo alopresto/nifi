@@ -27,6 +27,7 @@ import java.util.Arrays;
 import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import org.apache.nifi.security.kms.CryptoUtils;
 import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.kms.KeyProvider;
 import org.apache.nifi.security.kms.KeyProviderFactory;
@@ -108,14 +109,88 @@ public class RepositoryEncryptorUtils {
         return Arrays.copyOfRange(encryptedRecord, cipherBytesStart, encryptedRecord.length);
     }
 
+    /**
+     * Returns a configured {@link KeyProvider} instance that requires a {@code master key} to use
+     * (usually a {@link org.apache.nifi.security.kms.FileBasedKeyProvider} or an encrypted
+     * {@link org.apache.nifi.security.kms.StaticKeyProvider}).
+     *
+     * @param niFiProperties the {@link NiFiProperties} object
+     * @param masterKey      the master encryption key used to encrypt the data encryption keys in the key provider configuration
+     * @param repositoryType the {@link RepositoryType} indicator
+     * @return the configured KeyProvider
+     * @throws KeyManagementException if there is a problem with the configuration
+     */
     public static KeyProvider buildKeyProvider(NiFiProperties niFiProperties, SecretKey masterKey, RepositoryType repositoryType) throws KeyManagementException {
         RepositoryEncryptionConfiguration rec = RepositoryEncryptionConfiguration.fromNiFiProperties(niFiProperties, repositoryType);
 
         if (rec.getKeyProviderImplementation() == null) {
+            final String keyProviderImplementationClass = determineKeyProviderImplementationClassName(repositoryType);
             throw new KeyManagementException("Cannot create key provider because the NiFi properties are missing the following property: "
-                    + NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS);
+                    + keyProviderImplementationClass);
         }
 
         return KeyProviderFactory.buildKeyProvider(rec, masterKey);
+    }
+
+    /**
+     * Returns a configured {@link KeyProvider} instance that does not require a {@code master key} to use (usually a {@link org.apache.nifi.security.kms.StaticKeyProvider}).
+     *
+     * @param niFiProperties the {@link NiFiProperties} object
+     * @param repositoryType the {@link RepositoryType} indicator
+     * @return the configured KeyProvider
+     * @throws KeyManagementException if there is a problem with the configuration
+     */
+    private static KeyProvider buildKeyProvider(NiFiProperties niFiProperties, RepositoryType repositoryType) throws KeyManagementException {
+        return buildKeyProvider(niFiProperties, null, repositoryType);
+    }
+
+    /**
+     * Utility method which returns the {@link KeyProvider} implementation class name for a given repository type.
+     * @param repositoryType the {@link RepositoryType} indicator
+     * @return the FQCN of the implementation or {@code "no_such_key_provider_defined"} for unsupported repository types
+     */
+    static String determineKeyProviderImplementationClassName(RepositoryType repositoryType) {
+        // TODO: Change to build string directly using repository type packagePath property or universal in NIFI-6617
+        switch (repositoryType) {
+            case FLOWFILE:
+                return NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
+            case CONTENT:
+                return  NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
+            case PROVENANCE:
+                return NiFiProperties.PROVENANCE_REPO_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
+                default:
+                    logger.warn("Could not determine key provider implementation class name for " + repositoryType.getName());
+                    return "no_such_key_provider_defined";
+        }
+    }
+
+    /**
+     * Returns a configured {@link KeyProvider} instance for the specified repository type given the configuration values in {@code nifi.properties}.
+     * @param niFiProperties the {@link NiFiProperties} object
+     * @param repositoryType the {@link RepositoryType} indicator
+     * @return the configured KeyProvider
+     * @throws IOException if there is a problem reading the properties or they are not valid & complete
+     */
+    public static KeyProvider validateAndBuildRepositoryKeyProvider(NiFiProperties niFiProperties, RepositoryType repositoryType) throws IOException {
+        // Initialize the encryption-specific fields
+        if (CryptoUtils.isContentRepositoryEncryptionConfigured(niFiProperties)) {
+            try {
+                KeyProvider keyProvider;
+                final String keyProviderImplementation = niFiProperties.getProperty(determineKeyProviderImplementationClassName(repositoryType));
+                if (KeyProviderFactory.requiresMasterKey(keyProviderImplementation)) {
+                    SecretKey masterKey = CryptoUtils.getMasterKey();
+                    keyProvider = buildKeyProvider(niFiProperties, masterKey, repositoryType);
+                } else {
+                    keyProvider = buildKeyProvider(niFiProperties, repositoryType);
+                }
+                return keyProvider;
+            } catch (KeyManagementException e) {
+                String msg = "Encountered an error building the key provider";
+                logger.error(msg, e);
+                throw new IOException(msg, e);
+            }
+        } else {
+            throw new IOException("The provided configuration does not support an encrypted " + repositoryType.getName());
+        }
     }
 }
