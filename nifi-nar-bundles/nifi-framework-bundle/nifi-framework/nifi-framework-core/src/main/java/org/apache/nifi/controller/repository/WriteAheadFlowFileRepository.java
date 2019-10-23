@@ -16,22 +16,6 @@
  */
 package org.apache.nifi.controller.repository;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.controller.queue.FlowFileQueue;
-import org.apache.nifi.controller.repository.claim.ContentClaim;
-import org.apache.nifi.controller.repository.claim.ResourceClaim;
-import org.apache.nifi.controller.repository.claim.ResourceClaimManager;
-import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.util.FormatUtils;
-import org.apache.nifi.util.NiFiProperties;
-import org.apache.nifi.wali.SequentialAccessWriteAheadLog;
-import org.apache.nifi.wali.SnapshotCapture;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.wali.MinimalLockingWriteAheadLog;
-import org.wali.SyncListener;
-import org.wali.WriteAheadRepository;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,6 +42,21 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.controller.queue.FlowFileQueue;
+import org.apache.nifi.controller.repository.claim.ContentClaim;
+import org.apache.nifi.controller.repository.claim.ResourceClaim;
+import org.apache.nifi.controller.repository.claim.ResourceClaimManager;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.util.FormatUtils;
+import org.apache.nifi.util.NiFiProperties;
+import org.apache.nifi.wali.SequentialAccessWriteAheadLog;
+import org.apache.nifi.wali.SnapshotCapture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.wali.MinimalLockingWriteAheadLog;
+import org.wali.SyncListener;
+import org.wali.WriteAheadRepository;
 
 /**
  * <p>
@@ -204,13 +203,13 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
             wal = new SequentialAccessWriteAheadLog<>(flowFileRepositoryPaths.get(0), serdeFactory, this);
         } else if (walImplementation.equals(MINIMAL_LOCKING_WALI)) {
             final SortedSet<Path> paths = flowFileRepositoryPaths.stream()
-                .map(File::toPath)
-                .collect(Collectors.toCollection(TreeSet::new));
+                    .map(File::toPath)
+                    .collect(Collectors.toCollection(TreeSet::new));
 
             wal = new MinimalLockingWriteAheadLog<>(paths, numPartitions, serdeFactory, this);
         } else {
             throw new IllegalStateException("Cannot create Write-Ahead Log because the configured property '" + WRITE_AHEAD_LOG_IMPL + "' has an invalid value of '" + walImplementation
-                + "'. Please update nifi.properties to indicate a valid value for this property.");
+                    + "'. Please update nifi.properties to indicate a valid value for this property.");
         }
 
         logger.info("Initialized FlowFile Repository using {} partitions", numPartitions);
@@ -299,7 +298,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
 
             @Override
             public String toString() {
-                return "Swap File[location=" +  getSwapLocation() + ", queue=" + getQueueIdentifier() + "]";
+                return "Swap File[location=" + getSwapLocation() + ", queue=" + getQueueIdentifier() + "]";
             }
 
             @Override
@@ -450,7 +449,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
     private void updateRepository(final Collection<RepositoryRecord> records, final boolean sync) throws IOException {
         for (final RepositoryRecord record : records) {
             if (record.getType() != RepositoryRecordType.DELETE && record.getType() != RepositoryRecordType.CONTENTMISSING
-                && record.getType() != RepositoryRecordType.CLEANUP_TRANSIENT_CLAIMS && record.getDestination() == null) {
+                    && record.getType() != RepositoryRecordType.CLEANUP_TRANSIENT_CLAIMS && record.getDestination() == null) {
                 throw new IllegalArgumentException("Record " + record + " has no destination and Type is " + record.getType());
             }
         }
@@ -458,7 +457,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         // Partition records by whether or not their type is 'CLEANUP_TRANSIENT_CLAIMS'. We do this because we don't want to send
         // these types of records to the Write-Ahead Log.
         final Map<Boolean, List<RepositoryRecord>> partitionedRecords = records.stream()
-            .collect(Collectors.partitioningBy(record -> record.getType() == RepositoryRecordType.CLEANUP_TRANSIENT_CLAIMS));
+                .collect(Collectors.partitioningBy(record -> record.getType() == RepositoryRecordType.CLEANUP_TRANSIENT_CLAIMS));
 
         List<RepositoryRecord> recordsForWal = partitionedRecords.get(Boolean.FALSE);
         if (recordsForWal == null) {
@@ -470,7 +469,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         updateContentClaims(records, partitionIndex);
     }
 
-    private void updateContentClaims(Collection<RepositoryRecord> repositoryRecords, final int partitionIndex) {
+    protected void updateContentClaims(Collection<RepositoryRecord> repositoryRecords, final int partitionIndex) {
         // The below code is not entirely thread-safe, but we are OK with that because the results aren't really harmful.
         // Specifically, if two different threads call updateRepository with DELETE records for the same Content Claim,
         // it's quite possible for claimant count to be 0 below, which results in two different threads adding the Content
@@ -627,7 +626,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
      * the specified Swap File and returns the number of FlowFiles that were
      * persisted.
      *
-     * @param queue queue to swap out
+     * @param queue        queue to swap out
      * @param swapLocation location to swap to
      * @throws IOException ioe
      */
@@ -654,7 +653,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
             this.swapLocationSuffixes.add(normalizeSwapLocation(swapLocation));
         }
 
-        logger.info("Successfully swapped out {} FlowFiles from {} to Swap File {}", new Object[]{swappedOut.size(), queue, swapLocation});
+        logger.info("Successfully swapped out {} FlowFiles from {} to Swap File {}", swappedOut.size(), queue, swapLocation);
     }
 
     @Override
@@ -747,11 +746,11 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         }
 
         logger.info("Encountered FlowFile Repository that was written using the 'Minimal Locking Write-Ahead Log'. "
-            + "Will recover from this version and re-write the repository using the new version of the Write-Ahead Log.");
+                + "Will recover from this version and re-write the repository using the new version of the Write-Ahead Log.");
 
         final SortedSet<Path> paths = recoveryFiles.stream()
-            .map(File::toPath)
-            .collect(Collectors.toCollection(TreeSet::new));
+                .map(File::toPath)
+                .collect(Collectors.toCollection(TreeSet::new));
 
         final Collection<RepositoryRecord> recordList;
         final MinimalLockingWriteAheadLog<RepositoryRecord> minimalLockingWal = new MinimalLockingWriteAheadLog<>(paths, partitionDirs.size(), serdeFactory, null);
@@ -903,5 +902,14 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
 
     public int checkpoint() throws IOException {
         return wal.checkpoint();
+    }
+
+    /**
+     * Accessor for {@link EncryptedWriteAheadFlowFileRepository}.
+     *
+     * @return the swap location suffixes
+     */
+    protected Set<String> getSwapLocationSuffixes() {
+        return swapLocationSuffixes;
     }
 }
