@@ -146,26 +146,32 @@ public class RepositoryEncryptorUtils {
 
     /**
      * Utility method which returns the {@link KeyProvider} implementation class name for a given repository type.
+     *
      * @param repositoryType the {@link RepositoryType} indicator
      * @return the FQCN of the implementation or {@code "no_such_key_provider_defined"} for unsupported repository types
      */
     static String determineKeyProviderImplementationClassName(RepositoryType repositoryType) {
         // TODO: Change to build string directly using repository type packagePath property or universal in NIFI-6617
+        if (repositoryType == null) {
+            logger.warn("Could not determine key provider implementation class name for null repository");
+            return "no_such_key_provider_defined";
+        }
         switch (repositoryType) {
             case FLOWFILE:
                 return NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
             case CONTENT:
-                return  NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
+                return NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
             case PROVENANCE:
                 return NiFiProperties.PROVENANCE_REPO_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS;
-                default:
-                    logger.warn("Could not determine key provider implementation class name for " + repositoryType.getName());
-                    return "no_such_key_provider_defined";
+            default:
+                logger.warn("Could not determine key provider implementation class name for " + repositoryType.getName());
+                return "no_such_key_provider_defined";
         }
     }
 
     /**
      * Returns a configured {@link KeyProvider} instance for the specified repository type given the configuration values in {@code nifi.properties}.
+     *
      * @param niFiProperties the {@link NiFiProperties} object
      * @param repositoryType the {@link RepositoryType} indicator
      * @return the configured KeyProvider

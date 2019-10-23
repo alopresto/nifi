@@ -123,8 +123,8 @@ class RepositoryEncryptorUtilsTest extends GroovyTestCase {
     void testShouldDetermineKeyProviderImplementationClassName() {
         // Arrange
         final Map EXPECTED_CLASS_NAMES = [
-                (RepositoryType.CONTENT   ): NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS,
-                (RepositoryType.FLOWFILE  ): NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS,
+                (RepositoryType.CONTENT)   : NiFiProperties.CONTENT_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS,
+                (RepositoryType.FLOWFILE)  : NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS,
                 (RepositoryType.PROVENANCE): NiFiProperties.PROVENANCE_REPO_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS,
         ]
 
@@ -137,5 +137,16 @@ class RepositoryEncryptorUtilsTest extends GroovyTestCase {
         actualClassNames.each { RepositoryType rt, String actualClassName ->
             assert actualClassName == EXPECTED_CLASS_NAMES[rt]
         }
+    }
+
+    @Test
+    void testDetermineKeyProviderImplementationClassNameShouldHandleUnsupportedRepositoryTypes() {
+        // Arrange
+
+        // Act
+        def actualClassName = RepositoryEncryptorUtils.determineKeyProviderImplementationClassName(null)
+
+        // Assert
+        assert actualClassName == "no_such_key_provider_defined"
     }
 }
