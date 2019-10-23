@@ -104,6 +104,10 @@ public abstract class NiFiProperties {
     public static final String FLOWFILE_REPOSITORY_DIRECTORY = "nifi.flowfile.repository.directory";
     public static final String FLOWFILE_REPOSITORY_PARTITIONS = "nifi.flowfile.repository.partitions";
     public static final String FLOWFILE_REPOSITORY_CHECKPOINT_INTERVAL = "nifi.flowfile.repository.checkpoint.interval";
+    public static final String FLOWFILE_REPOSITORY_ENCRYPTION_KEY = "nifi.flowfile.repository.encryption.key";
+    public static final String FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID = "nifi.flowfile.repository.encryption.key.id";
+    public static final String FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS = "nifi.flowfile.repository.encryption.key.provider.implementation";
+    public static final String FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION = "nifi.flowfile.repository.encryption.key.provider.location";
     public static final String FLOWFILE_SWAP_MANAGER_IMPLEMENTATION = "nifi.swap.manager.implementation";
     public static final String QUEUE_SWAP_THRESHOLD = "nifi.queue.swap.threshold";
     public static final String SWAP_IN_THREADS = "nifi.swap.in.threads";
@@ -1321,6 +1325,55 @@ public abstract class NiFiProperties {
         return getPropertyKeys().size();
     }
 
+    public String getFlowFileRepoEncryptionKeyId() {
+        return getProperty(FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID);
+    }
+
+    /**
+     * Returns the active flowfile repository encryption key if a {@code StaticKeyProvider} is in use.
+     * If no key ID is specified in the properties file, the default
+     * {@code nifi.flowfile.repository.encryption.key} value is returned. If a key ID is specified in
+     * {@code nifi.flowfile.repository.encryption.key.id}, it will attempt to read from
+     * {@code nifi.flowfile.repository.encryption.key.id.XYZ} where {@code XYZ} is the provided key
+     * ID. If that value is empty, it will use the default property
+     * {@code nifi.flowfile.repository.encryption.key}.
+     *
+     * @return the flowfile repository encryption key in hex form
+     */
+    public String getFlowFileRepoEncryptionKey() {
+        String keyId = getFlowFileRepoEncryptionKeyId();
+        String keyKey = StringUtils.isBlank(keyId) ? FLOWFILE_REPOSITORY_ENCRYPTION_KEY : FLOWFILE_REPOSITORY_ENCRYPTION_KEY + ".id." + keyId;
+        return getProperty(keyKey, getProperty(FLOWFILE_REPOSITORY_ENCRYPTION_KEY));
+    }
+
+    /**
+     * Returns a map of keyId -> key in hex loaded from the {@code nifi.properties} file if a
+     * {@code StaticKeyProvider} is defined. If {@code FileBasedKeyProvider} is defined, use
+     * {@code CryptoUtils#readKeys()} instead -- this method will return an empty map.
+     *
+     * @return a Map of the keys identified by key ID
+     */
+    public Map<String, String> getFlowFileRepoEncryptionKeys() {
+        // TODO: Duplicate logic with different constants as provenance should be refactored to helper method
+        Map<String, String> keys = new HashMap<>();
+        List<String> keyProperties = getFlowFileRepositoryEncryptionKeyProperties();
+
+        // Retrieve the actual key values and store non-empty values in the map
+        for (String prop : keyProperties) {
+            final String value = getProperty(prop);
+            if (!StringUtils.isBlank(value)) {
+                if (prop.equalsIgnoreCase(FLOWFILE_REPOSITORY_ENCRYPTION_KEY)) {
+                    prop = getFlowFileRepoEncryptionKeyId();
+                } else {
+                    // Extract nifi.flowfile.repository.encryption.key.id.key1 -> key1
+                    prop = prop.substring(prop.lastIndexOf(".") + 1);
+                }
+                keys.put(prop, value);
+            }
+        }
+        return keys;
+    }
+    
     public String getProvenanceRepoEncryptionKeyId() {
         return getProperty(PROVENANCE_REPO_ENCRYPTION_KEY_ID);
     }
@@ -1484,6 +1537,13 @@ public abstract class NiFiProperties {
             trimmedCP = trimmedCP.endsWith("/") ? trimmedCP.substring(0, trimmedCP.length() - 1) : trimmedCP;
             return trimmedCP;
         }
+    }
+
+    private List<String> getFlowFileRepositoryEncryptionKeyProperties() {
+        // Filter all the property keys that define a key
+        return getPropertyKeys().stream().filter(k ->
+                k.startsWith(FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID + ".") || k.equalsIgnoreCase(FLOWFILE_REPOSITORY_ENCRYPTION_KEY)
+        ).collect(Collectors.toList());
     }
 
     private List<String> getProvenanceRepositoryEncryptionKeyProperties() {
