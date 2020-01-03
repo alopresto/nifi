@@ -1373,7 +1373,7 @@ public abstract class NiFiProperties {
         }
         return keys;
     }
-    
+
     public String getProvenanceRepoEncryptionKeyId() {
         return getProperty(PROVENANCE_REPO_ENCRYPTION_KEY_ID);
     }
