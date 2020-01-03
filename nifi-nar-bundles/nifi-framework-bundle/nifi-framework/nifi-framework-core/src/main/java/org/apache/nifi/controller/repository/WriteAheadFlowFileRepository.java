@@ -82,34 +82,34 @@ import org.wali.WriteAheadRepository;
  * </p>
  */
 public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncListener {
-    private static final String FLOWFILE_REPOSITORY_DIRECTORY_PREFIX = "nifi.flowfile.repository.directory";
+    static final String FLOWFILE_REPOSITORY_DIRECTORY_PREFIX = "nifi.flowfile.repository.directory";
     private static final String WRITE_AHEAD_LOG_IMPL = "nifi.flowfile.repository.wal.implementation";
 
-    private static final String SEQUENTIAL_ACCESS_WAL = "org.apache.nifi.wali.SequentialAccessWriteAheadLog";
+     static final String SEQUENTIAL_ACCESS_WAL = "org.apache.nifi.wali.SequentialAccessWriteAheadLog";
     private static final String MINIMAL_LOCKING_WALI = "org.wali.MinimalLockingWriteAheadLog";
     private static final String DEFAULT_WAL_IMPLEMENTATION = SEQUENTIAL_ACCESS_WAL;
 
-    private final String walImplementation;
-    private final NiFiProperties nifiProperties;
+     final String walImplementation;
+    protected final NiFiProperties nifiProperties;
 
-    private final AtomicLong flowFileSequenceGenerator = new AtomicLong(0L);
+     final AtomicLong flowFileSequenceGenerator = new AtomicLong(0L);
     private final boolean alwaysSync;
 
     private static final Logger logger = LoggerFactory.getLogger(WriteAheadFlowFileRepository.class);
-    private volatile ScheduledFuture<?> checkpointFuture;
+     volatile ScheduledFuture<?> checkpointFuture;
 
-    private final long checkpointDelayMillis;
+     final long checkpointDelayMillis;
     private final List<File> flowFileRepositoryPaths = new ArrayList<>();
-    private final List<File> recoveryFiles = new ArrayList<>();
+     final List<File> recoveryFiles = new ArrayList<>();
     private final int numPartitions;
-    private final ScheduledExecutorService checkpointExecutor;
+     final ScheduledExecutorService checkpointExecutor;
 
-    private final Set<String> swapLocationSuffixes = new HashSet<>(); // guarded by synchronizing on object itself
+    final Set<String> swapLocationSuffixes = new HashSet<>(); // guarded by synchronizing on object itself
 
     // effectively final
     private WriteAheadRepository<RepositoryRecord> wal;
-    private RepositoryRecordSerdeFactory serdeFactory;
-    private ResourceClaimManager claimManager;
+     RepositoryRecordSerdeFactory serdeFactory;
+     ResourceClaimManager claimManager;
 
     // WALI Provides the ability to register callbacks for when a Partition or the entire Repository is sync'ed with the underlying disk.
     // We keep track of this because we need to ensure that the ContentClaims are destroyed only after the FlowFile Repository has been
@@ -677,7 +677,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         logger.info("Repository updated to reflect that {} FlowFiles were swapped in to {}", new Object[]{swapRecords.size(), queue});
     }
 
-    private void deleteRecursively(final File dir) {
+     void deleteRecursively(final File dir) {
         final File[] children = dir.listFiles();
 
         if (children != null) {

@@ -37,22 +37,22 @@ import org.slf4j.LoggerFactory;
 import org.wali.SerDe;
 import org.wali.UpdateType;
 
-public class WriteAheadRepositoryRecordSerde extends RepositoryRecordSerde implements SerDe<RepositoryRecord> {
-    private static final Logger logger = LoggerFactory.getLogger(WriteAheadRepositoryRecordSerde.class);
+public class EncryptedWriteAheadRepositoryRecordSerde extends WriteAheadRepositoryRecordSerde implements SerDe<RepositoryRecord> {
+    private static final Logger logger = LoggerFactory.getLogger(EncryptedWriteAheadRepositoryRecordSerde.class);
 
     private static final int CURRENT_ENCODING_VERSION = 9;
 
-    public static final byte ACTION_CREATE = 0;
-    public static final byte ACTION_UPDATE = 1;
-    public static final byte ACTION_DELETE = 2;
-    public static final byte ACTION_SWAPPED_OUT = 3;
-    public static final byte ACTION_SWAPPED_IN = 4;
+    // public static final byte ACTION_CREATE = 0;
+    // public static final byte ACTION_UPDATE = 1;
+    // public static final byte ACTION_DELETE = 2;
+    // public static final byte ACTION_SWAPPED_OUT = 3;
+    // public static final byte ACTION_SWAPPED_IN = 4;
+    //
+    // private long recordsRestored = 0L;
+    // private final ResourceClaimManager claimManager;
 
-    protected long recordsRestored = 0L;
-    protected final ResourceClaimManager claimManager;
-
-    public WriteAheadRepositoryRecordSerde(final ResourceClaimManager claimManager) {
-        this.claimManager = claimManager;
+    public EncryptedWriteAheadRepositoryRecordSerde(final ResourceClaimManager claimManager) {
+        super(claimManager);
     }
 
     @Override
