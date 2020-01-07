@@ -513,7 +513,8 @@ public class FlowController implements ReportingTaskProvider, Authorizable, Node
         controllerServiceProvider = new StandardControllerServiceProvider(this, processScheduler, bulletinRepository);
 
         eventDrivenSchedulingAgent = new EventDrivenSchedulingAgent(
-                eventDrivenEngineRef.get(), controllerServiceProvider, stateManagerProvider, eventDrivenWorkerQueue, repositoryContextFactory, maxEventDrivenThreads.get(), encryptor, extensionManager);
+                eventDrivenEngineRef.get(), controllerServiceProvider, stateManagerProvider,
+                eventDrivenWorkerQueue, repositoryContextFactory, maxEventDrivenThreads.get(), encryptor, extensionManager);
         processScheduler.setSchedulingAgent(SchedulingStrategy.EVENT_DRIVEN, eventDrivenSchedulingAgent);
 
         final QuartzSchedulingAgent quartzSchedulingAgent = new QuartzSchedulingAgent(this, timerDrivenEngineRef.get(), repositoryContextFactory, encryptor);
@@ -753,8 +754,10 @@ public class FlowController implements ReportingTaskProvider, Authorizable, Node
         }
 
         try {
-            final FlowFileRepository created = NarThreadContextClassLoader.createInstance(extensionManager, implementationClassName, FlowFileRepository.class, properties);
-            if (properties.getProperty(NiFiProperties.FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION).equals(EncryptedSequentialAccessWriteAheadLog.class.getName()) && created instanceof WriteAheadFlowFileRepository) {
+            final FlowFileRepository created = NarThreadContextClassLoader.createInstance(extensionManager, implementationClassName,
+                    FlowFileRepository.class, properties);
+            if (EncryptedSequentialAccessWriteAheadLog.class.getName().equals(properties.getProperty(NiFiProperties.FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION))
+                    && created instanceof WriteAheadFlowFileRepository) {
                 synchronized (created) {
                     ((WriteAheadFlowFileRepository) created).initialize(contentClaimManager, new EncryptedRepositoryRecordSerdeFactory(contentClaimManager, properties));
                 }
@@ -1818,11 +1821,9 @@ public class FlowController implements ReportingTaskProvider, Authorizable, Node
      * @param source            required source
      * @param destination       required destination
      * @param relationshipNames required collection of relationship names
-     * @return
-     * @throws NullPointerException     if the ID, source, destination, or set of
-     *                                  relationships is null.
-     * @throws IllegalArgumentException if <code>relationships</code> is an
-     *                                  empty collection
+     * @return the connection
+     * @throws NullPointerException     if the ID, source, destination, or set of relationships is null.
+     * @throws IllegalArgumentException if <code>relationships</code> is an empty collection
      */
     public Connection createConnection(final String id, final String name, final Connectable source, final Connectable destination, final Collection<String> relationshipNames) {
         final StandardConnection.Builder builder = new StandardConnection.Builder(processScheduler);

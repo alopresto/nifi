@@ -61,7 +61,8 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
      * @param flowFileRepositoryEncryptionConfiguration the configuration values necessary to encrypt/decrypt the data
      * @throws IOException if there is a problem retrieving the configuration values
      */
-    public EncryptedSchemaRepositoryRecordSerde(final SerDe<RepositoryRecord> wrappedSerDe, final FlowFileRepositoryEncryptionConfiguration flowFileRepositoryEncryptionConfiguration) throws IOException {
+    public EncryptedSchemaRepositoryRecordSerde(final SerDe<RepositoryRecord> wrappedSerDe, final FlowFileRepositoryEncryptionConfiguration
+            flowFileRepositoryEncryptionConfiguration) throws IOException {
         if (wrappedSerDe == null) {
             throw new IllegalArgumentException("This implementation must be provided another serde instance to function");
         }
@@ -167,7 +168,10 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
     }
 
     /**
-     * Encrypts the plain serialized bytes and writes them to the output stream. Precedes the cipher bytes with the plaintext {@link org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata} data to allow for on-demand deserialization and decryption.
+     * Encrypts the plain serialized bytes and writes them to the output stream. Precedes
+     * the cipher bytes with the plaintext
+     * {@link org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata} data
+     * to allow for on-demand deserialization and decryption.
      *
      * @param plainSerializedBytes the plain serialized bytes
      * @param recordId             the unique identifier for this record to be stored in the encryption metadata

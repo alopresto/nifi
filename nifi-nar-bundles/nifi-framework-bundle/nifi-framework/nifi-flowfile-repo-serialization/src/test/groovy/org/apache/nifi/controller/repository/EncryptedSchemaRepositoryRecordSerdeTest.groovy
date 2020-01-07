@@ -154,6 +154,35 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         assert deserializedRecord.originalAttributes == newRecord.current.attributes
     }
 
+    /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly */
+    @Test
+    void testShouldSerializeAndDeserializeEdit() {
+        // Arrange
+        RepositoryRecord newRecord = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        DataOutputStream dos = dataOutputStream
+
+        esrrs.writeHeader(dataOutputStream)
+
+        // Act
+        esrrs.serializeEdit(null, newRecord, dos)
+        logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
+        esrrs.readHeader(dis)
+        RepositoryRecord deserializedRecord = esrrs.deserializeEdit(dis, [:], 2)
+
+        /* The records will not be identical, because the process of serializing/deserializing changes the application
+         * of the delta data. The CREATE with a "current" record containing attributes becomes an UPDATE with an
+         * "original" record containing attributes */
+
+        // Assert
+        logger.info("    Original record: ${newRecord.dump()}")
+        logger.info("Deserialized record: ${deserializedRecord.dump()}")
+        assert newRecord.type == RepositoryRecordType.CREATE
+        assert deserializedRecord.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord.originalAttributes == newRecord.current.attributes
+    }
+
     /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly with encryption */
     @Test
     void testShouldEncryptOutput() {
@@ -284,28 +313,5 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         assert deserializedRecord2.originalAttributes == record2.current.attributes
     }
 
-    /** This test ensures that deserializing edits is not supported */
-    @Test
-    void testShouldNotDeserializeEdit() {
-        // Arrange
-        RepositoryRecord record1 = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
-        DataOutputStream dos = dataOutputStream
 
-        // Act
-        esrrs.writeHeader(dos)
-        esrrs.serializeRecord(record1, dos)
-        dos.flush()
-        logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
-
-        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
-        esrrs.readHeader(dis)
-
-        def msg = shouldFail(EOFException) {
-            RepositoryRecord deserializedRecord1 = esrrs.deserializeEdit(dis, [:], esrrs.getVersion())
-        }
-        logger.expected(msg)
-
-        // Assert
-        assert msg == null
-    }
 }

@@ -41,7 +41,10 @@ public class FlowFileRepositoryEncryptionConfiguration extends RepositoryEncrypt
     }
 
     /**
-     * Constructor which accepts explicit values for each configuration value. This differs from {@link ContentRepositoryEncryptionConfiguration} and {@link ProvenanceRepositoryEncryptionConfiguration} because the repository implementation does not change for an encrypted flowfile repository, only the write-ahead log implementation ({@link NiFiProperties#FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION}).
+     * Constructor which accepts explicit values for each configuration value. This differs
+     * from {@link ContentRepositoryEncryptionConfiguration} and {@link ProvenanceRepositoryEncryptionConfiguration} because the repository implementation
+     * does not change for an encrypted flowfile repository, only the write-ahead log
+     * implementation ({@link NiFiProperties#FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION}).
      *
      * @param keyProviderImplementation the key provider implementation class
      * @param keyProviderLocation the key provider location
