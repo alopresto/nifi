@@ -52,6 +52,7 @@ public class RepositoryConfiguration {
     private int maxAttributeChars = 65536;
     private int debugFrequency = 1_000_000;
 
+    // TODO: Delegaate to RepositoryEncryptionConfiguration in NIFI-6617
     private Map<String, String> encryptionKeys;
     private String keyId;
     private String keyProviderImplementation;

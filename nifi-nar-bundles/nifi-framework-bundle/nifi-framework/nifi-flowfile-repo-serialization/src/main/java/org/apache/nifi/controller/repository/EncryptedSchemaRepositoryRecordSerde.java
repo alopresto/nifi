@@ -21,40 +21,130 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
-import org.apache.nifi.controller.repository.claim.ResourceClaimManager;
+import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.security.kms.KeyProvider;
+import org.apache.nifi.security.repository.RepositoryEncryptorUtils;
+import org.apache.nifi.security.repository.config.FlowFileRepositoryEncryptionConfiguration;
 import org.apache.nifi.stream.io.StreamUtils;
+import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.wali.SerDe;
+import org.wali.UpdateType;
 
-// TODO: Implement interface rather than extending and accept delegate serde as constructor arg -- composition over inheritence
-public class EncryptedSchemaRepositoryRecordSerde extends SchemaRepositoryRecordSerde {
+// TODO: Implement interface rather than extending and accept delegate serde as constructor arg -- composition over inheritance
+
+/**
+ * This class is an implementation of the {@link SerDe} interface which provides transparent
+ * encryption/decryption of flowfile record data during file system interaction. As of Apache NiFi 1.11.0
+ * (January 2020), this implementation is considered <a href="https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#experimental-warning">*experimental*</a>. For further details, review the
+ * <a href="https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#encrypted-flowfile">Apache NiFi User Guide -
+ * Encrypted FlowFile Repository</a> and
+ * <a href="https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html#encrypted-flowfile-repository-properties">Apache NiFi Admin Guide - Encrypted FlowFile
+ * Repository Properties</a>.
+ */
+public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRecord> {
     private static final Logger logger = LoggerFactory.getLogger(EncryptedSchemaRepositoryRecordSerde.class);
-    private static final int MAX_ENCODING_VERSION = 2;
+    private final SerDe<RepositoryRecord> wrappedSerDe;
+    private final KeyProvider keyProvider;
+    private String activeKeyId;
 
-    // private final RecordSchema writeSchema = RepositoryRecordSchema.REPOSITORY_RECORD_SCHEMA_V2;
-    // private final RecordSchema contentClaimSchema = ContentClaimSchema.CONTENT_CLAIM_SCHEMA_V1;
-    //
-    // private final ResourceClaimManager resourceClaimManager;
-    // private volatile SchemaRecordReader reader;
-    // private RecordIterator recordIterator = null;
+    /**
+     * Creates an instance of the serializer/deserializer which wraps another SerDe instance but transparently encrypts/decrypts the data before/after writing/reading from the streams.
+     *
+     * @param wrappedSerDe                              the wrapped SerDe instance which performs the object <-> bytes (de)serialization
+     * @param flowFileRepositoryEncryptionConfiguration the configuration values necessary to encrypt/decrypt the data
+     * @throws IOException if there is a problem retrieving the configuration values
+     */
+    public EncryptedSchemaRepositoryRecordSerde(final SerDe<RepositoryRecord> wrappedSerDe, final FlowFileRepositoryEncryptionConfiguration flowFileRepositoryEncryptionConfiguration) throws IOException {
+        if (wrappedSerDe == null) {
+            throw new IllegalArgumentException("This implementation must be provided another serde instance to function");
+        }
+        this.wrappedSerDe = wrappedSerDe;
 
-    public EncryptedSchemaRepositoryRecordSerde(final ResourceClaimManager resourceClaimManager) {
-        super(resourceClaimManager);
+        // Initialize the encryption-specific fields
+        this.keyProvider = RepositoryEncryptorUtils.validateAndBuildRepositoryKeyProvider(flowFileRepositoryEncryptionConfiguration);
+
+        // Set active key ID
+        setActiveKeyId(flowFileRepositoryEncryptionConfiguration.getEncryptionKeyId());
     }
 
-    // @Override
-    // public void writeHeader(final DataOutputStream out) throws IOException {
-    //     writeSchema.writeTo(out);
-    // }
+    /**
+     * Creates an instance of the serializer/deserializer which wraps another SerDe instance but transparently encrypts/decrypts the data before/after writing/reading from the streams.
+     *
+     * @param wrappedSerDe   the wrapped SerDe instance which performs the object <-> bytes (de)serialization
+     * @param niFiProperties the configuration values necessary to encrypt/decrypt the data
+     * @throws IOException if there is a problem retrieving the configuration values
+     */
+    public EncryptedSchemaRepositoryRecordSerde(final SerDe<RepositoryRecord> wrappedSerDe, final NiFiProperties niFiProperties) throws IOException {
+        this(wrappedSerDe, new FlowFileRepositoryEncryptionConfiguration(niFiProperties));
+    }
 
-    // @Override
-    // public void serializeEdit(final RepositoryRecord previousRecordState, final RepositoryRecord newRecordState, final DataOutputStream out) throws IOException {
-    //     serializeRecord(newRecordState, out);
-    // }
+    /**
+     * Returns the active key ID used for encryption.
+     *
+     * @return the active key ID
+     */
+    String getActiveKeyId() {
+        return activeKeyId;
+    }
 
+    /**
+     * Sets the active key ID used for encryption.
+     *
+     * @param activeKeyId the key ID to use
+     */
+    public void setActiveKeyId(String activeKeyId) {
+        // Key must not be blank and key provider must make key available
+        if (StringUtils.isNotBlank(activeKeyId) && keyProvider.keyExists(activeKeyId)) {
+            this.activeKeyId = activeKeyId;
+            logger.debug("Set active key ID to '" + activeKeyId + "'");
+        } else {
+            logger.warn("Attempted to set active key ID to '" + activeKeyId + "' but that is not a valid or available key ID. Keeping active key ID as '" + this.activeKeyId + "'");
+        }
+    }
+
+    @Override
+    public void writeHeader(final DataOutputStream out) throws IOException {
+        wrappedSerDe.writeHeader(out);
+    }
+
+    @Override
+    public void readHeader(final DataInputStream in) throws IOException {
+        wrappedSerDe.readHeader(in);
+    }
+
+    /**
+     * <p>
+     * Serializes an Edit Record to the log via the given
+     * {@link DataOutputStream}.
+     * </p>
+     *
+     * @param previousRecordState previous state
+     * @param newRecordState      new state
+     * @param out                 stream to write to
+     * @throws IOException if fail during write
+     * @deprecated it is not beneficial to serialize the deltas, so this method just passes through to
+     * {@link #serializeRecord(RepositoryRecord, DataOutputStream)}. It is preferable to use that method directly.
+     */
+    @Deprecated
+    @Override
+    public void serializeEdit(RepositoryRecord previousRecordState, RepositoryRecord newRecordState, DataOutputStream out) throws IOException {
+        serializeRecord(newRecordState, out);
+    }
+
+    /**
+     * Serializes the provided {@link RepositoryRecord} to the provided stream in an encrypted format.
+     *
+     * @param record the record to encrypt and serialize
+     * @param out    the output stream to write to
+     * @throws IOException if there is a problem writing to the stream
+     */
     @Override
     public void serializeRecord(final RepositoryRecord record, final DataOutputStream out) throws IOException {
         // Create BAOS wrapped in DOS
@@ -83,7 +173,7 @@ public class EncryptedSchemaRepositoryRecordSerde extends SchemaRepositoryRecord
         //
         // serializeRecord(record, out, schema, RepositoryRecordSchema.REPOSITORY_RECORD_SCHEMA_V2);
 
-        super.serializeRecord(record, tempDataStream);
+        wrappedSerDe.serializeRecord(record, tempDataStream);
         tempDataStream.flush();
         byte[] plainSerializedBytes = byteArrayOutputStream.toByteArray();
 
@@ -96,33 +186,43 @@ public class EncryptedSchemaRepositoryRecordSerde extends SchemaRepositoryRecord
         out.write(cipherBytes);
     }
 
+    /**
+     * <p>
+     * Reads an Edit Record from the given {@link DataInputStream} and merges
+     * that edit with the current version of the record, returning the new,
+     * merged version. If the Edit Record indicates that the entity was deleted,
+     * must return a Record with an UpdateType of {@link UpdateType#DELETE}.
+     * This method must never return <code>null</code>.
+     * </p>
+     *
+     * @param in                  to deserialize from
+     * @param currentRecordStates an unmodifiable map of Record ID's to the
+     *                            current state of that record
+     * @param version             the version of the SerDe that was used to serialize the
+     *                            edit record
+     * @return deserialized record
+     * @throws IOException if failure reading
+     * @deprecated it is not beneficial to serialize the deltas, so this method throws a {@link EOFException}. It is preferable to use {@link #deserializeRecord(DataInputStream, int)}.
+     */
+    @Deprecated
+    @Override
+    public RepositoryRecord deserializeEdit(DataInputStream in, Map<Object, RepositoryRecord> currentRecordStates, int version) throws IOException {
+        // deserializeRecord may return a null if there is no more data. However, when we are deserializing
+        // an edit, we do so only when we know that we should have data. This is why the JavaDocs for this method
+        // on the interface indicate that this method should never return null. As a result, if there is no data
+        // available, we handle this by throwing an EOFException.
+        throw new EOFException();
+    }
 
-    // protected void serializeRecord(final RepositoryRecord record, final DataOutputStream out, RecordSchema schema, RecordSchema repositoryRecordSchema) throws IOException {
-    //     final RepositoryRecordFieldMap fieldMap = new RepositoryRecordFieldMap(record, schema, contentClaimSchema);
-    //     final RepositoryRecordUpdate update = new RepositoryRecordUpdate(fieldMap, repositoryRecordSchema);
-    //     new SchemaRecordWriter().writeRecord(update, out);
-    // }
-
-    // @Override
-    // public void readHeader(final DataInputStream in) throws IOException {
-    //     final RecordSchema recoverySchema = RecordSchema.readFrom(in);
-    //     reader = SchemaRecordReader.fromSchema(recoverySchema);
-    // }
-
-    // @Override
-    // public RepositoryRecord deserializeEdit(final DataInputStream in, final Map<Object, RepositoryRecord> currentRecordStates, final int version) throws IOException {
-    //     final RepositoryRecord record = deserializeRecord(in, version);
-    //     if (record != null) {
-    //         return record;
-    //     }
-    //
-    //     // deserializeRecord may return a null if there is no more data. However, when we are deserializing
-    //     // an edit, we do so only when we know that we should have data. This is why the JavaDocs for this method
-    //     // on the interface indicate that this method should never return null. As a result, if there is no data
-    //     // available, we handle this by throwing an EOFException.
-    //     throw new EOFException();
-    // }
-
+    /**
+     * Returns the deserialized and decrypted {@link RepositoryRecord} from the input stream.
+     *
+     * @param in      stream to read from
+     * @param version the version of the SerDe that was used to serialize the
+     *                record
+     * @return the deserialized record
+     * @throws IOException if there is a problem reading from the stream
+     */
     @Override
     public RepositoryRecord deserializeRecord(final DataInputStream in, final int version) throws IOException {
         // Read encrypted bytes, decrypt, wrap in stream, delegate to super
@@ -142,163 +242,57 @@ public class EncryptedSchemaRepositoryRecordSerde extends SchemaRepositoryRecord
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(plainSerializedBytes);
         DataInputStream wrappedInputStream = new DataInputStream(byteArrayInputStream);
 
-        return super.deserializeRecord(wrappedInputStream, version);
+        return wrappedSerDe.deserializeRecord(wrappedInputStream, version);
     }
 
-    // private RepositoryRecord nextRecord() throws IOException {
-    //     final Record record;
-    //     try {
-    //         record = recordIterator.next();
-    //     } catch (final Exception e) {
-    //         recordIterator.close();
-    //         recordIterator = null;
-    //         throw e;
-    //     }
-    //
-    //     if (record == null) {
-    //         return null;
-    //     }
-    //
-    //     return createRepositoryRecord(record);
-    // }
+    /**
+     * Returns the unique ID for the given record.
+     *
+     * @param record to obtain identifier for
+     * @return identifier of record
+     */
+    @Override
+    public Object getRecordIdentifier(RepositoryRecord record) {
+        return wrappedSerDe.getRecordIdentifier(record);
+    }
 
-    // private RepositoryRecord createRepositoryRecord(final Record updateRecord) throws IOException {
-    //     if (updateRecord == null) {
-    //         // null may be returned by reader.readRecord() if it encounters end-of-stream
-    //         return null;
-    //     }
-    //
-    //     // Top level is always going to be a "Repository Record Update" record because we need a 'Union' type record at the
-    //     // top level that indicates which type of record we have.
-    //     final Record record = (Record) updateRecord.getFieldValue(RepositoryRecordSchema.REPOSITORY_RECORD_UPDATE_V2);
-    //
-    //     final String actionType = (String) record.getFieldValue(RepositoryRecordSchema.ACTION_TYPE_FIELD);
-    //     final RepositoryRecordType recordType = RepositoryRecordType.valueOf(actionType);
-    //     switch (recordType) {
-    //         case CREATE:
-    //             return createRecord(record);
-    //         case CONTENTMISSING:
-    //         case DELETE:
-    //             return deleteRecord(record);
-    //         case SWAP_IN:
-    //             return swapInRecord(record);
-    //         case SWAP_OUT:
-    //             return swapOutRecord(record);
-    //         case UPDATE:
-    //             return updateRecord(record);
-    //     }
-    //
-    //     throw new IOException("Found unrecognized Update Type '" + actionType + "'");
-    // }
+    /**
+     * Returns the UpdateType for the given record.
+     *
+     * @param record to retrieve update type for
+     * @return update type
+     */
+    @Override
+    public UpdateType getUpdateType(RepositoryRecord record) {
+        return wrappedSerDe.getUpdateType(record);
+    }
 
+    /**
+     * Returns the external location of the given record; this is used when a
+     * record is moved away from WALI or is being re-introduced to WALI. For
+     * example, WALI can be updated with a record of type
+     * {@link UpdateType#SWAP_OUT} that indicates a Location of
+     * file://tmp/external1 and can then be re-introduced to WALI by updating
+     * WALI with a record of type {@link UpdateType#CREATE} that indicates a
+     * Location of file://tmp/external1
+     *
+     * @param record to get location of
+     * @return location
+     */
+    @Override
+    public String getLocation(RepositoryRecord record) {
+        return wrappedSerDe.getLocation(record);
+    }
 
-    // @SuppressWarnings("unchecked")
-    // private StandardRepositoryRecord createRecord(final Record record) {
-    //     final StandardFlowFileRecord.Builder ffBuilder = new StandardFlowFileRecord.Builder();
-    //     ffBuilder.id((Long) record.getFieldValue(RepositoryRecordSchema.RECORD_ID));
-    //     ffBuilder.entryDate((Long) record.getFieldValue(FlowFileSchema.ENTRY_DATE));
-    //
-    //     final Long lastQueueDate = (Long) record.getFieldValue(FlowFileSchema.QUEUE_DATE);
-    //     final Long queueDateIndex = (Long) record.getFieldValue(FlowFileSchema.QUEUE_DATE_INDEX);
-    //     ffBuilder.lastQueued(lastQueueDate, queueDateIndex);
-    //
-    //     final Long lineageStartDate = (Long) record.getFieldValue(FlowFileSchema.LINEAGE_START_DATE);
-    //     final Long lineageStartIndex = (Long) record.getFieldValue(FlowFileSchema.LINEAGE_START_INDEX);
-    //     ffBuilder.lineageStart(lineageStartDate, lineageStartIndex);
-    //
-    //     populateContentClaim(ffBuilder, record);
-    //     ffBuilder.size((Long) record.getFieldValue(FlowFileSchema.FLOWFILE_SIZE));
-    //
-    //     ffBuilder.addAttributes((Map<String, String>) record.getFieldValue(FlowFileSchema.ATTRIBUTES));
-    //
-    //     final FlowFileRecord flowFileRecord = ffBuilder.build();
-    //
-    //     final String queueId = (String) record.getFieldValue(RepositoryRecordSchema.QUEUE_IDENTIFIER);
-    //     final FlowFileQueue queue = getFlowFileQueue(queueId);
-    //
-    //     final StandardRepositoryRecord repoRecord = new StandardRepositoryRecord(queue, flowFileRecord);
-    //     requireFlowFileQueue(repoRecord, queueId);
-    //     return repoRecord;
-    // }
-    //
-    // private void requireFlowFileQueue(final StandardRepositoryRecord repoRecord, final String queueId) {
-    //     if (queueId == null || queueId.trim().isEmpty()) {
-    //         logger.warn("{} does not have a Queue associated with it; this record will be discarded", repoRecord.getCurrent());
-    //         repoRecord.markForAbort();
-    //     } else if (repoRecord.getOriginalQueue() == null) {
-    //         logger.warn("{} maps to unknown Queue {}; this record will be discarded", repoRecord.getCurrent(), queueId);
-    //         repoRecord.markForAbort();
-    //     }
-    // }
-    //
-    // private void populateContentClaim(final StandardFlowFileRecord.Builder ffBuilder, final Record record) {
-    //     final Object claimMap = record.getFieldValue(FlowFileSchema.CONTENT_CLAIM);
-    //     if (claimMap == null) {
-    //         return;
-    //     }
-    //
-    //     final Record claimRecord = (Record) claimMap;
-    //     final ContentClaim contentClaim = ContentClaimFieldMap.getContentClaim(claimRecord, resourceClaimManager);
-    //     final Long offset = ContentClaimFieldMap.getContentClaimOffset(claimRecord);
-    //
-    //     ffBuilder.contentClaim(contentClaim);
-    //     ffBuilder.contentClaimOffset(offset);
-    // }
-    //
-    // private RepositoryRecord updateRecord(final Record record) {
-    //     return createRecord(record);
-    // }
-    //
-    // private RepositoryRecord deleteRecord(final Record record) {
-    //     final Long recordId = (Long) record.getFieldValue(RepositoryRecordSchema.RECORD_ID_FIELD);
-    //     final StandardFlowFileRecord.Builder ffBuilder = new StandardFlowFileRecord.Builder().id(recordId);
-    //     final FlowFileRecord flowFileRecord = ffBuilder.build();
-    //
-    //     final StandardRepositoryRecord repoRecord = new StandardRepositoryRecord((FlowFileQueue) null, flowFileRecord);
-    //     repoRecord.markForDelete();
-    //     return repoRecord;
-    // }
-    //
-    // private RepositoryRecord swapInRecord(final Record record) {
-    //     final StandardRepositoryRecord repoRecord = createRecord(record);
-    //     final String swapLocation = (String) record.getFieldValue(new SimpleRecordField(RepositoryRecordSchema.SWAP_LOCATION, FieldType.STRING, Repetition.EXACTLY_ONE));
-    //     repoRecord.setSwapLocation(swapLocation);
-    //
-    //     final String queueId = (String) record.getFieldValue(RepositoryRecordSchema.QUEUE_IDENTIFIER);
-    //     requireFlowFileQueue(repoRecord, queueId);
-    //     return repoRecord;
-    // }
-    //
-    // private RepositoryRecord swapOutRecord(final Record record) {
-    //     final Long recordId = (Long) record.getFieldValue(RepositoryRecordSchema.RECORD_ID_FIELD);
-    //     final String queueId = (String) record.getFieldValue(new SimpleRecordField(RepositoryRecordSchema.QUEUE_IDENTIFIER, FieldType.STRING, Repetition.EXACTLY_ONE));
-    //     final String swapLocation = (String) record.getFieldValue(new SimpleRecordField(RepositoryRecordSchema.SWAP_LOCATION, FieldType.STRING, Repetition.EXACTLY_ONE));
-    //     final FlowFileQueue queue = getFlowFileQueue(queueId);
-    //
-    //     final FlowFileRecord flowFileRecord = new StandardFlowFileRecord.Builder()
-    //             .id(recordId)
-    //             .build();
-    //
-    //     return new StandardRepositoryRecord(queue, flowFileRecord, swapLocation);
-    // }
-    //
-    // @Override
-    // public int getVersion() {
-    //     return MAX_ENCODING_VERSION;
-    // }
-    //
-    // @Override
-    // public boolean isWriteExternalFileReferenceSupported() {
-    //     return true;
-    // }
-    //
-    // @Override
-    // public void writeExternalFileReference(final File externalFile, final DataOutputStream out) throws IOException {
-    //     new SchemaRecordWriter().writeExternalFileReference(out, externalFile);
-    // }
-    //
-    // @Override
-    // public boolean isMoreInExternalFile() throws IOException {
-    //     return recordIterator != null && recordIterator.isNext();
-    // }
+    /**
+     * Returns the version that this SerDe will use when writing. This used used
+     * when serializing/deserializing the edit logs so that if the version
+     * changes, we are still able to deserialize old versions
+     *
+     * @return version
+     */
+    @Override
+    public int getVersion() {
+        return wrappedSerDe.getVersion();
+    }
 }

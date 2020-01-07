@@ -20,6 +20,8 @@ package org.apache.nifi.controller.repository
 import org.apache.nifi.controller.queue.FlowFileQueue
 import org.apache.nifi.controller.repository.claim.ResourceClaimManager
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager
+import org.apache.nifi.security.kms.CryptoUtils
+import org.apache.nifi.security.repository.config.FlowFileRepositoryEncryptionConfiguration
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.util.encoders.Hex
 import org.junit.After
@@ -32,9 +34,11 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.wali.SerDe
 
 import java.security.Security
 
+import static org.apache.nifi.security.kms.CryptoUtils.STATIC_KEY_PROVIDER_CLASS_NAME
 
 @RunWith(JUnit4.class)
 class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
@@ -47,6 +51,18 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
     private FlowFileQueue flowFileQueue
     private ByteArrayOutputStream byteArrayOutputStream
     private DataOutputStream dataOutputStream
+
+    // TODO: Mock the wrapped serde
+    // TODO: Make integration test with real wrapped serde
+    private SerDe<RepositoryRecord> wrappedSerDe
+
+    private static final String KPI = STATIC_KEY_PROVIDER_CLASS_NAME
+    private static final String KPL = ""
+    private static final String KEY_ID = "K1"
+    private static final Map<String, String> KEYS = [:]
+    private static final String REPO_IMPL = CryptoUtils.EWAFFR_CLASS_NAME
+
+    private FlowFileRepositoryEncryptionConfiguration flowFileREC
 
     private EncryptedSchemaRepositoryRecordSerde esrrs
 
@@ -69,9 +85,12 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         flowFileQueue = createAndRegisterMockQueue(TEST_QUEUE_IDENTIFIER)
         byteArrayOutputStream = new ByteArrayOutputStream()
         dataOutputStream = new DataOutputStream(byteArrayOutputStream)
+        wrappedSerDe = new SchemaRepositoryRecordSerde(claimManager)
+        wrappedSerDe.setQueueMap(queueMap)
 
-        esrrs = new EncryptedSchemaRepositoryRecordSerde(claimManager)
-        esrrs.setQueueMap(queueMap)
+        flowFileREC = new FlowFileRepositoryEncryptionConfiguration(KPI, KPL, KEY_ID, KEYS, REPO_IMPL)
+
+        esrrs = new EncryptedSchemaRepositoryRecordSerde(wrappedSerDe, flowFileREC)
     }
 
     @After
@@ -142,32 +161,43 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         assert deserializedRecord.originalAttributes == newRecord.current.attributes
     }
 
-    /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly */
+    /** This test ensures that multiple records can be serialized and deserialized */
     @Test
-    void testShouldSerializeRecordForCreate() {
+    void testShouldSerializeAndDeserializeMultipleRecords() {
         // Arrange
-        RepositoryRecord newRecord = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        RepositoryRecord record1 = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        RepositoryRecord record2 = buildCreateRecord(flowFileQueue, [id: "2", firstName: "Mark", lastName: "Payne"])
         DataOutputStream dos = dataOutputStream
 
-        esrrs.writeHeader(dataOutputStream)
-
         // Act
-        esrrs.serializeRecord(newRecord, dos)
+        esrrs.writeHeader(dos)
+        esrrs.serializeRecord(record1, dos)
+        esrrs.serializeRecord(record2, dos)
+        dos.flush()
         logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
 
         // Assert
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
         esrrs.readHeader(dis)
-        RepositoryRecord deserializedRecord = esrrs.deserializeRecord(dis, 2)
+        RepositoryRecord deserializedRecord1 = esrrs.deserializeRecord(dis, esrrs.getVersion())
+        RepositoryRecord deserializedRecord2 = esrrs.deserializeRecord(dis, esrrs.getVersion())
 
         /* The records will not be identical, because the process of serializing/deserializing changes the application
          * of the delta data. The CREATE with a "current" record containing attributes becomes an UPDATE with an
          * "original" record containing attributes */
 
-        logger.info("    Original record: ${newRecord.dump()}")
-        logger.info("Deserialized record: ${deserializedRecord.dump()}")
-        assert newRecord.type == RepositoryRecordType.CREATE
-        assert deserializedRecord.type == RepositoryRecordType.UPDATE
-        assert deserializedRecord.originalAttributes == newRecord.current.attributes
+        logger.info("Original record 1: ${record1.dump()}")
+        logger.info("Original record 2: ${record2.dump()}")
+        logger.info("Deserialized record 1: ${deserializedRecord1.dump()}")
+        logger.info("Deserialized record 2: ${deserializedRecord2.dump()}")
+
+        assert record1.type == RepositoryRecordType.CREATE
+        assert record2.type == RepositoryRecordType.CREATE
+
+        assert deserializedRecord1.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord1.originalAttributes == record1.current.attributes
+
+        assert deserializedRecord2.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord2.originalAttributes == record2.current.attributes
     }
 }
