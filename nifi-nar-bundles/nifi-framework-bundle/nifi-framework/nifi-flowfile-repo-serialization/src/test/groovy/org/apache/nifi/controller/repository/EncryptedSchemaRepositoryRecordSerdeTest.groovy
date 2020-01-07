@@ -59,7 +59,7 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
     private static final String KPI = STATIC_KEY_PROVIDER_CLASS_NAME
     private static final String KPL = ""
     private static final String KEY_ID = "K1"
-    private static final Map<String, String> KEYS = [:]
+    private static final Map<String, String> KEYS = [K1: "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210"]
     private static final String REPO_IMPL = CryptoUtils.EWAFFR_CLASS_NAME
 
     private FlowFileRepositoryEncryptionConfiguration flowFileREC
@@ -120,19 +120,11 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         record
     }
 
-    private RepositoryRecord buildUpdateRecord(FlowFileQueue queue, Map<String, String> attributes = [:], FlowFileRecord originalRecord) {
-        StandardRepositoryRecord record = new StandardRepositoryRecord(queue, originalRecord)
-        StandardFlowFileRecord.Builder ffrb = new StandardFlowFileRecord.Builder()
-        ffrb.addAttributes([uuid: getMockUUID()] + attributes as Map<String, String>)
-        record.setWorking(ffrb.build())
-        record
-    }
-
     private String getMockUUID() {
         "${testName.methodName ?: "no_test"}@${new Date().format("mmssSSS")}" as String
     }
 
-    /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly with encryption */
+    /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly */
     @Test
     void testShouldSerializeAndDeserializeRecord() {
         // Arrange
@@ -145,7 +137,6 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         esrrs.serializeRecord(newRecord, dos)
         logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
 
-        // Assert
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
         esrrs.readHeader(dis)
         RepositoryRecord deserializedRecord = esrrs.deserializeRecord(dis, 2)
@@ -154,11 +145,48 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
          * of the delta data. The CREATE with a "current" record containing attributes becomes an UPDATE with an
          * "original" record containing attributes */
 
+        // Assert
         logger.info("    Original record: ${newRecord.dump()}")
         logger.info("Deserialized record: ${deserializedRecord.dump()}")
         assert newRecord.type == RepositoryRecordType.CREATE
         assert deserializedRecord.type == RepositoryRecordType.UPDATE
         assert deserializedRecord.originalAttributes == newRecord.current.attributes
+    }
+
+    /** This test ensures that the creation of a flowfile record is applied to the specified output stream correctly with encryption */
+    @Test
+    void testShouldEncryptOutput() {
+        // Arrange
+        RepositoryRecord newRecord = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        DataOutputStream dos = dataOutputStream
+
+        esrrs.writeHeader(dataOutputStream)
+
+        // Act
+        esrrs.serializeRecord(newRecord, dos)
+        byte[] serializedBytes = byteArrayOutputStream.toByteArray()
+        logger.info("Output stream: ${Hex.toHexString(serializedBytes)} ")
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(serializedBytes))
+        esrrs.readHeader(dis)
+        RepositoryRecord deserializedRecord = esrrs.deserializeRecord(dis, 2)
+
+        /* The records will not be identical, because the process of serializing/deserializing changes the application
+         * of the delta data. The CREATE with a "current" record containing attributes becomes an UPDATE with an
+         * "original" record containing attributes */
+
+        // Assert
+        logger.info("    Original record: ${newRecord.dump()}")
+        logger.info("Deserialized record: ${deserializedRecord.dump()}")
+        assert newRecord.type == RepositoryRecordType.CREATE
+        assert deserializedRecord.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord.originalAttributes == newRecord.current.attributes
+
+        // Ensure the value is not present in plaintext
+        assert !Hex.toHexString(serializedBytes).contains(Hex.toHexString("Andy".bytes))
+
+        // Ensure the value is not present in "simple" encryption (reversing bytes)
+        assert !Hex.toHexString(serializedBytes).contains(Hex.toHexString("ydnA".bytes))
     }
 
     /** This test ensures that multiple records can be serialized and deserialized */
@@ -176,7 +204,6 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         dos.flush()
         logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
 
-        // Assert
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
         esrrs.readHeader(dis)
         RepositoryRecord deserializedRecord1 = esrrs.deserializeRecord(dis, esrrs.getVersion())
@@ -191,6 +218,7 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         logger.info("Deserialized record 1: ${deserializedRecord1.dump()}")
         logger.info("Deserialized record 2: ${deserializedRecord2.dump()}")
 
+        // Assert
         assert record1.type == RepositoryRecordType.CREATE
         assert record2.type == RepositoryRecordType.CREATE
 
@@ -199,5 +227,30 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
 
         assert deserializedRecord2.type == RepositoryRecordType.UPDATE
         assert deserializedRecord2.originalAttributes == record2.current.attributes
+    }
+
+    /** This test ensures that deserializing edits is not supported */
+    @Test
+    void testShouldNotDeserializeEdit() {
+        // Arrange
+        RepositoryRecord record1 = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        DataOutputStream dos = dataOutputStream
+
+        // Act
+        esrrs.writeHeader(dos)
+        esrrs.serializeRecord(record1, dos)
+        dos.flush()
+        logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
+        esrrs.readHeader(dis)
+
+        def msg = shouldFail(EOFException) {
+            RepositoryRecord deserializedRecord1 = esrrs.deserializeEdit(dis, [:], esrrs.getVersion())
+        }
+        logger.expected(msg)
+
+        // Assert
+        assert msg == null
     }
 }

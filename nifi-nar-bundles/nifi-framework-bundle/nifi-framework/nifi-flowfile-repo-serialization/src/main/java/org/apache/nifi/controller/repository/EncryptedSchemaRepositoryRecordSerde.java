@@ -37,8 +37,6 @@ import org.slf4j.LoggerFactory;
 import org.wali.SerDe;
 import org.wali.UpdateType;
 
-// TODO: Implement interface rather than extending and accept delegate serde as constructor arg -- composition over inheritance
-
 /**
  * This class is an implementation of the {@link SerDe} interface which provides transparent
  * encryption/decryption of flowfile record data during file system interaction. As of Apache NiFi 1.11.0
@@ -151,33 +149,22 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         DataOutputStream tempDataStream = new DataOutputStream(byteArrayOutputStream);
 
-        // final RecordSchema schema;
-        // switch (record.getType()) {
-        //     case CREATE:
-        //     case UPDATE:
-        //         schema = RepositoryRecordSchema.CREATE_OR_UPDATE_SCHEMA_V2;
-        //         break;
-        //     case CONTENTMISSING:
-        //     case DELETE:
-        //         schema = RepositoryRecordSchema.DELETE_SCHEMA_V2;
-        //         break;
-        //     case SWAP_IN:
-        //         schema = RepositoryRecordSchema.SWAP_IN_SCHEMA_V2;
-        //         break;
-        //     case SWAP_OUT:
-        //         schema = RepositoryRecordSchema.SWAP_OUT_SCHEMA_V2;
-        //         break;
-        //     default:
-        //         throw new IllegalArgumentException("Received Repository Record with unknown Update Type: " + record.getType()); // won't happen.
-        // }
-        //
-        // serializeRecord(record, out, schema, RepositoryRecordSchema.REPOSITORY_RECORD_SCHEMA_V2);
-
         wrappedSerDe.serializeRecord(record, tempDataStream);
         tempDataStream.flush();
         byte[] plainSerializedBytes = byteArrayOutputStream.toByteArray();
 
         // Encrypt the byte[]
+        encryptToStream(plainSerializedBytes, out);
+    }
+
+    /**
+     * Encrypts the plain serialized bytes and writes them to the output stream. Precedes the cipher bytes with the plaintext {@link org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata} data to allow for on-demand deserialization and decryption.
+     *
+     * @param plainSerializedBytes the plain serialized bytes
+     * @param out                  the output stream
+     * @throws IOException if there is a problem writing to the stream
+     */
+    private void encryptToStream(byte[] plainSerializedBytes, DataOutputStream out) throws IOException {
         // TODO Actually encrypt
         byte[] cipherBytes = Arrays.copyOf(plainSerializedBytes, plainSerializedBytes.length);
         Collections.reverse(Arrays.asList(cipherBytes));
@@ -235,14 +222,24 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
         StreamUtils.fillBuffer(in, cipherBytes);
 
         // Decrypt the byte[]
+        DataInputStream wrappedInputStream = decryptToStream(cipherBytes);
+
+        return wrappedSerDe.deserializeRecord(wrappedInputStream, version);
+    }
+
+    /**
+     * Returns a {@link DataInputStream} containing the plaintext bytes so the record can be properly deserialized by the wrapped serde.
+     *
+     * @param cipherBytes the serialized, encrypted bytes
+     * @return a stream wrapping the plain bytes
+     */
+    private DataInputStream decryptToStream(byte[] cipherBytes) {
         // TODO Actually decrypt
         byte[] plainSerializedBytes = Arrays.copyOf(cipherBytes, cipherBytes.length);
         Collections.reverse(Arrays.asList(plainSerializedBytes));
 
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(plainSerializedBytes);
-        DataInputStream wrappedInputStream = new DataInputStream(byteArrayInputStream);
-
-        return wrappedSerDe.deserializeRecord(wrappedInputStream, version);
+        return new DataInputStream(byteArrayInputStream);
     }
 
     /**
