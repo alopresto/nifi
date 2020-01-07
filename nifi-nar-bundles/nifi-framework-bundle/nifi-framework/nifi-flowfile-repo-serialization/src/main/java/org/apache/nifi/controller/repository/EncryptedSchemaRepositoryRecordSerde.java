@@ -23,12 +23,14 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
+import java.security.KeyManagementException;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.kms.KeyProvider;
 import org.apache.nifi.security.repository.RepositoryEncryptorUtils;
+import org.apache.nifi.security.repository.block.RepositoryObjectBlockEncryptor;
+import org.apache.nifi.security.repository.block.aes.RepositoryObjectAESGCMEncryptor;
 import org.apache.nifi.security.repository.config.FlowFileRepositoryEncryptionConfiguration;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.NiFiProperties;
@@ -110,6 +112,9 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
     @Override
     public void writeHeader(final DataOutputStream out) throws IOException {
         wrappedSerDe.writeHeader(out);
+        if (logger.isDebugEnabled()) {
+            logger.debug("Wrote schema header ({} bytes) to output stream", out.size());
+        }
     }
 
     @Override
@@ -145,32 +150,52 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
      */
     @Override
     public void serializeRecord(final RepositoryRecord record, final DataOutputStream out) throws IOException {
-        // Create BAOS wrapped in DOS
+        // Create BAOS wrapped in DOS to intercept the output
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         DataOutputStream tempDataStream = new DataOutputStream(byteArrayOutputStream);
 
+        // Use the delegate to serialize the actual record and extract the output
+        String recordId = getRecordIdentifier(record).toString();
         wrappedSerDe.serializeRecord(record, tempDataStream);
         tempDataStream.flush();
         byte[] plainSerializedBytes = byteArrayOutputStream.toByteArray();
+        logger.debug("Serialized flowfile record {} to temp stream with length {}", recordId, plainSerializedBytes.length);
 
-        // Encrypt the byte[]
-        encryptToStream(plainSerializedBytes, out);
+        // Encrypt the serialized byte[] to the real stream
+        encryptToStream(plainSerializedBytes, recordId, out);
+        logger.debug("Encrypted serialized flowfile record {} to actual output stream", recordId);
     }
 
     /**
      * Encrypts the plain serialized bytes and writes them to the output stream. Precedes the cipher bytes with the plaintext {@link org.apache.nifi.security.repository.RepositoryObjectEncryptionMetadata} data to allow for on-demand deserialization and decryption.
      *
      * @param plainSerializedBytes the plain serialized bytes
+     * @param recordId             the unique identifier for this record to be stored in the encryption metadata
      * @param out                  the output stream
      * @throws IOException if there is a problem writing to the stream
      */
-    private void encryptToStream(byte[] plainSerializedBytes, DataOutputStream out) throws IOException {
-        // TODO Actually encrypt
-        byte[] cipherBytes = Arrays.copyOf(plainSerializedBytes, plainSerializedBytes.length);
-        Collections.reverse(Arrays.asList(cipherBytes));
+    private void encryptToStream(byte[] plainSerializedBytes, String recordId, DataOutputStream out) throws IOException {
+        try {
+            RepositoryObjectBlockEncryptor encryptor = new RepositoryObjectAESGCMEncryptor();
+            encryptor.initialize(keyProvider);
+            logger.debug("Initialized {} for flowfile record {}", encryptor.toString(), recordId);
 
-        out.writeInt(cipherBytes.length);
-        out.write(cipherBytes);
+            byte[] cipherBytes = encryptor.encrypt(plainSerializedBytes, recordId, getActiveKeyId());
+            logger.debug("Encrypted {} bytes for flowfile record {}", cipherBytes.length, recordId);
+
+            // Maybe remove cipher bytes length because it's included in encryption metadata; deserialization might need to change?
+            out.writeInt(cipherBytes.length);
+            out.write(cipherBytes);
+            logger.debug("Wrote {} bytes (encrypted, including length) for flowfile record {} to output stream", cipherBytes.length + 4, recordId);
+        } catch (KeyManagementException | EncryptionException e) {
+            logger.error("Encountered an error encrypting & serializing flowfile record {} due to {}", recordId, e.getLocalizedMessage());
+            if (logger.isDebugEnabled()) {
+                logger.debug(e.getLocalizedMessage(), e);
+            }
+
+            // The calling method contract only throws IOException
+            throw new IOException("Encountered an error encrypting & serializing flowfile record " + recordId, e);
+        }
     }
 
     /**
@@ -212,19 +237,24 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
      */
     @Override
     public RepositoryRecord deserializeRecord(final DataInputStream in, final int version) throws IOException {
-        // Read encrypted bytes, decrypt, wrap in stream, delegate to super
+        // Read the expected length of the encrypted record (including the encryption metadata)
         int encryptedRecordLength = in.readInt();
         if (encryptedRecordLength == -1) {
             return null;
         }
 
+        // Read the encrypted record bytes
         byte[] cipherBytes = new byte[encryptedRecordLength];
         StreamUtils.fillBuffer(in, cipherBytes);
+        logger.debug("Read {} bytes (encrypted, including length) from actual input stream", encryptedRecordLength + 4);
 
         // Decrypt the byte[]
         DataInputStream wrappedInputStream = decryptToStream(cipherBytes);
 
-        return wrappedSerDe.deserializeRecord(wrappedInputStream, version);
+        // Deserialize the plain bytes using the delegate serde
+        final RepositoryRecord deserializedRecord = wrappedSerDe.deserializeRecord(wrappedInputStream, version);
+        logger.debug("Deserialized flowfile record {} from temp stream", getRecordIdentifier(deserializedRecord));
+        return deserializedRecord;
     }
 
     /**
@@ -233,13 +263,26 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
      * @param cipherBytes the serialized, encrypted bytes
      * @return a stream wrapping the plain bytes
      */
-    private DataInputStream decryptToStream(byte[] cipherBytes) {
-        // TODO Actually decrypt
-        byte[] plainSerializedBytes = Arrays.copyOf(cipherBytes, cipherBytes.length);
-        Collections.reverse(Arrays.asList(plainSerializedBytes));
+    private DataInputStream decryptToStream(byte[] cipherBytes) throws IOException {
+        try {
+            RepositoryObjectBlockEncryptor encryptor = new RepositoryObjectAESGCMEncryptor();
+            encryptor.initialize(keyProvider);
+            logger.debug("Initialized {} for decrypting flowfile record", encryptor.toString());
 
-        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(plainSerializedBytes);
-        return new DataInputStream(byteArrayInputStream);
+            byte[] plainSerializedBytes = encryptor.decrypt(cipherBytes, "[pending record ID]");
+            logger.debug("Decrypted {} bytes for flowfile record", cipherBytes.length);
+
+            ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(plainSerializedBytes);
+            return new DataInputStream(byteArrayInputStream);
+        } catch (KeyManagementException | EncryptionException e) {
+            logger.error("Encountered an error decrypting & deserializing flowfile record due to {}", e.getLocalizedMessage());
+            if (logger.isDebugEnabled()) {
+                logger.debug(e.getLocalizedMessage(), e);
+            }
+
+            // The calling method contract only throws IOException
+            throw new IOException("Encountered an error decrypting & deserializing flowfile record", e);
+        }
     }
 
     /**

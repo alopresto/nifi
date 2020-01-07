@@ -114,7 +114,7 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
 
     private RepositoryRecord buildCreateRecord(FlowFileQueue queue, Map<String, String> attributes = [:]) {
         StandardRepositoryRecord record = new StandardRepositoryRecord(queue)
-        StandardFlowFileRecord.Builder ffrb = new StandardFlowFileRecord.Builder()
+        StandardFlowFileRecord.Builder ffrb = new StandardFlowFileRecord.Builder().id(System.nanoTime())
         ffrb.addAttributes([uuid: getMockUUID()] + attributes as Map<String, String>)
         record.setWorking(ffrb.build())
         record
@@ -165,7 +165,8 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         // Act
         esrrs.serializeRecord(newRecord, dos)
         byte[] serializedBytes = byteArrayOutputStream.toByteArray()
-        logger.info("Output stream: ${Hex.toHexString(serializedBytes)} ")
+        def hexOutput = Hex.toHexString(serializedBytes)
+        logger.info("Output stream (${serializedBytes.length} bytes): ${hexOutput} ")
 
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(serializedBytes))
         esrrs.readHeader(dis)
@@ -183,10 +184,13 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         assert deserializedRecord.originalAttributes == newRecord.current.attributes
 
         // Ensure the value is not present in plaintext
-        assert !Hex.toHexString(serializedBytes).contains(Hex.toHexString("Andy".bytes))
+        assert !hexOutput.contains(Hex.toHexString("Andy".bytes))
 
         // Ensure the value is not present in "simple" encryption (reversing bytes)
-        assert !Hex.toHexString(serializedBytes).contains(Hex.toHexString("ydnA".bytes))
+        assert !hexOutput.contains(Hex.toHexString("ydnA".bytes))
+
+        // Ensure the encryption metadata is present in the output
+        assert hexOutput.contains(Hex.toHexString("org.apache.nifi.security.repository.block.BlockEncryptionMetadata".bytes))
     }
 
     /** This test ensures that multiple records can be serialized and deserialized */
@@ -200,6 +204,56 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
         // Act
         esrrs.writeHeader(dos)
         esrrs.serializeRecord(record1, dos)
+        esrrs.serializeRecord(record2, dos)
+        dos.flush()
+        logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
+        esrrs.readHeader(dis)
+        RepositoryRecord deserializedRecord1 = esrrs.deserializeRecord(dis, esrrs.getVersion())
+        RepositoryRecord deserializedRecord2 = esrrs.deserializeRecord(dis, esrrs.getVersion())
+
+        /* The records will not be identical, because the process of serializing/deserializing changes the application
+         * of the delta data. The CREATE with a "current" record containing attributes becomes an UPDATE with an
+         * "original" record containing attributes */
+
+        logger.info("Original record 1: ${record1.dump()}")
+        logger.info("Original record 2: ${record2.dump()}")
+        logger.info("Deserialized record 1: ${deserializedRecord1.dump()}")
+        logger.info("Deserialized record 2: ${deserializedRecord2.dump()}")
+
+        // Assert
+        assert record1.type == RepositoryRecordType.CREATE
+        assert record2.type == RepositoryRecordType.CREATE
+
+        assert deserializedRecord1.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord1.originalAttributes == record1.current.attributes
+
+        assert deserializedRecord2.type == RepositoryRecordType.UPDATE
+        assert deserializedRecord2.originalAttributes == record2.current.attributes
+    }
+
+    /** This test ensures that multiple records can be serialized and deserialized using different keys */
+    @Test
+    void testShouldSerializeAndDeserializeMultipleRecordsWithMultipleKeys() {
+        // Arrange
+        RepositoryRecord record1 = buildCreateRecord(flowFileQueue, [id: "1", firstName: "Andy", lastName: "LoPresto"])
+        RepositoryRecord record2 = buildCreateRecord(flowFileQueue, [id: "2", firstName: "Mark", lastName: "Payne"])
+        DataOutputStream dos = dataOutputStream
+
+        // Configure the serde with multiple keys available
+        def multipleKeys = KEYS + [K2: "0F" * 32]
+        FlowFileRepositoryEncryptionConfiguration multipleKeyFFREC = new FlowFileRepositoryEncryptionConfiguration(KPI, KPL, KEY_ID, multipleKeys, REPO_IMPL)
+
+        esrrs = new EncryptedSchemaRepositoryRecordSerde(wrappedSerDe, multipleKeyFFREC)
+        assert esrrs.getActiveKeyId() == "K1"
+
+        // Act
+        esrrs.writeHeader(dos)
+        esrrs.serializeRecord(record1, dos)
+
+        // Change the active key
+        esrrs.setActiveKeyId("K2")
         esrrs.serializeRecord(record2, dos)
         dos.flush()
         logger.info("Output stream: ${Hex.toHexString(byteArrayOutputStream.toByteArray())} ")

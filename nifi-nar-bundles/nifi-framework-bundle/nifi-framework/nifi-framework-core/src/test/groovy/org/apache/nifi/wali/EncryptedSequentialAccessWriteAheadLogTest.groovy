@@ -43,8 +43,8 @@ class EncryptedSequentialAccessWriteAheadLogTest extends GroovyTestCase {
 
     @Before
     void setUp() throws Exception {
-        mockEncryptedSerDe = buildMockEncryptedSerDe()
-        encryptedWAL = createWriteRepo(mockEncryptedSerDe)
+//        mockEncryptedSerDe = buildMockEncryptedSerDe()
+//        encryptedWAL = createWriteRepo(mockEncryptedSerDe)
     }
 
     @After
