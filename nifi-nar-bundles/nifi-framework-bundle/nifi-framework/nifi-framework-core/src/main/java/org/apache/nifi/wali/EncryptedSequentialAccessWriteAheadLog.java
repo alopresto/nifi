@@ -26,18 +26,12 @@ import org.wali.SyncListener;
 
 /**
  * <p>
- * This implementation of WriteAheadRepository provides the ability to write all updates to the
- * repository sequentially by writing to a single journal file. Serialization of data into bytes
- * happens outside of any lock contention and is done so using recycled byte buffers. As such,
- * we occur minimal garbage collection and the theoretical throughput of this repository is equal
- * to the throughput of the underlying disk itself.
- * </p>
- *
- * <p>
- * This implementation makes the assumption that only a single thread will ever issue updates for
- * a given Record at any one time. I.e., the implementation is thread-safe but cannot guarantee
- * that records are recovered correctly if two threads simultaneously update the write-ahead log
- * with updates for the same record.
+ * This implementation of {@link org.wali.WriteAheadRepository} is just a marker implementation wrapping the {@link SequentialAccessWriteAheadLog}. It exists to allow
+ * users to configure  {@code nifi.properties} with
+ * {@code nifi.flowfile.repository.wal.implementation=org.apache.nifi.wali.EncryptedSequentialAccessWriteAheadLog}
+ * because the {@link org.wali.SerDe} interface is not exposed at that level. By selecting
+ * this WAL implementation, the admin is enabling the encrypted flowfile repository, but all
+ * other behavior is identical.
  * </p>
  *
  * <p>
@@ -46,7 +40,6 @@ import org.wali.SyncListener;
  */
 public class EncryptedSequentialAccessWriteAheadLog<T> extends SequentialAccessWriteAheadLog<T> {
     private static final Logger logger = LoggerFactory.getLogger(EncryptedSequentialAccessWriteAheadLog.class);
-    private final SerDeFactory<T> serdeFactory = null;
 
 
     public EncryptedSequentialAccessWriteAheadLog(final File storageDirectory, final SerDeFactory<T> serdeFactory) throws IOException {

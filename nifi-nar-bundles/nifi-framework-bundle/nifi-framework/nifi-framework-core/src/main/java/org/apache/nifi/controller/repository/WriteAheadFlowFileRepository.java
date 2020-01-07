@@ -85,31 +85,32 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
     static final String FLOWFILE_REPOSITORY_DIRECTORY_PREFIX = "nifi.flowfile.repository.directory";
     private static final String WRITE_AHEAD_LOG_IMPL = "nifi.flowfile.repository.wal.implementation";
 
-     static final String SEQUENTIAL_ACCESS_WAL = "org.apache.nifi.wali.SequentialAccessWriteAheadLog";
+    static final String SEQUENTIAL_ACCESS_WAL = "org.apache.nifi.wali.SequentialAccessWriteAheadLog";
+    static final String ENCRYPTED_SEQUENTIAL_ACCESS_WAL = "org.apache.nifi.wali.EncryptedSequentialAccessWriteAheadLog";
     private static final String MINIMAL_LOCKING_WALI = "org.wali.MinimalLockingWriteAheadLog";
     private static final String DEFAULT_WAL_IMPLEMENTATION = SEQUENTIAL_ACCESS_WAL;
 
-     final String walImplementation;
+    final String walImplementation;
     protected final NiFiProperties nifiProperties;
 
-     final AtomicLong flowFileSequenceGenerator = new AtomicLong(0L);
+    final AtomicLong flowFileSequenceGenerator = new AtomicLong(0L);
     private final boolean alwaysSync;
 
     private static final Logger logger = LoggerFactory.getLogger(WriteAheadFlowFileRepository.class);
-     volatile ScheduledFuture<?> checkpointFuture;
+    volatile ScheduledFuture<?> checkpointFuture;
 
-     final long checkpointDelayMillis;
+    final long checkpointDelayMillis;
     private final List<File> flowFileRepositoryPaths = new ArrayList<>();
-     final List<File> recoveryFiles = new ArrayList<>();
+    final List<File> recoveryFiles = new ArrayList<>();
     private final int numPartitions;
-     final ScheduledExecutorService checkpointExecutor;
+    final ScheduledExecutorService checkpointExecutor;
 
     final Set<String> swapLocationSuffixes = new HashSet<>(); // guarded by synchronizing on object itself
 
     // effectively final
     private WriteAheadRepository<RepositoryRecord> wal;
-     RepositoryRecordSerdeFactory serdeFactory;
-     ResourceClaimManager claimManager;
+    RepositoryRecordSerdeFactory serdeFactory;
+    ResourceClaimManager claimManager;
 
     // WALI Provides the ability to register callbacks for when a Partition or the entire Repository is sync'ed with the underlying disk.
     // We keep track of this because we need to ensure that the ContentClaims are destroyed only after the FlowFile Repository has been
@@ -157,9 +158,10 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         }
         this.walImplementation = writeAheadLogImpl;
 
-        // We used to use one implementation of the write-ahead log, but we now want to use the other, we must address this. Since the
-        // MinimalLockingWriteAheadLog supports multiple partitions, we need to ensure that we recover records from all
-        // partitions, so we build up a List of Files for the recovery files.
+        // We used to use one implementation (minimal locking) of the write-ahead log, but we now want to use the other
+        // (sequential access), we must address this. Since the MinimalLockingWriteAheadLog supports multiple partitions,
+        // we need to ensure that we recover records from all partitions, so we build up a List of Files for the
+        // recovery files.
         for (final String propertyName : nifiProperties.getPropertyKeys()) {
             if (propertyName.startsWith(FLOWFILE_REPOSITORY_DIRECTORY_PREFIX)) {
                 final String dirName = nifiProperties.getProperty(propertyName);
@@ -167,7 +169,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
             }
         }
 
-        if (walImplementation.equals(SEQUENTIAL_ACCESS_WAL)) {
+        if (isSequentialAccessWAL(walImplementation)) {
             final String directoryName = nifiProperties.getProperty(FLOWFILE_REPOSITORY_DIRECTORY_PREFIX);
             flowFileRepositoryPaths.add(new File(directoryName));
         } else {
@@ -181,12 +183,22 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         checkpointExecutor = Executors.newSingleThreadScheduledExecutor();
     }
 
+    /**
+     * Returns true if the provided implementation is a sequential access write ahead log (plaintext or encrypted).
+     *
+     * @param walImplementation the implementation to check
+     * @return true if this implementation is sequential access
+     */
+    private static boolean isSequentialAccessWAL(String walImplementation) {
+        return walImplementation.equals(SEQUENTIAL_ACCESS_WAL) || walImplementation.equals(ENCRYPTED_SEQUENTIAL_ACCESS_WAL);
+    }
+
     @Override
     public void initialize(final ResourceClaimManager claimManager) throws IOException {
         initialize(claimManager, new StandardRepositoryRecordSerdeFactory(claimManager));
     }
 
-    protected void initialize(final ResourceClaimManager claimManager, final RepositoryRecordSerdeFactory serdeFactory) throws IOException {
+    public void initialize(final ResourceClaimManager claimManager, final RepositoryRecordSerdeFactory serdeFactory) throws IOException {
         this.claimManager = claimManager;
 
         for (final File file : flowFileRepositoryPaths) {
@@ -199,7 +211,9 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         // delete backup. On restore, if no files exist in partition's directory, would have to check backup directory
         this.serdeFactory = serdeFactory;
 
-        if (walImplementation.equals(SEQUENTIAL_ACCESS_WAL)) {
+        // The specified implementation can be plaintext or encrypted; the only difference is the serde factory
+        if (isSequentialAccessWAL(walImplementation)) {
+            // TODO: May need to instantiate ESAWAL for clarity?
             wal = new SequentialAccessWriteAheadLog<>(flowFileRepositoryPaths.get(0), serdeFactory, this);
         } else if (walImplementation.equals(MINIMAL_LOCKING_WALI)) {
             final SortedSet<Path> paths = flowFileRepositoryPaths.stream()
@@ -232,7 +246,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
 
     @Override
     public Map<ResourceClaim, Set<ResourceClaimReference>> findResourceClaimReferences(final Set<ResourceClaim> resourceClaims, final FlowFileSwapManager swapManager) throws IOException {
-        if (!(wal instanceof SequentialAccessWriteAheadLog)) {
+        if (!(isSequentialAccessWAL(walImplementation))) {
             return null;
         }
 
@@ -596,7 +610,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
 
     @Override
     public void onSync(final int partitionIndex) {
-        final BlockingQueue<ResourceClaim> claimQueue = claimsAwaitingDestruction.get(Integer.valueOf(partitionIndex));
+        final BlockingQueue<ResourceClaim> claimQueue = claimsAwaitingDestruction.get(partitionIndex);
         if (claimQueue == null) {
             return;
         }
@@ -677,7 +691,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         logger.info("Repository updated to reflect that {} FlowFiles were swapped in to {}", new Object[]{swapRecords.size(), queue});
     }
 
-     void deleteRecursively(final File dir) {
+    void deleteRecursively(final File dir) {
         final File[] children = dir.listFiles();
 
         if (children != null) {
@@ -807,7 +821,7 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
         // Since these implementations do not write to the same files, they will not interfere with one another. If we do recover records,
         // then we will update the new WAL (with fsync()) and delete the old repository so that we won't recover it again.
         if (recordList == null || recordList.isEmpty()) {
-            if (walImplementation.equals(SEQUENTIAL_ACCESS_WAL)) {
+            if (isSequentialAccessWAL(walImplementation)) {
                 // Configured to use Sequential Access WAL but it has no records. Check if there are records in
                 // a MinimalLockingWriteAheadLog that we can recover.
                 recordList = migrateFromMinimalLockingLog(wal).orElse(new ArrayList<>());
@@ -902,14 +916,5 @@ public class WriteAheadFlowFileRepository implements FlowFileRepository, SyncLis
 
     public int checkpoint() throws IOException {
         return wal.checkpoint();
-    }
-
-    /**
-     * Accessor for {@link EncryptedWriteAheadFlowFileRepository}.
-     *
-     * @return the swap location suffixes
-     */
-    protected Set<String> getSwapLocationSuffixes() {
-        return swapLocationSuffixes;
     }
 }

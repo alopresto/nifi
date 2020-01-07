@@ -219,11 +219,13 @@ public class EncryptedSchemaRepositoryRecordSerde implements SerDe<RepositoryRec
     @Deprecated
     @Override
     public RepositoryRecord deserializeEdit(DataInputStream in, Map<Object, RepositoryRecord> currentRecordStates, int version) throws IOException {
+        return deserializeRecord(in, version);
+
         // deserializeRecord may return a null if there is no more data. However, when we are deserializing
         // an edit, we do so only when we know that we should have data. This is why the JavaDocs for this method
         // on the interface indicate that this method should never return null. As a result, if there is no data
         // available, we handle this by throwing an EOFException.
-        throw new EOFException();
+        // throw new EOFException();
     }
 
     /**

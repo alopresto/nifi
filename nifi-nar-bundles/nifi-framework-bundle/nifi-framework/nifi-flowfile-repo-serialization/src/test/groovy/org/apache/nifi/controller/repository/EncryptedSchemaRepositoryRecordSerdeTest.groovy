@@ -60,6 +60,7 @@ class EncryptedSchemaRepositoryRecordSerdeTest extends GroovyTestCase {
     private static final String KPL = ""
     private static final String KEY_ID = "K1"
     private static final Map<String, String> KEYS = [K1: "0123456789ABCDEFFEDCBA98765432100123456789ABCDEFFEDCBA9876543210"]
+    // TODO: Change to WAL impl name
     private static final String REPO_IMPL = CryptoUtils.EWAFFR_CLASS_NAME
 
     private FlowFileRepositoryEncryptionConfiguration flowFileREC

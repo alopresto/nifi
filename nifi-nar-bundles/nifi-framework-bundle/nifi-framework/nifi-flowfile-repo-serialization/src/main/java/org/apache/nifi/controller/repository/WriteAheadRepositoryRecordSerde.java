@@ -48,8 +48,8 @@ public class WriteAheadRepositoryRecordSerde extends RepositoryRecordSerde imple
     public static final byte ACTION_SWAPPED_OUT = 3;
     public static final byte ACTION_SWAPPED_IN = 4;
 
-    protected long recordsRestored = 0L;
-    protected final ResourceClaimManager claimManager;
+    private long recordsRestored = 0L;
+    private final ResourceClaimManager claimManager;
 
     public WriteAheadRepositoryRecordSerde(final ResourceClaimManager claimManager) {
         this.claimManager = claimManager;

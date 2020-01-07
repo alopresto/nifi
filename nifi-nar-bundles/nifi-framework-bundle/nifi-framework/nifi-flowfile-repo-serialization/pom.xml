@@ -61,5 +61,9 @@
             <version>${nifi.groovy.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-properties-loader</artifactId>
+        </dependency>
     </dependencies>
 </project>

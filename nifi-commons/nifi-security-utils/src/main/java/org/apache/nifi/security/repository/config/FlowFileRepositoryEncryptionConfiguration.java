@@ -36,18 +36,18 @@ public class FlowFileRepositoryEncryptionConfiguration extends RepositoryEncrypt
                 niFiProperties.getProperty(NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_LOCATION),
                 niFiProperties.getFlowFileRepoEncryptionKeyId(),
                 niFiProperties.getFlowFileRepoEncryptionKeys(),
-                niFiProperties.getProperty(NiFiProperties.FLOWFILE_REPOSITORY_IMPLEMENTATION)
+                niFiProperties.getProperty(NiFiProperties.FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION)
         );
     }
 
     /**
-     * Constructor which accepts explicit values for each configuration value.
+     * Constructor which accepts explicit values for each configuration value. This differs from {@link ContentRepositoryEncryptionConfiguration} and {@link ProvenanceRepositoryEncryptionConfiguration} because the repository implementation does not change for an encrypted flowfile repository, only the write-ahead log implementation ({@link NiFiProperties#FLOWFILE_REPOSITORY_WAL_IMPLEMENTATION}).
      *
      * @param keyProviderImplementation the key provider implementation class
      * @param keyProviderLocation the key provider location
      * @param encryptionKeyId the active encryption key id
      * @param encryptionKeys the map of available keys
-     * @param repositoryImplementation the repository implementation class
+     * @param repositoryImplementation the write ahead log implementation
      */
     public FlowFileRepositoryEncryptionConfiguration(String keyProviderImplementation,
                                                      String keyProviderLocation,
@@ -59,6 +59,6 @@ public class FlowFileRepositoryEncryptionConfiguration extends RepositoryEncrypt
         this.encryptionKeyId = encryptionKeyId;
         this.encryptionKeys = encryptionKeys;
         this.repositoryImplementation = repositoryImplementation;
-        this.repositoryType = RepositoryType.CONTENT;
+        this.repositoryType = RepositoryType.FLOWFILE;
     }
 }
