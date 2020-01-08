@@ -1371,11 +1371,18 @@ public abstract class NiFiProperties {
     private Map<String, String> getRepositoryEncryptionKeys(String repositoryType) {
         Map<String, String> keys = new HashMap<>();
         List<String> keyProperties = getRepositoryEncryptionKeyProperties(repositoryType);
+        if (keyProperties.size() == 0) {
+            logger.warn("No " + repositoryType + " repository encryption key properties were available. Check the "
+                    + "exact format specified in the Admin Guide - Encrypted " + StringUtils.toTitleCase(repositoryType)
+                    + " Repository Properties");
+            return keys;
+        }
         final String REPOSITORY_ENCRYPTION_KEY = getRepositoryEncryptionKey(repositoryType);
         final String REPOSITORY_ENCRYPTION_KEY_ID = getRepositoryEncryptionKeyId(repositoryType);
 
         // Retrieve the actual key values and store non-empty values in the map
         for (String prop : keyProperties) {
+            logger.debug("Parsing " + prop);
             final String value = getProperty(prop);
             if (!StringUtils.isBlank(value)) {
                 // If this property is .key (the actual hex key), put it in the map under the value of .key.id (i.e. key1)
@@ -1403,7 +1410,7 @@ public abstract class NiFiProperties {
      * @return the list of encryption key properties
      */
     private List<String> getRepositoryEncryptionKeyProperties(String repositoryType) {
-        switch (repositoryType) {
+        switch (repositoryType.toLowerCase()) {
             case "flowfile":
                 return getFlowFileRepositoryEncryptionKeyProperties();
             case "content":
@@ -1423,7 +1430,7 @@ public abstract class NiFiProperties {
      * @return the encryption key property (i.e. {@code FLOWFILE_REPOSITORY_ENCRYPTION_KEY})
      */
     private String getRepositoryEncryptionKey(String repositoryType) {
-        switch (repositoryType) {
+        switch (repositoryType.toLowerCase()) {
             case "flowfile":
                 return FLOWFILE_REPOSITORY_ENCRYPTION_KEY;
             case "content":
@@ -1443,7 +1450,7 @@ public abstract class NiFiProperties {
      * @return the encryption key ID property (i.e. {@code FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID})
      */
     private String getRepositoryEncryptionKeyId(String repositoryType) {
-        switch (repositoryType) {
+        switch (repositoryType.toLowerCase()) {
             case "flowfile":
                 return FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID;
             case "content":
@@ -1484,7 +1491,7 @@ public abstract class NiFiProperties {
      * @return a Map of the keys identified by key ID
      */
     public Map<String, String> getProvenanceRepoEncryptionKeys() {
-       return getRepositoryEncryptionKeys("provenance");
+        return getRepositoryEncryptionKeys("provenance");
     }
 
     public String getContentRepositoryEncryptionKeyId() {
@@ -1516,7 +1523,7 @@ public abstract class NiFiProperties {
      * @return a Map of the keys identified by key ID
      */
     public Map<String, String> getContentRepositoryEncryptionKeys() {
-       return getRepositoryEncryptionKeys("content");
+        return getRepositoryEncryptionKeys("content");
     }
 
     /**
