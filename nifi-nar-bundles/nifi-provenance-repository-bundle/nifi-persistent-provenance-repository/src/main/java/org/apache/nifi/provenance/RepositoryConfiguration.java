@@ -495,6 +495,7 @@ public class RepositoryConfiguration {
 
         config.setDebugFrequency(nifiProperties.getIntegerProperty(NiFiProperties.PROVENANCE_REPO_DEBUG_FREQUENCY, config.getDebugFrequency()));
 
+        // TODO: Check for multiple key loading (NIFI-6617)
         // Encryption values may not be present but are only required for EncryptedWriteAheadProvenanceRepository
         final String implementationClassName = nifiProperties.getProperty(NiFiProperties.PROVENANCE_REPO_IMPLEMENTATION_CLASS);
         if (EncryptedWriteAheadProvenanceRepository.class.getName().equals(implementationClassName)) {

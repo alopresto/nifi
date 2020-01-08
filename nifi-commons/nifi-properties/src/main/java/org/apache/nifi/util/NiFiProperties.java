@@ -34,6 +34,8 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The NiFiProperties class holds all properties which are needed for various
@@ -44,6 +46,7 @@ import java.util.stream.Stream;
  * over time.
  */
 public abstract class NiFiProperties {
+    private static final Logger logger = LoggerFactory.getLogger(NiFiProperties.class);
 
     // core properties
     public static final String PROPERTIES_FILE_PATH = "nifi.properties.file.path";
@@ -251,7 +254,7 @@ public abstract class NiFiProperties {
     public static final String ANALYTICS_PREDICTION_INTERVAL = "nifi.analytics.predict.interval";
     public static final String ANALYTICS_QUERY_INTERVAL = "nifi.analytics.query.interval";
     public static final String ANALYTICS_CONNECTION_MODEL_IMPLEMENTATION = "nifi.analytics.connection.model.implementation";
-    public static final String ANALYTICS_CONNECTION_MODEL_SCORE_NAME= "nifi.analytics.connection.model.score.name";
+    public static final String ANALYTICS_CONNECTION_MODEL_SCORE_NAME = "nifi.analytics.connection.model.score.name";
     public static final String ANALYTICS_CONNECTION_MODEL_SCORE_THRESHOLD = "nifi.analytics.connection.model.score.threshold";
 
     // defaults
@@ -982,6 +985,7 @@ public abstract class NiFiProperties {
      * Returns the claim to be used to identify a user.
      * Claim must be requested by adding the scope for it.
      * Default is 'email'.
+     *
      * @return The claim to be used to identify the user.
      */
     public String getOidcClaimIdentifyingUser() {
@@ -1364,12 +1368,16 @@ public abstract class NiFiProperties {
             final String value = getProperty(prop);
             if (!StringUtils.isBlank(value)) {
                 if (prop.equalsIgnoreCase(FLOWFILE_REPOSITORY_ENCRYPTION_KEY)) {
-                    prop = getFlowFileRepoEncryptionKeyId();
+                    keys.put(getFlowFileRepoEncryptionKeyId(), value);
                 } else {
                     // Extract nifi.flowfile.repository.encryption.key.id.key1 -> key1
-                    prop = prop.substring(prop.lastIndexOf(".") + 1);
+                    String extractedKeyId = prop.substring(prop.lastIndexOf(".") + 1);
+                    if (keys.containsKey(extractedKeyId)) {
+                        logger.warn("The flowfile repository encryption key map already contains an entry for {}. Ignoring new value from {}", extractedKeyId, prop);
+                    } else {
+                        keys.put(extractedKeyId, value);
+                    }
                 }
-                keys.put(prop, value);
             }
         }
         return keys;
