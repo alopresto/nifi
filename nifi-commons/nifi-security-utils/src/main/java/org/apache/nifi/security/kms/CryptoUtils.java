@@ -43,6 +43,7 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.security.repository.config.RepositoryEncryptionConfiguration;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.crypto.AESKeyedCipherProvider;
 import org.apache.nifi.util.NiFiProperties;
@@ -112,6 +113,18 @@ public class CryptoUtils {
     }
 
     /**
+     * Returns true if the provided configuration values are valid (shallow evaluation only; does not validate the keys
+     * contained in a {@link FileBasedKeyProvider}).
+     *
+     * @param rec the configuration to validate
+     * @return true if the config is valid
+     */
+    public static boolean isValidRepositoryEncryptionConfiguration(RepositoryEncryptionConfiguration rec) {
+        return isValidKeyProvider(rec.getKeyProviderImplementation(), rec.getKeyProviderLocation(), rec.getEncryptionKeyId(), rec.getEncryptionKeys());
+
+    }
+
+    /**
      * Returns true if the provided configuration values successfully define the specified {@link KeyProvider}.
      *
      * @param keyProviderImplementation the FQ class name of the {@link KeyProvider} implementation
@@ -122,18 +135,18 @@ public class CryptoUtils {
      */
     public static boolean isValidKeyProvider(String keyProviderImplementation, String keyProviderLocation, String keyId, Map<String, String> encryptionKeys) {
         logger.debug("Attempting to validate the key provider: keyProviderImplementation = "
-                + keyProviderImplementation + " , keyProviderLocation = "
-                + keyProviderLocation + " , keyId = "
-                + keyId + " , encryptionKeys = "
+                + keyProviderImplementation + ", keyProviderLocation = "
+                + keyProviderLocation + ", keyId = "
+                + keyId + ", encryptionKeys = "
                 + ((encryptionKeys == null) ? "0" : encryptionKeys.size()));
 
         try {
             keyProviderImplementation = handleLegacyPackages(keyProviderImplementation);
         } catch (KeyManagementException e) {
-            logger.error("The attempt to validate the key provider failed keyProviderImplementation = "
-                    + keyProviderImplementation + " , keyProviderLocation = "
-                    + keyProviderLocation + " , keyId = "
-                    + keyId + " , encryptionKeys = "
+            logger.warn("The attempt to validate the key provider failed keyProviderImplementation = "
+                    + keyProviderImplementation + ", keyProviderLocation = "
+                    + keyProviderLocation + ", keyId = "
+                    + keyId + ", encryptionKeys = "
                     + ((encryptionKeys == null) ? "0" : encryptionKeys.size()));
 
             return false;
@@ -152,10 +165,10 @@ public class CryptoUtils {
             final File kpf = new File(keyProviderLocation);
             return kpf.exists() && kpf.canRead() && StringUtils.isNotEmpty(keyId);
         } else {
-            logger.error("The attempt to validate the key provider failed keyProviderImplementation = "
-                    + keyProviderImplementation + " , keyProviderLocation = "
-                    + keyProviderLocation + " , keyId = "
-                    + keyId + " , encryptionKeys = "
+            logger.warn("The attempt to validate the key provider failed keyProviderImplementation = "
+                    + keyProviderImplementation + ", keyProviderLocation = "
+                    + keyProviderLocation + ", keyId = "
+                    + keyId + ", encryptionKeys = "
                     + ((encryptionKeys == null) ? "0" : encryptionKeys.size()));
 
             return false;

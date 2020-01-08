@@ -19,6 +19,8 @@ package org.apache.nifi.controller.repository;
 
 import java.io.IOException;
 import org.apache.nifi.controller.repository.claim.ResourceClaimManager;
+import org.apache.nifi.security.kms.CryptoUtils;
+import org.apache.nifi.security.kms.EncryptionException;
 import org.apache.nifi.security.repository.config.FlowFileRepositoryEncryptionConfiguration;
 import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
@@ -30,24 +32,19 @@ public class EncryptedRepositoryRecordSerdeFactory extends StandardRepositoryRec
 
     private FlowFileRepositoryEncryptionConfiguration ffrec;
 
-    // public EncryptedRepositoryRecordSerdeFactory(final ResourceClaimManager claimManager) {
-    //     super(claimManager);
-    //
-    //     // Retrieve encryption configuration
-    //     try {
-    //         NiFiProperties niFiProperties = NiFiPropertiesLoader.loadDefaultWithKeyFromBootstrap();
-    //         ffrec = new FlowFileRepositoryEncryptionConfiguration(niFiProperties);
-    //     } catch (IOException e) {
-    //         logger.error("Encountered an error creating the encrypted serde factory", e);
-    //         throw new IllegalArgumentException("Could not create encrypted serde factory because required NiFi properties could not be loaded");
-    //     }
-    // }
-
-    public EncryptedRepositoryRecordSerdeFactory(final ResourceClaimManager claimManager, NiFiProperties niFiProperties) {
+    public EncryptedRepositoryRecordSerdeFactory(final ResourceClaimManager claimManager, NiFiProperties niFiProperties) throws EncryptionException {
         super(claimManager);
 
         // Retrieve encryption configuration
-        ffrec = new FlowFileRepositoryEncryptionConfiguration(niFiProperties);
+        FlowFileRepositoryEncryptionConfiguration ffrec = new FlowFileRepositoryEncryptionConfiguration(niFiProperties);
+
+        // The configuration should be validated immediately rather than waiting until attempting to deserialize records (initial recovery at startup)
+        if (!CryptoUtils.isValidRepositoryEncryptionConfiguration(ffrec)) {
+            logger.error("The flowfile repository encryption configuration is not valid (see above). Shutting down...");
+            throw new EncryptionException("The flowfile repository encryption configuration is not valid");
+        }
+
+        this.ffrec = ffrec;
     }
 
     @Override

@@ -21,6 +21,7 @@ package org.apache.nifi.controller.repository
 import org.apache.nifi.controller.repository.claim.ResourceClaimManager
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager
 import org.apache.nifi.properties.StandardNiFiProperties
+import org.apache.nifi.security.kms.EncryptionException
 import org.apache.nifi.util.NiFiProperties
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
@@ -122,21 +123,19 @@ class EncryptedRepositoryRecordSerdeFactoryTest extends GroovyTestCase {
     void testCreateSerDeShouldFailWithUnpopulatedNiFiProperties() {
         // Arrange
         NiFiProperties emptyNiFiProperties = new StandardNiFiProperties(new Properties([:]))
-        EncryptedRepositoryRecordSerdeFactory factory = new EncryptedRepositoryRecordSerdeFactory(claimManager, emptyNiFiProperties)
 
         // Act
-        def msg = shouldFail(IllegalArgumentException) {
-            SerDe<RepositoryRecord> serde = factory.createSerDe(EncryptedSchemaRepositoryRecordSerde.class.name)
-            logger.info("Created serde: ${serde} ")
+        def msg = shouldFail(EncryptionException) {
+            EncryptedRepositoryRecordSerdeFactory factory = new EncryptedRepositoryRecordSerdeFactory(claimManager, emptyNiFiProperties)
         }
         logger.expected(msg)
 
         // Assert
-        assert msg =~ "Could not create Deserializer for Repository Records because the encoding org.apache.nifi.controller.repository.EncryptedSchemaRepositoryRecordSerde requires NiFi properties which could not be loaded"
+        assert msg =~ "The flowfile repository encryption configuration is not valid"
     }
 
     @Test
-    void testCreateSerDeShouldFailWithInvalidNiFiProperties() {
+    void testConstructorShouldFailWithInvalidNiFiProperties() {
         // Arrange
         Map invalidFlowfileEncryptionProps = [
                 (NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_PROVIDER_IMPLEMENTATION_CLASS): STATIC_KEY_PROVIDER_CLASS_NAME.reverse(),
@@ -144,16 +143,14 @@ class EncryptedRepositoryRecordSerdeFactoryTest extends GroovyTestCase {
                 (NiFiProperties.FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID)                           : KEY_ID
         ]
         NiFiProperties invalidNiFiProperties = new StandardNiFiProperties(new Properties(invalidFlowfileEncryptionProps))
-        EncryptedRepositoryRecordSerdeFactory factory = new EncryptedRepositoryRecordSerdeFactory(claimManager, invalidNiFiProperties)
 
         // Act
-        def msg = shouldFail(IllegalArgumentException) {
-            SerDe<RepositoryRecord> serde = factory.createSerDe(EncryptedSchemaRepositoryRecordSerde.class.name)
-            logger.info("Created serde: ${serde} ")
+        def msg = shouldFail(EncryptionException) {
+            EncryptedRepositoryRecordSerdeFactory factory = new EncryptedRepositoryRecordSerdeFactory(claimManager, invalidNiFiProperties)
         }
         logger.expected(msg)
 
         // Assert
-        assert msg =~ "Could not create Deserializer for Repository Records because the encoding org.apache.nifi.controller.repository.EncryptedSchemaRepositoryRecordSerde requires NiFi properties which could not be loaded"
+        assert msg =~ "The flowfile repository encryption configuration is not valid"
     }
 }
