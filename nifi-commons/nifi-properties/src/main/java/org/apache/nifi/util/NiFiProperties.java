@@ -1359,21 +1359,33 @@ public abstract class NiFiProperties {
      * @return a Map of the keys identified by key ID
      */
     public Map<String, String> getFlowFileRepoEncryptionKeys() {
-        // TODO: Duplicate logic with different constants as provenance should be refactored to helper method
+        return getRepositoryEncryptionKeys("flowfile");
+    }
+
+    /**
+     * Returns the map of key IDs to keys retrieved from the properties for the given repository type.
+     *
+     * @param repositoryType "provenance", "content", or "flowfile"
+     * @return the key map
+     */
+    private Map<String, String> getRepositoryEncryptionKeys(String repositoryType) {
         Map<String, String> keys = new HashMap<>();
-        List<String> keyProperties = getFlowFileRepositoryEncryptionKeyProperties();
+        List<String> keyProperties = getRepositoryEncryptionKeyProperties(repositoryType);
+        final String REPOSITORY_ENCRYPTION_KEY = getRepositoryEncryptionKey(repositoryType);
+        final String REPOSITORY_ENCRYPTION_KEY_ID = getRepositoryEncryptionKeyId(repositoryType);
 
         // Retrieve the actual key values and store non-empty values in the map
         for (String prop : keyProperties) {
             final String value = getProperty(prop);
             if (!StringUtils.isBlank(value)) {
-                if (prop.equalsIgnoreCase(FLOWFILE_REPOSITORY_ENCRYPTION_KEY)) {
-                    keys.put(getFlowFileRepoEncryptionKeyId(), value);
+                // If this property is .key (the actual hex key), put it in the map under the value of .key.id (i.e. key1)
+                if (prop.equalsIgnoreCase(REPOSITORY_ENCRYPTION_KEY)) {
+                    keys.put(getProperty(REPOSITORY_ENCRYPTION_KEY_ID), value);
                 } else {
-                    // Extract nifi.flowfile.repository.encryption.key.id.key1 -> key1
+                    // Extract nifi.*.repository.encryption.key.id.key1 -> key1
                     String extractedKeyId = prop.substring(prop.lastIndexOf(".") + 1);
                     if (keys.containsKey(extractedKeyId)) {
-                        logger.warn("The flowfile repository encryption key map already contains an entry for {}. Ignoring new value from {}", extractedKeyId, prop);
+                        logger.warn("The {} repository encryption key map already contains an entry for {}. Ignoring new value from {}", repositoryType, extractedKeyId, prop);
                     } else {
                         keys.put(extractedKeyId, value);
                     }
@@ -1381,6 +1393,66 @@ public abstract class NiFiProperties {
             }
         }
         return keys;
+    }
+
+    /**
+     * Returns the list of encryption key properties for the specified repository type. If an unknown repository type
+     * is provided, returns an empty list.
+     *
+     * @param repositoryType "provenance", "content", or "flowfile"
+     * @return the list of encryption key properties
+     */
+    private List<String> getRepositoryEncryptionKeyProperties(String repositoryType) {
+        switch (repositoryType) {
+            case "flowfile":
+                return getFlowFileRepositoryEncryptionKeyProperties();
+            case "content":
+                return getContentRepositoryEncryptionKeyProperties();
+            case "provenance":
+                return getProvenanceRepositoryEncryptionKeyProperties();
+            default:
+                return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Returns the encryption key property key for the specified repository type. If an unknown repository type
+     * is provided, returns an empty string.
+     *
+     * @param repositoryType "provenance", "content", or "flowfile"
+     * @return the encryption key property (i.e. {@code FLOWFILE_REPOSITORY_ENCRYPTION_KEY})
+     */
+    private String getRepositoryEncryptionKey(String repositoryType) {
+        switch (repositoryType) {
+            case "flowfile":
+                return FLOWFILE_REPOSITORY_ENCRYPTION_KEY;
+            case "content":
+                return CONTENT_REPOSITORY_ENCRYPTION_KEY;
+            case "provenance":
+                return PROVENANCE_REPO_ENCRYPTION_KEY;
+            default:
+                return "";
+        }
+    }
+
+    /**
+     * Returns the encryption key ID property key for the specified repository type. If an unknown repository type
+     * is provided, returns an empty string.
+     *
+     * @param repositoryType "provenance", "content", or "flowfile"
+     * @return the encryption key ID property (i.e. {@code FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID})
+     */
+    private String getRepositoryEncryptionKeyId(String repositoryType) {
+        switch (repositoryType) {
+            case "flowfile":
+                return FLOWFILE_REPOSITORY_ENCRYPTION_KEY_ID;
+            case "content":
+                return CONTENT_REPOSITORY_ENCRYPTION_KEY_ID;
+            case "provenance":
+                return PROVENANCE_REPO_ENCRYPTION_KEY_ID;
+            default:
+                return "";
+        }
     }
 
     public String getProvenanceRepoEncryptionKeyId() {
@@ -1412,23 +1484,7 @@ public abstract class NiFiProperties {
      * @return a Map of the keys identified by key ID
      */
     public Map<String, String> getProvenanceRepoEncryptionKeys() {
-        Map<String, String> keys = new HashMap<>();
-        List<String> keyProperties = getProvenanceRepositoryEncryptionKeyProperties();
-
-        // Retrieve the actual key values and store non-empty values in the map
-        for (String prop : keyProperties) {
-            final String value = getProperty(prop);
-            if (!StringUtils.isBlank(value)) {
-                if (prop.equalsIgnoreCase(PROVENANCE_REPO_ENCRYPTION_KEY)) {
-                    prop = getProvenanceRepoEncryptionKeyId();
-                } else {
-                    // Extract nifi.provenance.repository.encryption.key.id.key1 -> key1
-                    prop = prop.substring(prop.lastIndexOf(".") + 1);
-                }
-                keys.put(prop, value);
-            }
-        }
-        return keys;
+       return getRepositoryEncryptionKeys("provenance");
     }
 
     public String getContentRepositoryEncryptionKeyId() {
@@ -1460,24 +1516,7 @@ public abstract class NiFiProperties {
      * @return a Map of the keys identified by key ID
      */
     public Map<String, String> getContentRepositoryEncryptionKeys() {
-        // TODO: Duplicate logic with different constants as provenance should be refactored to helper method
-        Map<String, String> keys = new HashMap<>();
-        List<String> keyProperties = getContentRepositoryEncryptionKeyProperties();
-
-        // Retrieve the actual key values and store non-empty values in the map
-        for (String prop : keyProperties) {
-            final String value = getProperty(prop);
-            if (!StringUtils.isBlank(value)) {
-                if (prop.equalsIgnoreCase(CONTENT_REPOSITORY_ENCRYPTION_KEY)) {
-                    prop = getContentRepositoryEncryptionKeyId();
-                } else {
-                    // Extract nifi.content.repository.encryption.key.id.key1 -> key1
-                    prop = prop.substring(prop.lastIndexOf(".") + 1);
-                }
-                keys.put(prop, value);
-            }
-        }
-        return keys;
+       return getRepositoryEncryptionKeys("content");
     }
 
     /**
