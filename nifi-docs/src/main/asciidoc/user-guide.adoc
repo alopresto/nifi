@@ -2690,7 +2690,7 @@ When switching between implementation "families" (i.e. `VolatileProvenanceReposi
 
 [[encrypted-content]]
 == Encrypted Content Repository
-While OS-level access control can offer some security over the flowfile content data written to the disk in a repository, there are scenarios where the data may be sensitive, compliance and regulatory requirements exist, or NiFi is running on hardware not under the direct control of the organization (cloud, etc.). In this case, the content repository allows for all data to be encrypted before being persisted to the disk.
+While OS-level access control can offer some security over the flowfile content data written to the disk in a repository, there are scenarios where the data may be sensitive, compliance and regulatory requirements exist, or NiFi is running on hardware not under the direct control of the organization (cloud, etc.). In this case, the content repository allows for all data to be encrypted before being persisted to the disk. For more information on the internal workings of the content repository, see <<nifi-in-depth.adoc#content-repository,NiFi In-Depth - Content Repository>>.
 
 [WARNING]
 .Experimental
@@ -2775,7 +2775,7 @@ When switching between implementation "families" (i.e. `VolatileContentRepositor
 
 [[encrypted-flowfile]]
 == Encrypted FlowFile Repository
-While OS-level access control can offer some security over the flowfile attribute and content claim data written to the disk in a repository, there are scenarios where the data may be sensitive, compliance and regulatory requirements exist, or NiFi is running on hardware not under the direct control of the organization (cloud, etc.). In this case, the flowfile repository allows for all data to be encrypted before being persisted to the disk.
+While OS-level access control can offer some security over the flowfile attribute and content claim data written to the disk in a repository, there are scenarios where the data may be sensitive, compliance and regulatory requirements exist, or NiFi is running on hardware not under the direct control of the organization (cloud, etc.). In this case, the flowfile repository allows for all data to be encrypted before being persisted to the disk. For more information on the internal workings of the flowfile repository, see <<nifi-in-depth.adoc#flowfile-repository,NiFi In-Depth - FlowFile Repository>>.
 
 [WARNING]
 .Experimental
