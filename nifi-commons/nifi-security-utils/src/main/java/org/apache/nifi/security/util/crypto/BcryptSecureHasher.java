@@ -65,7 +65,9 @@ public class BcryptSecureHasher implements SecureHasher {
      * Instantiates a Bcrypt secure hasher using the default cost parameter
      * ({@code cost = }{@link #DEFAULT_COST}
      */
-    public BcryptSecureHasher() { this(DEFAULT_COST, 0); }
+    public BcryptSecureHasher() {
+        this(DEFAULT_COST, 0);
+    }
 
     /**
      * Instantiates a Bcrypt secure hasher using the provided cost parameters. A static
@@ -73,7 +75,9 @@ public class BcryptSecureHasher implements SecureHasher {
      *
      * @param cost the (log) number of key expansion rounds [4..31]
      */
-    public BcryptSecureHasher(int cost) { this(cost, 0); }
+    public BcryptSecureHasher(int cost) {
+        this(cost, 0);
+    }
 
     /**
      * Instantiates an Bcrypt secure hasher using the provided cost parameters. A unique
