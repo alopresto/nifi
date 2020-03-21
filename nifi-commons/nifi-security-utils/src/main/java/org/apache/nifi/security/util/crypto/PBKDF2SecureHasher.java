@@ -16,6 +16,9 @@
  */
 package org.apache.nifi.security.util.crypto;
 
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.MD5Digest;
@@ -29,10 +32,6 @@ import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Provides an implementation of {@code PBKDF2} for secure password hashing.
@@ -55,8 +54,9 @@ public class PBKDF2SecureHasher implements SecureHasher {
      * This can be calculated automatically using the code {@see PBKDF2CipherProviderGroovyTest#calculateMinimumIterationCount} or manually updated by a maintainer
      */
     private static final int DEFAULT_ITERATION_COUNT = 160_000;
-    private static final int DEFAULT_DK_LENGTH = 512;
 
+    // Different sources list this in bits and bytes, but RFC 8018 uses bytes (octets [8-bit sequences] to be precise)
+    private static final int DEFAULT_DK_LENGTH = 32;
 
     private static final int MIN_ITERATION_COUNT = 1;
     private static final int MIN_DK_LENGTH = 1;
@@ -77,38 +77,30 @@ public class PBKDF2SecureHasher implements SecureHasher {
     /**
      * Instantiates a PBKDF2 secure hasher with the default number of iterations and the default PRF. Currently 160,000 iterations and SHA-512.
      */
-    public PBKDF2SecureHasher() { this(DEFAULT_PRF, DEFAULT_ITERATION_COUNT, 0, DEFAULT_DK_LENGTH); }
-
-    /**
-     * Instantiates a PBKDF2 secure hasher using the provided cost parameters. A static
-     * {@link #DEFAULT_SALT_LENGTH} byte salt will be generated on every hash request.
-     *
-     * @param iterationCount the (log) number of key expansion rounds
-     */
-    public PBKDF2SecureHasher(int iterationCount) {
-        this(DEFAULT_PRF, iterationCount, 0, DEFAULT_DK_LENGTH);
+    public PBKDF2SecureHasher() {
+        this(DEFAULT_PRF, DEFAULT_ITERATION_COUNT, 0, DEFAULT_DK_LENGTH);
     }
 
     /**
-     * Instantiates a PBKDF2 secure hasher using the provided cost parameters. A static
-     * {@link #DEFAULT_SALT_LENGTH} byte salt will be generated on every hash request.
+     * Instantiates a PBKDF2 secure hasher with the provided number of iterations and derived key (output) length in bytes, using the default PRF ({@code SHA512}).
      *
-     * @param iterationCount the (log) number of key expansion rounds
+     * @param iterationCount the number of iterations
+     * @param dkLength       the desired output length in bytes
      */
-    public PBKDF2SecureHasher(int iterationCount, int saltLength) {
-        this(DEFAULT_PRF, iterationCount, saltLength, DEFAULT_DK_LENGTH);
+    public PBKDF2SecureHasher(int iterationCount, int dkLength) {
+        this(DEFAULT_PRF, iterationCount, 0, dkLength);
     }
 
     /**
      * Instantiates a PBKDF2 secure hasher using the provided cost parameters. A unique
      * salt of the specified length will be generated on every hash request.
-     * Currently support PRFs of MD5, SHA1, SHA256, SHA384, and SHA512. Unknown PRFs will default to
-     * SHA512.
+     * Currently supported PRFs are {@code MD5} (deprecated), {@code SHA1} (deprecated), {@code SHA256},
+     * {@code SHA384}, and {@code SHA512}. Unknown PRFs will default to {@code SHA512}.
      *
      * @param prf            a String representation of the PRF name, e.g. "SHA256", "SHA-384" "sha_512"
      * @param iterationCount the number of iterations
-     * @param saltLength    the salt length in bytes {@code >= 16})
-     * @param dkLength      the output length in bits ({@code 1 to (2^32 - 1) * hLen})
+     * @param saltLength     the salt length in bytes ({@code >= 16}, {@code 0} indicates a static salt)
+     * @param dkLength       the output length in bytes ({@code 1 to (2^32 - 1) * hLen})
      */
     public PBKDF2SecureHasher(String prf, Integer iterationCount, int saltLength, int dkLength) {
         validateParameters(prf, iterationCount, saltLength, dkLength);
@@ -122,17 +114,19 @@ public class PBKDF2SecureHasher implements SecureHasher {
      * Enforces valid PBKDF2 secure hasher cost parameters are provided.
      *
      * @param iterationCount the (log) number of key expansion rounds
-     * @param saltLength the salt length in bytes {@code >= 16})
-     * @param dkLength   the output length in bits ({@code 1 to (2^32 - 1) * hLen})
+     * @param saltLength     the salt length in bytes {@code >= 16})
+     * @param dkLength       the output length in bytes ({@code 1 to (2^32 - 1) * hLen})
      */
     private void validateParameters(String prf, Integer iterationCount, int saltLength, int dkLength) {
+        logger.debug("Validating PBKDF2 secure hasher with prf {}, iteration count {}, salt length {} bytes, output length {} bytes", prf, iterationCount, saltLength, dkLength);
+
         if (!isIterationCountValid(iterationCount)) {
-            logger.error("The provided iteration count {} is below the minimum {}.", iterationCount, DEFAULT_ITERATION_COUNT);
+            logger.error("The provided iteration count {} is below the minimum {}.", iterationCount, MIN_ITERATION_COUNT);
             throw new IllegalArgumentException("Invalid iterationCount is not within iteration count boundary.");
         }
         if (saltLength > 0) {
             if (!isSaltLengthValid(saltLength)) {
-                logger.error("The provided saltLength {} B is below the minimum {}.", saltLength, DEFAULT_SALT_LENGTH);
+                logger.error("The provided saltLength {} bytes is below the minimum {}.", saltLength, MIN_SALT_LENGTH);
                 throw new IllegalArgumentException("Invalid saltLength is not within the salt length boundary.");
             }
             this.usingStaticSalt = false;
@@ -144,10 +138,10 @@ public class PBKDF2SecureHasher implements SecureHasher {
         // Calculate hLen based on PRF
         Digest prfType = resolvePRF(prf);
         int hLen = prfType.getDigestSize();
-        logger.info("The hLen is {}, with a PRF of {}", hLen, prfType.getAlgorithmName());
+        logger.debug("The PRF is {}, with a digest size (hLen) of {} bytes", prfType.getAlgorithmName(), hLen);
 
         if (!isDKLengthValid(hLen, dkLength)) {
-            logger.error("The provided dkLength {} bits is below the minimum {}.", dkLength, DEFAULT_DK_LENGTH);
+            logger.error("The provided dkLength {} bytes is outside the output boundary {} to {}.", dkLength, MIN_DK_LENGTH, getMaxDKLength(hLen));
             throw new IllegalArgumentException("Invalid dkLength is not within derived key length boundary.");
         }
     }
@@ -199,33 +193,46 @@ public class PBKDF2SecureHasher implements SecureHasher {
      * @param saltLength the salt length in bytes
      * @return true if salt length is at least the minimum boundary
      */
-    private static boolean isSaltLengthValid(Integer saltLength) {
+    public static boolean isSaltLengthValid(Integer saltLength) {
         if (saltLength == 0) {
             logger.debug("The provided salt length 0 indicates a static salt of {} bytes", DEFAULT_SALT_LENGTH);
             return true;
         }
         if (saltLength < MIN_SALT_LENGTH) {
-            logger.warn("The provided salt length {} B is below the recommended minimum {}.", saltLength, MIN_SALT_LENGTH);
+            logger.warn("The provided salt length {} bytes is below the recommended minimum {}.", saltLength, MIN_SALT_LENGTH);
         }
         return saltLength >= MIN_SALT_LENGTH;
     }
 
     /**
-     * Returns whether the provided hash (derived key) length is within boundaries. The lower bound >= 1 and the
+     * Returns whether the provided hash (derived key) length is within boundaries given the configured PRF. The lower bound >= 1 and the
      * upper bound <= ((2^32 - 1) * 32) * hLen.
      *
-     * @param dkLength the output length in bits
+     * @param hLen     the PRF digest size in bytes
+     * @param dkLength the output length in bytes
      * @return true if dkLength is within boundaries
      */
     public static boolean isDKLengthValid(int hLen, Integer dkLength) {
         if (dkLength < DEFAULT_DK_LENGTH) {
-            logger.warn("The provided dklength {} bits is below the recommended minimum {}.", dkLength, DEFAULT_DK_LENGTH);
+            logger.warn("The provided output length (dkLength) {} bytes is below the recommended minimum {}.", dkLength, DEFAULT_DK_LENGTH);
         }
-        long MAX_DK_LENGTH = (Double.valueOf((Math.pow(2, 32) - 1)).longValue()) * hLen;
-        // Convert dkLength bits to bytes?
-        logger.info("The max dkLength is {} bits with an hLen {} B.", MAX_DK_LENGTH, hLen);
+        final int MAX_DK_LENGTH = getMaxDKLength(hLen);
+        logger.debug("The max dkLength is {} bytes for hLen {} bytes.", MAX_DK_LENGTH, hLen);
 
         return dkLength >= MIN_DK_LENGTH && dkLength <= MAX_DK_LENGTH;
+    }
+
+    /**
+     * Returns the maximum length of the derived key in bytes given the digest length in bytes of the underlying PRF.
+     * If the calculated maximum exceeds {@link Integer#MAX_VALUE}, that is returned instead, as RFC 8018 specifies
+     * {@code keyLength INTEGER (1..MAX) OPTIONAL}.
+     *
+     * @param hLen the length of the PRF digest output in bytes
+     * @return the maximum possible length of the derived key in bytes
+     */
+    private static int getMaxDKLength(int hLen) {
+        final long MAX_LENGTH = ((Double.valueOf((Math.pow(2, 32)))).longValue() - 1) * hLen;
+        return Long.valueOf(Math.min(MAX_LENGTH, Integer.MAX_VALUE)).intValue();
     }
 
     /**
@@ -236,9 +243,9 @@ public class PBKDF2SecureHasher implements SecureHasher {
      */
     @Override
     public String hashHex(String input) {
-        if (input == null || input.length() == 0) {
-            logger.warn("Attempting to generate a PBKDF2 hash of null or empty input; returning 0 length string");
-            return "";
+        if (input == null) {
+            logger.warn("Attempting to generate a PBKDF2 hash of null input; using empty input");
+            input = "";
         }
 
         return Hex.toHexString(hash(input.getBytes(StandardCharsets.UTF_8)));
@@ -253,8 +260,8 @@ public class PBKDF2SecureHasher implements SecureHasher {
     @Override
     public String hashBase64(String input) {
         if (input == null || input.length() == 0) {
-            logger.warn("Attempting to generate a PBKDF2 hash of null or empty input; returning 0 length string");
-            return "";
+            logger.warn("Attempting to generate a PBKDF2 hash of null input; using empty input");
+            input = "";
         }
 
         return Base64.toBase64String(hash(input.getBytes(StandardCharsets.UTF_8)));
@@ -286,7 +293,8 @@ public class PBKDF2SecureHasher implements SecureHasher {
         final long startNanos = System.nanoTime();
         PKCS5S2ParametersGenerator gen = new PKCS5S2ParametersGenerator(this.prf);
         gen.init(input, rawSalt, iterationCount);
-        byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength)).getKey();
+        // The generateDerivedParameters method expects the dkLength in bits
+        byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength * 8)).getKey();
         final long generateNanos = System.nanoTime();
 
         final long totalDurationMillis = TimeUnit.NANOSECONDS.toMillis(generateNanos - startNanos);
