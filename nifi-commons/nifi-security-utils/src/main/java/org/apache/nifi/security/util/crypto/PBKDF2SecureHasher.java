@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.security.util.crypto;
 
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.MD5Digest;
@@ -29,6 +28,8 @@ import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * Provides an implementation of {@code PBKDF2} for secure password hashing.
@@ -231,6 +232,17 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
         // Contains only the raw salt
         byte[] rawSalt = getSalt();
 
+        return hash(input, rawSalt);
+    }
+
+    /**
+     * Internal method to hash the raw bytes.
+     *
+     * @param input the raw bytes to hash (can be length 0)
+     * @param rawSalt the raw bytes to salt
+     * @return the generated hash
+     */
+    byte[] hash(byte[] input, byte[] rawSalt) {
         logger.debug("Creating PBKDF2 hash with salt [{}] ({} bytes)", Hex.toHexString(rawSalt), rawSalt.length);
 
         final long startNanos = System.nanoTime();
