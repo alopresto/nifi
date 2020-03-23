@@ -245,7 +245,7 @@ class BcryptSecureHasherTest extends GroovyTestCase {
 
         // Act
         def results = saltLengths.collect { saltLength ->
-            def isValid = BcryptSecureHasher.isSaltLengthValid(saltLength)
+            def isValid = new BcryptSecureHasher().isSaltLengthValid(saltLength)
             [saltLength, isValid]
         }
 
@@ -262,7 +262,7 @@ class BcryptSecureHasherTest extends GroovyTestCase {
 
         // Act
         def results = saltLengths.collect { saltLength ->
-            def isValid = BcryptSecureHasher.isSaltLengthValid(saltLength)
+            def isValid = new BcryptSecureHasher().isSaltLengthValid(saltLength)
             [saltLength, isValid]
         }
 

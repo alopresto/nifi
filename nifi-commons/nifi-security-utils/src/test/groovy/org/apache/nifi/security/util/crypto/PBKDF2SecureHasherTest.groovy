@@ -296,7 +296,7 @@ class PBKDF2SecureHasherTest extends GroovyTestCase {
 
         // Act
         def results = saltLengths.collect { saltLength ->
-            def isValid = PBKDF2SecureHasher.isSaltLengthValid(saltLength)
+            def isValid = new PBKDF2SecureHasher().isSaltLengthValid(saltLength)
             logger.info("Salt length ${saltLength} bytes is valid: ${isValid}")
             isValid
         }
@@ -312,7 +312,7 @@ class PBKDF2SecureHasherTest extends GroovyTestCase {
 
         // Act
         def results = saltLengths.collect { saltLength ->
-            def isValid = PBKDF2SecureHasher.isSaltLengthValid(saltLength)
+            def isValid = new PBKDF2SecureHasher().isSaltLengthValid(saltLength)
             logger.info("Salt length ${saltLength} bytes is valid: ${isValid}")
             isValid
         }

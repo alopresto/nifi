@@ -16,8 +16,6 @@
  */
 package org.apache.nifi.security.util.crypto;
 
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.bouncycastle.crypto.Digest;
@@ -28,7 +26,6 @@ import org.bouncycastle.crypto.digests.SHA384Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
 import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +42,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * The resulting output is referred to as a <em>hash</em> to be consistent with {@link SecureHasher} terminology.
  */
-public class PBKDF2SecureHasher implements SecureHasher {
+public class PBKDF2SecureHasher extends AbstractSecureHasher {
     private static final Logger logger = LoggerFactory.getLogger(PBKDF2SecureHasher.class);
 
     private static final String DEFAULT_PRF = "SHA-512";
@@ -63,16 +60,8 @@ public class PBKDF2SecureHasher implements SecureHasher {
     private static final int MIN_SALT_LENGTH = 8;
 
     private final Digest prf;
-    private final int saltLength;
     private final Integer iterationCount;
     private final int dkLength;
-
-    // TODO: Move to AbstractSecureHasher
-    private boolean usingStaticSalt;
-
-    // TODO: Move to AbstractSecureHasher
-    // A 16 byte salt (nonce) is recommended for password hashing
-    private static final byte[] STATIC_SALT = "NiFi Static Salt".getBytes(StandardCharsets.UTF_8);
 
     /**
      * Instantiates a PBKDF2 secure hasher with the default number of iterations and the default PRF. Currently 160,000 iterations and SHA-512.
@@ -99,7 +88,7 @@ public class PBKDF2SecureHasher implements SecureHasher {
      *
      * @param prf            a String representation of the PRF name, e.g. "SHA256", "SHA-384" "sha_512"
      * @param iterationCount the number of iterations
-     * @param saltLength     the salt length in bytes ({@code >= 16}, {@code 0} indicates a static salt)
+     * @param saltLength     the salt length in bytes ({@code >= 8}, {@code 0} indicates a static salt)
      * @param dkLength       the output length in bytes ({@code 1 to (2^32 - 1) * hLen})
      */
     public PBKDF2SecureHasher(String prf, Integer iterationCount, int saltLength, int dkLength) {
@@ -114,7 +103,7 @@ public class PBKDF2SecureHasher implements SecureHasher {
      * Enforces valid PBKDF2 secure hasher cost parameters are provided.
      *
      * @param iterationCount the (log) number of key expansion rounds
-     * @param saltLength     the salt length in bytes {@code >= 16})
+     * @param saltLength     the salt length in bytes {@code >= 8})
      * @param dkLength       the output length in bytes ({@code 1 to (2^32 - 1) * hLen})
      */
     private void validateParameters(String prf, Integer iterationCount, int saltLength, int dkLength) {
@@ -124,16 +113,7 @@ public class PBKDF2SecureHasher implements SecureHasher {
             logger.error("The provided iteration count {} is below the minimum {}.", iterationCount, MIN_ITERATION_COUNT);
             throw new IllegalArgumentException("Invalid iterationCount is not within iteration count boundary.");
         }
-        if (saltLength > 0) {
-            if (!isSaltLengthValid(saltLength)) {
-                logger.error("The provided saltLength {} bytes is below the minimum {}.", saltLength, MIN_SALT_LENGTH);
-                throw new IllegalArgumentException("Invalid saltLength is not within the salt length boundary.");
-            }
-            this.usingStaticSalt = false;
-        } else {
-            this.usingStaticSalt = true;
-            logger.debug("Configured to use static salt");
-        }
+        initializeSalt(saltLength);
 
         // Calculate hLen based on PRF
         Digest prfType = resolvePRF(prf);
@@ -147,30 +127,23 @@ public class PBKDF2SecureHasher implements SecureHasher {
     }
 
     /**
-     * Returns {@code true} if this instance is configured to use a static salt.
+     * Returns the algorithm-specific name for logging and messages.
      *
-     * @return true if all hashes will be generated using a static salt
+     * @return the algorithm name
      */
-    public boolean isUsingStaticSalt() {
-        return usingStaticSalt;
+    @Override
+    String getAlgorithmName() {
+        return "PBKDF2";
     }
 
     /**
-     * Returns a salt to use. If using a static salt (see {@link #isUsingStaticSalt()}),
-     * this return value will be identical across every invocation. If using a dynamic salt,
-     * it will be {@link #saltLength} bytes of a securely-generated random value.
+     * Returns {@code true} if the algorithm can accept empty (non-{@code null}) inputs.
      *
-     * @return the salt value
+     * @return the true if {@code ""} is allowable input
      */
-    byte[] getSalt() {
-        if (isUsingStaticSalt()) {
-            return STATIC_SALT;
-        } else {
-            SecureRandom sr = new SecureRandom();
-            byte[] salt = new byte[saltLength];
-            sr.nextBytes(salt);
-            return salt;
-        }
+    @Override
+    boolean acceptsEmptyInput() {
+        return true;
     }
 
     /**
@@ -188,20 +161,33 @@ public class PBKDF2SecureHasher implements SecureHasher {
     }
 
     /**
-     * Returns true if the provided salt length meets the minimum boundary. The lower bound >= 16.
+     * Returns the algorithm-specific default salt length in bytes.
      *
-     * @param saltLength the salt length in bytes
-     * @return true if salt length is at least the minimum boundary
+     * @return the default salt length
      */
-    public static boolean isSaltLengthValid(Integer saltLength) {
-        if (saltLength == 0) {
-            logger.debug("The provided salt length 0 indicates a static salt of {} bytes", DEFAULT_SALT_LENGTH);
-            return true;
-        }
-        if (saltLength < MIN_SALT_LENGTH) {
-            logger.warn("The provided salt length {} bytes is below the recommended minimum {}.", saltLength, MIN_SALT_LENGTH);
-        }
-        return saltLength >= MIN_SALT_LENGTH;
+    @Override
+    int getDefaultSaltLength() {
+        return DEFAULT_SALT_LENGTH;
+    }
+
+    /**
+     * Returns the algorithm-specific minimum salt length in bytes.
+     *
+     * @return the min salt length
+     */
+    @Override
+    int getMinSaltLength() {
+        return MIN_SALT_LENGTH;
+    }
+
+    /**
+     * Returns the algorithm-specific maximum salt length in bytes.
+     *
+     * @return the max salt length
+     */
+    @Override
+    int getMaxSaltLength() {
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -236,55 +222,12 @@ public class PBKDF2SecureHasher implements SecureHasher {
     }
 
     /**
-     * Returns a String representation of {@code PBKDF2(input)} in hex-encoded format.
-     *
-     * @param input the non-empty input
-     * @return the hex-encoded hash
-     */
-    @Override
-    public String hashHex(String input) {
-        if (input == null) {
-            logger.warn("Attempting to generate a PBKDF2 hash of null input; using empty input");
-            input = "";
-        }
-
-        return Hex.toHexString(hash(input.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    /**
-     * Returns a String representation of {@code PBKDF2(input)} in Base 64-encoded format.
-     *
-     * @param input the non-empty input
-     * @return the Base 64-encoded hash
-     */
-    @Override
-    public String hashBase64(String input) {
-        if (input == null || input.length() == 0) {
-            logger.warn("Attempting to generate a PBKDF2 hash of null input; using empty input");
-            input = "";
-        }
-
-        return Base64.toBase64String(hash(input.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    /**
-     * Returns a byte[] representation of {@code PBKDF2(input)}.
-     *
-     * @param input the input
-     * @return the hash
-     */
-    @Override
-    public byte[] hashRaw(byte[] input) {
-        return hash(input);
-    }
-
-    /**
      * Internal method to hash the raw bytes.
      *
      * @param input the raw bytes to hash (can be length 0)
      * @return the generated hash
      */
-    private byte[] hash(byte[] input) {
+    byte[] hash(byte[] input) {
         // Contains only the raw salt
         byte[] rawSalt = getSalt();
 
