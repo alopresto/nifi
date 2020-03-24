@@ -160,19 +160,22 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         Argon2SecureHasher arbitrarySaltHasher = new Argon2SecureHasher(hashLength, memory, parallelism, iterations, 16)
 
         final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+        final String DIFFERENT_STATIC_SALT = "Diff Static Salt"
 
         // Act
         byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
         byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
-        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, [0x00 * 16] as byte[])
+        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, DIFFERENT_STATIC_SALT.getBytes(StandardCharsets.UTF_8))
         byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
 
         String staticSaltHashHex = staticSaltHasher.hashHex(input)
         String arbitrarySaltHashHex = arbitrarySaltHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentArbitrarySaltHashHex = arbitrarySaltHasher.hashHex(input, DIFFERENT_STATIC_SALT)
         String differentSaltHashHex = arbitrarySaltHasher.hashHex(input)
 
         String staticSaltHashBase64 = staticSaltHasher.hashBase64(input)
         String arbitrarySaltHashBase64 = arbitrarySaltHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentArbitrarySaltHashBase64 = arbitrarySaltHasher.hashBase64(input, DIFFERENT_STATIC_SALT)
         String differentSaltHashBase64 = arbitrarySaltHasher.hashBase64(input)
 
         // Assert
@@ -183,10 +186,12 @@ class Argon2SecureHasherTest extends GroovyTestCase {
 
         assert staticSaltHashHex == EXPECTED_HASH_HEX
         assert arbitrarySaltHashHex == EXPECTED_HASH_HEX
+        assert differentArbitrarySaltHashHex != EXPECTED_HASH_HEX
         assert differentSaltHashHex != EXPECTED_HASH_HEX
 
         assert staticSaltHashBase64 == EXPECTED_HASH_BASE64
         assert arbitrarySaltHashBase64 == EXPECTED_HASH_BASE64
+        assert differentArbitrarySaltHashBase64 != EXPECTED_HASH_BASE64
         assert differentSaltHashBase64 != EXPECTED_HASH_BASE64
     }
 
