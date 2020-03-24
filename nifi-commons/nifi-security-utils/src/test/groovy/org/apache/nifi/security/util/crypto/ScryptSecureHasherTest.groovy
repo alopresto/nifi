@@ -116,6 +116,39 @@ class ScryptSecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldHandleArbitrarySalt() {
+        // Arrange
+        int n = 1024
+        int r = 8
+        int p = 2
+        int dkLength = 32
+        logger.info("Generating Scrypt hash for iterations: ${n}, mem: ${r} B, parallelism: ${p}, desired key length: ${dkLength}")
+
+        byte[] inputBytes = "This is a sensitive value".bytes
+
+        final String EXPECTED_HASH_HEX = "a67fd2f4b3aa577b8ecdb682e60b4451a84611dcbbc534bce17616056ef8965d"
+        final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
+
+        // Static salt instance
+        ScryptSecureHasher staticSaltHasher = new ScryptSecureHasher(n, r, p, dkLength)
+        ScryptSecureHasher arbitrarySaltHasher = new ScryptSecureHasher(n, r, p, dkLength, 16)
+
+        final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+
+        // Act
+        byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
+        byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
+        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, (0x00 * 16) as byte[])
+        byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        // Assert
+        assert staticSaltHash == EXPECTED_HASH_BYTES
+        assert arbitrarySaltHash == EXPECTED_HASH_BYTES
+        assert differentArbitrarySaltHash != EXPECTED_HASH_BYTES
+        assert differentSaltHash != EXPECTED_HASH_BYTES
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"

@@ -111,6 +111,34 @@ class BcryptSecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldHandleArbitrarySalt() {
+        // Arrange
+        int cost = 4
+        logger.info("Generating Bcrypt hash for cost factor: ${cost}")
+
+        byte[] inputBytes = "This is a sensitive value".bytes
+
+        final String EXPECTED_HASH_HEX = "24326124303424526b6a4559512f526245447959554b6553304471622e596b4c5331655a2e6c61586550484c69464d783937564c566d47354250454f"
+        final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
+
+        // Static salt instance
+        BcryptSecureHasher staticSaltHasher = new BcryptSecureHasher(cost)
+        BcryptSecureHasher arbitrarySaltHasher = new BcryptSecureHasher(cost, 16)
+
+        final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+
+        // Act
+        byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
+        byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
+        byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        // Assert
+        assert staticSaltHash == EXPECTED_HASH_BYTES
+        assert arbitrarySaltHash == EXPECTED_HASH_BYTES
+        assert differentSaltHash != EXPECTED_HASH_BYTES
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"

@@ -110,6 +110,36 @@ class PBKDF2SecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldHandleArbitrarySalt() {
+        // Arrange
+        String prf = "SHA512"
+        int cost = 10_000
+        int saltLength = 16
+        int dkLength = 32
+        logger.info("Generating PBKDF2 hash for prf: ${prf}, iterations: ${cost}, salt length: ${saltLength} bytes, desired key length: ${dkLength} bytes (${dkLength * 8} bits)")
+
+        byte[] inputBytes = "This is a sensitive value".bytes
+
+        final String EXPECTED_HASH_HEX = "2c47a6d801b71e087f94792079c40880aea29013bfffd0ab94b1bc112ea52511"
+        final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
+
+        PBKDF2SecureHasher staticSaltHasher = new PBKDF2SecureHasher(cost, dkLength)
+        PBKDF2SecureHasher arbitrarySaltHasher = new PBKDF2SecureHasher(prf, cost, saltLength, dkLength)
+
+        final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+
+        // Act
+        byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
+        byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
+        byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        // Assert
+        assert staticSaltHash == EXPECTED_HASH_BYTES
+        assert arbitrarySaltHash == EXPECTED_HASH_BYTES
+        assert differentSaltHash != EXPECTED_HASH_BYTES
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"

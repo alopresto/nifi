@@ -143,46 +143,14 @@ public abstract class AbstractSecureHasher implements SecureHasher {
      * @param input the non-empty input
      * @return the hex-encoded hash
      */
-
+    @Override
     public String hashHex(String input) {
         try {
             input = validateInput(input);
         } catch (IllegalArgumentException e) {
             return "";
         }
-        String salt = new String(getSalt());
-
-        return hashHex(input, salt);
-    }
-
-    /**
-     * Returns a String representation of the hash in Base 64-encoded format.
-     *
-     * @param input the non-empty input
-     * @return the Base 64-encoded hash
-     */
-//    @Override
-    public String hashBase64(String input) {
-        try {
-            input = validateInput(input);
-        } catch (IllegalArgumentException e) {
-            return "";
-        }
-        String salt = new String(getSalt());
-
-        return hashBase64(input, salt);
-    }
-
-    /**
-     * Returns a byte[] representation of {@code SecureHasher.hash(input)}.
-     *
-     * @param input the input
-     * @return the hash
-     */
-
-    public byte[] hashRaw(byte[] input) {
-        byte[] salt = getSalt();
-        return hash(input, salt);
+        return Hex.toHexString(hash(input.getBytes(StandardCharsets.UTF_8)));
     }
 
     /**
@@ -208,6 +176,23 @@ public abstract class AbstractSecureHasher implements SecureHasher {
      * Returns a String representation of the hash in Base 64-encoded format.
      *
      * @param input the non-empty input
+     * @return the Base 64-encoded hash
+     */
+    @Override
+    public String hashBase64(String input) {
+        try {
+            input = validateInput(input);
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
+
+        return Base64.toBase64String(hash(input.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /**
+     * Returns a String representation of the hash in Base 64-encoded format.
+     *
+     * @param input the non-empty input
      * @param salt  the provided salt
      *
      * @return the Base 64-encoded hash
@@ -221,6 +206,16 @@ public abstract class AbstractSecureHasher implements SecureHasher {
         }
 
         return Base64.toBase64String(hash(input.getBytes(StandardCharsets.UTF_8), salt.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /**
+     * Returns a byte[] representation of {@code SecureHasher.hash(input)}.
+     *
+     * @param input the input
+     * @return the hash
+     */
+    public byte[] hashRaw(byte[] input) {
+        return hash(input);
     }
 
     /**
@@ -257,6 +252,15 @@ public abstract class AbstractSecureHasher implements SecureHasher {
 
         return input;
     }
+
+    /**
+     * Returns the algorithm-specific calculated hash for the input and generates or retrieves the salt according to
+     * the configured salt length.
+     *
+     * @param input the input in raw bytes
+     * @return the hash in raw bytes
+     */
+    abstract byte[] hash(byte[] input);
 
     /**
      * Returns the algorithm-specific calculated hash for the input and salt.

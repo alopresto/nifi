@@ -18,11 +18,7 @@ package org.apache.nifi.security.util.crypto
 
 import org.apache.kerby.util.Hex
 import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.junit.After
-import org.junit.Before
-import org.junit.BeforeClass
-import org.junit.Ignore
-import org.junit.Test
+import org.junit.*
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.slf4j.Logger
@@ -140,6 +136,39 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         // Assert
         assert results.unique().size() == results.size()
         assert results.every { it != EXPECTED_HASH_HEX }
+    }
+
+    @Test
+    void testShouldHandleArbitrarySalt() {
+        // Arrange
+        int hashLength = 32
+        int memory = 8
+        int parallelism = 4
+        int iterations = 4
+        logger.info("Generating Argon2 hash for hash length: ${hashLength} B, mem: ${memory} KiB, parallelism: ${parallelism}, iterations: ${iterations}")
+
+        byte[] inputBytes = "This is a sensitive value".bytes
+
+        final String EXPECTED_HASH_HEX = "a73a471f51b2900901a00b81e770b9c1dfc595602bb7aec64cd27754a4174919"
+        final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
+
+        // Static salt instance
+        Argon2SecureHasher staticSaltHasher = new Argon2SecureHasher(hashLength, memory, parallelism, iterations)
+        Argon2SecureHasher arbitrarySaltHasher = new Argon2SecureHasher(hashLength, memory, parallelism, iterations, 16)
+
+        final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+
+        // Act
+        byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
+        byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
+        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, (0x00 * 16) as byte[])
+        byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        // Assert
+        assert staticSaltHash == EXPECTED_HASH_BYTES
+        assert arbitrarySaltHash == EXPECTED_HASH_BYTES
+        assert differentArbitrarySaltHash != EXPECTED_HASH_BYTES
+        assert differentSaltHash != EXPECTED_HASH_BYTES
     }
 
     @Test
