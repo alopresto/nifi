@@ -27,6 +27,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -118,25 +119,48 @@ class PBKDF2SecureHasherTest extends GroovyTestCase {
         int dkLength = 32
         logger.info("Generating PBKDF2 hash for prf: ${prf}, iterations: ${cost}, salt length: ${saltLength} bytes, desired key length: ${dkLength} bytes (${dkLength * 8} bits)")
 
-        byte[] inputBytes = "This is a sensitive value".bytes
+        def input = "This is a sensitive value"
+        byte[] inputBytes = input.bytes
 
         final String EXPECTED_HASH_HEX = "2c47a6d801b71e087f94792079c40880aea29013bfffd0ab94b1bc112ea52511"
+        final String EXPECTED_HASH_BASE64 = "LEem2AG3Hgh/lHkgecQIgK6ikBO//9CrlLG8ES6lJRE="
         final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
 
         PBKDF2SecureHasher staticSaltHasher = new PBKDF2SecureHasher(cost, dkLength)
         PBKDF2SecureHasher arbitrarySaltHasher = new PBKDF2SecureHasher(prf, cost, saltLength, dkLength)
 
         final byte[] STATIC_SALT = AbstractSecureHasher.STATIC_SALT
+        final byte[] DIFFERENT_STATIC_SALT = "Diff Static Salt".getBytes(StandardCharsets.UTF_8);
 
         // Act
         byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
         byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
+        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, ([0x00] * 16) as byte[])
         byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        String staticSaltHashHex = staticSaltHasher.hashHex(input)
+        String arbitrarySaltHashHex = arbitrarySaltHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentArbitrarySaltHashHex = arbitrarySaltHasher.hashHex(input, new String(DIFFERENT_STATIC_SALT))
+        String differentSaltHashHex = arbitrarySaltHasher.hashHex(input)
+
+        String staticSaltHashBase64 = staticSaltHasher.hashBase64(input)
+        String arbitrarySaltHashBase64 = arbitrarySaltHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentSaltHashBase64 = arbitrarySaltHasher.hashBase64(input)
 
         // Assert
         assert staticSaltHash == EXPECTED_HASH_BYTES
         assert arbitrarySaltHash == EXPECTED_HASH_BYTES
+        assert differentArbitrarySaltHash != EXPECTED_HASH_BYTES
         assert differentSaltHash != EXPECTED_HASH_BYTES
+
+        assert staticSaltHashHex == EXPECTED_HASH_HEX
+        assert arbitrarySaltHashHex == EXPECTED_HASH_HEX
+        assert differentArbitrarySaltHashHex != EXPECTED_HASH_HEX
+        assert differentSaltHashHex != EXPECTED_HASH_HEX
+
+        assert staticSaltHashBase64 == EXPECTED_HASH_BASE64
+        assert arbitrarySaltHashBase64 == EXPECTED_HASH_BASE64
+        assert differentSaltHashBase64 != EXPECTED_HASH_BASE64
     }
 
     @Test

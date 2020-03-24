@@ -27,6 +27,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -124,9 +125,11 @@ class ScryptSecureHasherTest extends GroovyTestCase {
         int dkLength = 32
         logger.info("Generating Scrypt hash for iterations: ${n}, mem: ${r} B, parallelism: ${p}, desired key length: ${dkLength}")
 
-        byte[] inputBytes = "This is a sensitive value".bytes
+        def input = "This is a sensitive value"
+        byte[] inputBytes = input.bytes
 
         final String EXPECTED_HASH_HEX = "a67fd2f4b3aa577b8ecdb682e60b4451a84611dcbbc534bce17616056ef8965d"
+        final String EXPECTED_HASH_BASE64 = "pn/S9LOqV3uOzbaC5gtEUahGEdy7xTS84XYWBW74ll0="
         final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
 
         // Static salt instance
@@ -138,14 +141,30 @@ class ScryptSecureHasherTest extends GroovyTestCase {
         // Act
         byte[] staticSaltHash = staticSaltHasher.hashRaw(inputBytes)
         byte[] arbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, STATIC_SALT)
-        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, (0x00 * 16) as byte[])
+        byte[] differentArbitrarySaltHash = arbitrarySaltHasher.hashRaw(inputBytes, [0x00 * 16] as byte[])
         byte[] differentSaltHash = arbitrarySaltHasher.hashRaw(inputBytes)
+
+        String staticSaltHashHex = staticSaltHasher.hashHex(input)
+        String arbitrarySaltHashHex = arbitrarySaltHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentSaltHashHex = arbitrarySaltHasher.hashHex(input)
+
+        String staticSaltHashBase64 = staticSaltHasher.hashBase64(input)
+        String arbitrarySaltHashBase64 = arbitrarySaltHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        String differentSaltHashBase64 = arbitrarySaltHasher.hashBase64(input)
 
         // Assert
         assert staticSaltHash == EXPECTED_HASH_BYTES
         assert arbitrarySaltHash == EXPECTED_HASH_BYTES
         assert differentArbitrarySaltHash != EXPECTED_HASH_BYTES
         assert differentSaltHash != EXPECTED_HASH_BYTES
+
+        assert staticSaltHashHex == EXPECTED_HASH_HEX
+        assert arbitrarySaltHashHex == EXPECTED_HASH_HEX
+        assert differentSaltHashHex != EXPECTED_HASH_HEX
+
+        assert staticSaltHashBase64 == EXPECTED_HASH_BASE64
+        assert arbitrarySaltHashBase64 == EXPECTED_HASH_BASE64
+        assert differentSaltHashBase64 != EXPECTED_HASH_BASE64
     }
 
     @Test
