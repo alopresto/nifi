@@ -152,7 +152,7 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         byte[] inputBytes = input.bytes
 
         final String EXPECTED_HASH_HEX = "a73a471f51b2900901a00b81e770b9c1dfc595602bb7aec64cd27754a4174919"
-        final String EXPECTED_HASH_BASE64 = "pzpHH1GykAkBoAuB53C5wd/FlWArt67GTNJ3VKQXSRk="
+        final String EXPECTED_HASH_BASE64 = "pzpHH1GykAkBoAuB53C5wd/FlWArt67GTNJ3VKQXSRk"
         final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
 
         // Static salt instance
@@ -196,6 +196,46 @@ class Argon2SecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldValidateArbitrarySalt() {
+        // Arrange
+        int hashLength = 32
+        int memory = 8
+        int parallelism = 4
+        int iterations = 4
+        logger.info("Generating Argon2 hash for hash length: ${hashLength} B, mem: ${memory} KiB, parallelism: ${parallelism}, iterations: ${iterations}")
+
+        def input = "This is a sensitive value"
+        byte[] inputBytes = input.bytes
+
+        // Static salt instance
+        Argon2SecureHasher secureHasher = new Argon2SecureHasher(hashLength, memory, parallelism, iterations, 16)
+        final byte[] STATIC_SALT = "bad_sal".bytes
+
+        // Act
+        def initializeMsg = shouldFail(IllegalArgumentException) {
+            Argon2SecureHasher invalidSaltLengthHasher = new Argon2SecureHasher(hashLength, memory, parallelism, iterations, 7)
+        }
+        logger.expected(initializeMsg)
+
+        def arbitrarySaltRawMsg = shouldFail {
+            byte[] arbitrarySaltRaw = secureHasher.hashRaw(inputBytes, STATIC_SALT)
+        }
+
+        def arbitrarySaltHexMsg = shouldFail {
+            byte[] arbitrarySaltHex = secureHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def arbitrarySaltBase64Msg = shouldFail {
+            byte[] arbitraySaltBase64 = secureHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def results = [arbitrarySaltRawMsg, arbitrarySaltHexMsg, arbitrarySaltBase64Msg]
+
+        // Assert
+        assert results.every { it =~ /The salt length \(7 bytes\) is invalid/ }
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"
@@ -217,7 +257,7 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         // Arrange
         String input = "This is a sensitive value"
 
-        final String EXPECTED_HASH_B64 = "DCkgxS8o4KLHfQBuxhOMjcWVgIgUaLhVQc+Iar3rzxg="
+        final String EXPECTED_HASH_B64 = "DCkgxS8o4KLHfQBuxhOMjcWVgIgUaLhVQc+Iar3rzxg"
 
         Argon2SecureHasher a2sh = new Argon2SecureHasher()
 
@@ -235,7 +275,7 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         List<String> inputs = [null, ""]
 
         final String EXPECTED_HASH_HEX = "8e5625a66b94ed9d31c1496d7f9ff49249cf05d6753b50ba0e2bf2a1108973dd"
-        final String EXPECTED_HASH_B64 = "jlYlpmuU7Z0xwUltf5/0kknPBdZ1O1C6DivyoRCJc90="
+        final String EXPECTED_HASH_B64 = "jlYlpmuU7Z0xwUltf5/0kknPBdZ1O1C6DivyoRCJc90"
 
         Argon2SecureHasher a2sh = new Argon2SecureHasher()
 

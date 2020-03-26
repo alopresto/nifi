@@ -129,7 +129,7 @@ class ScryptSecureHasherTest extends GroovyTestCase {
         byte[] inputBytes = input.bytes
 
         final String EXPECTED_HASH_HEX = "a67fd2f4b3aa577b8ecdb682e60b4451a84611dcbbc534bce17616056ef8965d"
-        final String EXPECTED_HASH_BASE64 = "pn/S9LOqV3uOzbaC5gtEUahGEdy7xTS84XYWBW74ll0="
+        final String EXPECTED_HASH_BASE64 = "pn/S9LOqV3uOzbaC5gtEUahGEdy7xTS84XYWBW74ll0"
         final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
 
         // Static salt instance
@@ -238,7 +238,7 @@ class ScryptSecureHasherTest extends GroovyTestCase {
         // Arrange
         String input = "This is a sensitive value"
 
-        final String EXPECTED_HASH_BASE64 = "apyCeBX+BxivXjNoEfx43XGcjZUF4BUoMjm5vx0k7nE="
+        final String EXPECTED_HASH_BASE64 = "apyCeBX+BxivXjNoEfx43XGcjZUF4BUoMjm5vx0k7nE"
 
         SecureHasher scryptSH = new ScryptSecureHasher()
 

@@ -245,6 +245,10 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
     byte[] hash(byte[] input, byte[] rawSalt) {
         logger.debug("Creating PBKDF2 hash with salt [{}] ({} bytes)", Hex.toHexString(rawSalt), rawSalt.length);
 
+        if (!isSaltLengthValid(rawSalt.length)) {
+            throw new IllegalArgumentException("The salt length (" + rawSalt.length + " bytes) is invalid");
+        }
+
         final long startNanos = System.nanoTime();
         PKCS5S2ParametersGenerator gen = new PKCS5S2ParametersGenerator(this.prf);
         gen.init(input, rawSalt, iterationCount);

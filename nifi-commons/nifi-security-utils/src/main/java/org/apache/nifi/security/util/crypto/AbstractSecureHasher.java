@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.security.util.crypto;
 
-import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,7 +185,7 @@ public abstract class AbstractSecureHasher implements SecureHasher {
             return "";
         }
 
-        return Base64.toBase64String(hash(input.getBytes(StandardCharsets.UTF_8)));
+        return CipherUtility.encodeBase64NoPadding(hash(input.getBytes(StandardCharsets.UTF_8)));
     }
 
     /**

@@ -183,6 +183,10 @@ public class BcryptSecureHasher extends AbstractSecureHasher {
     byte[] hash(byte[] input, byte[] rawSalt) {
         logger.debug("Creating Bcrypt hash with salt [{}] ({} bytes)", Hex.toHexString(rawSalt), rawSalt.length);
 
+        if (!isSaltLengthValid(rawSalt.length)) {
+            throw new IllegalArgumentException("The salt length (" + rawSalt.length + " bytes) is invalid");
+        }
+
         final long startNanos = System.nanoTime();
         byte[] hash = BCrypt.withDefaults().hash(cost, rawSalt, input);
         final long generateNanos = System.nanoTime();

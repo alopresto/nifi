@@ -166,6 +166,43 @@ class BcryptSecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldValidateArbitrarySalt() {
+        // Arrange
+        int cost = 4
+        logger.info("Generating Bcrypt hash for cost factor: ${cost}")
+
+        def input = "This is a sensitive value"
+        byte[] inputBytes = input.bytes
+
+        // Static salt instance
+        BcryptSecureHasher secureHasher = new BcryptSecureHasher(cost, 16)
+        final byte[] STATIC_SALT = "bad_sal".bytes
+
+        // Act
+        def initializationMsg = shouldFail(IllegalArgumentException) {
+            BcryptSecureHasher invalidSaltLengthHasher = new BcryptSecureHasher(cost, 7)
+        }
+        logger.expected(initializationMsg)
+
+        def arbitrarySaltRawMsg = shouldFail {
+            byte[] arbitrarySaltHash = secureHasher.hashRaw(inputBytes, STATIC_SALT)
+        }
+
+        def arbitrarySaltHexMsg = shouldFail {
+            byte[] arbitrarySaltHashHex = secureHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def arbitrarySaltBase64Msg = shouldFail {
+            byte[] arbitrarySaltBase64 = secureHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def results = [arbitrarySaltRawMsg, arbitrarySaltHexMsg, arbitrarySaltBase64Msg]
+
+        // Assert
+        assert results.every { it =~ /The salt length \(7 bytes\) is invalid/ }
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"

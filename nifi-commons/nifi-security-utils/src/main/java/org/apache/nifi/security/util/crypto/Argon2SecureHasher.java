@@ -258,8 +258,13 @@ public class Argon2SecureHasher extends AbstractSecureHasher {
      * @return the generated hash
      */
      byte[] hash(byte[] input, byte[] rawSalt) {
-        byte[] hash = new byte[hashLength];
-        logger.debug("Creating {} byte Argon2 hash with salt [{}]", hashLength, Hex.toHexString(rawSalt));
+         logger.debug("Creating {} byte Argon2 hash with salt [{}]", hashLength, Hex.toHexString(rawSalt));
+
+         if (!isSaltLengthValid(rawSalt.length)) {
+             throw new IllegalArgumentException("The salt length (" + rawSalt.length + " bytes) is invalid");
+         }
+
+         byte[] hash = new byte[hashLength];
 
         final long startNanos = System.nanoTime();
 
