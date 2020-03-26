@@ -21,12 +21,7 @@ import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.crypto.scrypt.Scrypt
 import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.junit.After
-import org.junit.Assume
-import org.junit.Before
-import org.junit.BeforeClass
-import org.junit.Ignore
-import org.junit.Test
+import org.junit.*
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.slf4j.Logger
@@ -260,6 +255,7 @@ class ScryptCipherProviderGroovyTest {
         final String PASSWORD = "shortPassword"
         final byte[] SALT = new byte[cipherProvider.defaultSaltLength]
         new SecureRandom().nextBytes(SALT)
+//        final byte[] SALT = [0x00] * 16 as byte[]
 
         final String EXPECTED_FORMATTED_SALT = cipherProvider.formatSaltForScrypt(SALT)
         logger.info("Expected salt: ${EXPECTED_FORMATTED_SALT}")
@@ -284,6 +280,7 @@ class ScryptCipherProviderGroovyTest {
         cipherProvider.parseSalt(EXPECTED_FORMATTED_SALT, parsedSalt, params)
         def (int n, int r, int p) = params
         byte[] keyBytes = Scrypt.deriveScryptKey(PASSWORD.bytes, parsedSalt, n, r, p, DEFAULT_KEY_LENGTH)
+        logger.info("Manually derived key bytes: ${Hex.encodeHexString(keyBytes)}")
         SecretKey key = new SecretKeySpec(keyBytes, "AES")
         Cipher manualCipher = Cipher.getInstance(encryptionMethod.algorithm, encryptionMethod.provider)
         manualCipher.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(iv))
