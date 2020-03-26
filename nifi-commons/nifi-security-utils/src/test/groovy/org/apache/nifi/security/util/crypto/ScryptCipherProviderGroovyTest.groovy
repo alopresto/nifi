@@ -297,8 +297,8 @@ class ScryptCipherProviderGroovyTest {
         // Arrange
         final String PASSWORD = "thisIsABadPassword"
 
-        final def INVALID_SALTS = ['bad_sal', '$3a$11$', 'x', '$2a$10$', '$400$1$1$abcdefghijklmnopqrstuvwxyz']
-        final LENGTH_MESSAGE = "The raw salt must be between 8 and 32 bytes"
+        final def INVALID_SALTS = ['bad_sal', '$3a$11$', 'x', '$2a$10$']
+        final LENGTH_MESSAGE = "The raw salt must be greater than or equal to 8 bytes"
 
         EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
         logger.info("Using algorithm: ${encryptionMethod.getAlgorithm()}")
