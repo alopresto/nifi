@@ -173,6 +173,50 @@ class ScryptSecureHasherTest extends GroovyTestCase {
     }
 
     @Test
+    void testShouldValidateArbitrarySalt() {
+        // Arrange
+        int n = 1024
+        int r = 8
+        int p = 2
+        int dkLength = 32
+        logger.info("Generating Scrypt hash for iterations: ${n}, mem: ${r} B, parallelism: ${p}, desired key length: ${dkLength}")
+
+        def input = "This is a sensitive value"
+        byte[] inputBytes = input.bytes
+
+        final String EXPECTED_HASH_HEX = "a67fd2f4b3aa577b8ecdb682e60b4451a84611dcbbc534bce17616056ef8965d"
+        final String EXPECTED_HASH_BASE64 = "pn/S9LOqV3uOzbaC5gtEUahGEdy7xTS84XYWBW74ll0="
+        final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
+
+        // Static salt instance
+        ScryptSecureHasher secureHasher = new ScryptSecureHasher(n, r, p, dkLength, 16)
+        final byte[] STATIC_SALT = "bad_sal".bytes
+
+        // Act
+        def initializationMsg = shouldFail(IllegalArgumentException) {
+            ScryptSecureHasher invalidSaltLengthHasher = new ScryptSecureHasher(n, r, p, dkLength, 7)
+        }
+        logger.expected(initializationMsg)
+
+        def arbitrarySaltRawMsg = shouldFail {
+            byte[] arbitrarySaltHash = secureHasher.hashRaw(inputBytes, STATIC_SALT)
+        }
+
+        def arbitrarySaltHexMsg = shouldFail {
+            String arbitrarySaltHashHex = secureHasher.hashHex(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def arbitrarySaltB64Msg = shouldFail {
+            String arbitrarySaltHashBase64 = secureHasher.hashBase64(input, new String(STATIC_SALT, StandardCharsets.UTF_8))
+        }
+
+        def results = [arbitrarySaltRawMsg, arbitrarySaltHexMsg, arbitrarySaltB64Msg]
+
+        // Assert
+        assert results.every { it =~ /The salt length \(7 bytes\) is invalid/ }
+    }
+
+    @Test
     void testShouldFormatHex() {
         // Arrange
         String input = "This is a sensitive value"

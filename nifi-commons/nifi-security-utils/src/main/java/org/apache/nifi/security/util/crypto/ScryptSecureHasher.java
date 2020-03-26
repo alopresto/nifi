@@ -159,6 +159,10 @@ public class ScryptSecureHasher extends AbstractSecureHasher {
     byte[] hash(byte[] input, byte[] rawSalt) {
         logger.debug("Creating {} byte Scrypt hash with salt [{}]", dkLength, org.bouncycastle.util.encoders.Hex.toHexString(rawSalt));
 
+        if (!isSaltLengthValid(rawSalt.length)) {
+            throw new IllegalArgumentException("The salt length (" + rawSalt.length + " bytes) is invalid");
+        }
+
         final long startNanos = System.nanoTime();
         byte[] hash = Scrypt.scrypt(input, rawSalt, n, r, p, dkLength * 8);
         final long generateNanos = System.nanoTime();
