@@ -31,7 +31,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -142,10 +141,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         int workFactor = 0;
         if (isBcryptFormattedSalt(saltString)) {
             // parseSalt will extract workFactor from salt
-            // TODO: Improve parameter pass by reference
-            AtomicReference<Integer> workFactorHolder = new AtomicReference<>();
-            parseSalt(saltString, rawSalt, workFactorHolder);
-            workFactor = workFactorHolder.get();
+            workFactor = parseSalt(saltString, rawSalt);
         } else {
            throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG);
         }
@@ -163,7 +159,6 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
             KeyedCipherProvider keyedCipherProvider = new AESKeyedCipherProvider();
             return keyedCipherProvider.getCipher(encryptionMethod, tempKey, iv, encryptMode);
         } catch (IllegalArgumentException e) {
-            // TODO: Check and change IAE message
             if (e.getMessage().contains("salt must be exactly")) {
                 throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG, e);
             } else if (e.getMessage().contains("The salt length")) {
@@ -183,7 +178,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         return matcher.find();
     }
 
-    private void parseSalt(String bcryptSalt, byte[] rawSalt, AtomicReference<Integer> workFactor) {
+    private int parseSalt(String bcryptSalt, byte[] rawSalt) {
         if (StringUtils.isEmpty(bcryptSalt)) {
             throw new IllegalArgumentException("Cannot parse empty salt");
         }
@@ -198,9 +193,9 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         // Copy salt from full bcryptSalt into rawSalt byte[]
         System.arraycopy(salt, 0, rawSalt, 0, salt.length);
 
-        // Parse the workfactor into return param
+        // Parse the workfactor and return
         final String[] saltComponents = bcryptSalt.split("\\$");
-        workFactor.set(Integer.parseInt(saltComponents[2]));
+        return Integer.parseInt(saltComponents[2]);
     }
 
     private String formatSaltForBcrypt(byte[] salt) {
