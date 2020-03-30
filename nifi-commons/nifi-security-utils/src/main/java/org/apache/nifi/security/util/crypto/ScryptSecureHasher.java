@@ -46,7 +46,7 @@ public class ScryptSecureHasher extends AbstractSecureHasher {
     private static final int DEFAULT_N = Double.valueOf(Math.pow(2, 14)).intValue();
     private static final int DEFAULT_R = 8;
     private static final int DEFAULT_P = 1;
-    private static final int DEFAULT_DK_LENGTH = 16;
+    private static final int DEFAULT_DK_LENGTH = 32;
     private static final int DEFAULT_SALT_LENGTH = Scrypt.getDefaultSaltLength();
 
     private static final int MIN_P = 1;
@@ -230,9 +230,6 @@ public class ScryptSecureHasher extends AbstractSecureHasher {
      * @return true if dkLength is within boundaries
      */
     protected static boolean isDKLengthValid(Integer dkLength) {
-        if (dkLength < DEFAULT_DK_LENGTH) {
-            logger.warn("The provided hash (derived key) length {} is below the recommended minimum {}.", dkLength, DEFAULT_DK_LENGTH);
-        }
         return dkLength >= MIN_DK_LENGTH && dkLength <= UPPER_BOUNDARY;
     }
 

@@ -162,9 +162,6 @@ public class Argon2SecureHasher extends AbstractSecureHasher {
      * @return true if hashLength is within boundaries
      */
     public static boolean isHashLengthValid(Integer hashLength) {
-        if (hashLength < DEFAULT_HASH_LENGTH) {
-            logger.warn("The provided hash length {} is below the recommended minimum {}.", hashLength, DEFAULT_HASH_LENGTH);
-        }
         return hashLength >= MIN_HASH_LENGTH && hashLength <= UPPER_BOUNDARY;
     }
 

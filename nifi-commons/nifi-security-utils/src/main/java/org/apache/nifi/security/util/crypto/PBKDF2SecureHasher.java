@@ -54,7 +54,7 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
     private static final int DEFAULT_ITERATION_COUNT = 160_000;
 
     // Different sources list this in bits and bytes, but RFC 8018 uses bytes (octets [8-bit sequences] to be precise)
-    private static final int DEFAULT_DK_LENGTH = 16;
+    private static final int DEFAULT_DK_LENGTH = 32;
 
     private static final int MIN_ITERATION_COUNT = 1;
     private static final int MIN_DK_LENGTH = 1;
@@ -200,9 +200,6 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
      * @return true if dkLength is within boundaries
      */
     public static boolean isDKLengthValid(int hLen, Integer dkLength) {
-        if (dkLength < DEFAULT_DK_LENGTH) {
-            logger.warn("The provided output length (dkLength) {} bytes is below the recommended minimum {}.", dkLength, DEFAULT_DK_LENGTH);
-        }
         final int MAX_DK_LENGTH = getMaxDKLength(hLen);
         logger.debug("The max dkLength is {} bytes for hLen {} bytes.", MAX_DK_LENGTH, hLen);
 
