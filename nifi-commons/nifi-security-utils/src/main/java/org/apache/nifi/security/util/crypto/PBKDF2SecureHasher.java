@@ -54,7 +54,7 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
     private static final int DEFAULT_ITERATION_COUNT = 160_000;
 
     // Different sources list this in bits and bytes, but RFC 8018 uses bytes (octets [8-bit sequences] to be precise)
-    private static final int DEFAULT_DK_LENGTH = 32;
+    private static final int DEFAULT_DK_LENGTH = 16;
 
     private static final int MIN_ITERATION_COUNT = 1;
     private static final int MIN_DK_LENGTH = 1;
@@ -254,6 +254,7 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
         gen.init(input, rawSalt, iterationCount);
         // The generateDerivedParameters method expects the dkLength in bits
         byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength * 8)).getKey();
+//        byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength)).getKey();
         final long generateNanos = System.nanoTime();
 
         final long totalDurationMillis = TimeUnit.NANOSECONDS.toMillis(generateNanos - startNanos);
