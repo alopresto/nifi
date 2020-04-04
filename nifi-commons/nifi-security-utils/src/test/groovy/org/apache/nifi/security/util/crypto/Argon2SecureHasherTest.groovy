@@ -152,6 +152,7 @@ class Argon2SecureHasherTest extends GroovyTestCase {
         byte[] inputBytes = input.bytes
 
         final String EXPECTED_HASH_HEX = "a73a471f51b2900901a00b81e770b9c1dfc595602bb7aec64cd27754a4174919"
+        logger.info("Expected Hash Hex length: ${EXPECTED_HASH_HEX.length()}")
         final String EXPECTED_HASH_BASE64 = "pzpHH1GykAkBoAuB53C5wd/FlWArt67GTNJ3VKQXSRk"
         final byte[] EXPECTED_HASH_BYTES = Hex.decode(EXPECTED_HASH_HEX)
 
@@ -488,5 +489,28 @@ class Argon2SecureHasherTest extends GroovyTestCase {
             logger.info("For salt length ${saltLength}, saltLength is ${isSaltLengthValid ? "valid" : "invalid"}")
             assert !isSaltLengthValid
         }
+    }
+
+    @Test
+    void testShouldCreateHashOfDesiredLength() throws Exception {
+        // Arrange
+        def hashLengths = [16, 32]
+
+        final String PASSWORD = "password"
+        final byte[] SALT = [0x00] * 16
+        final byte[] EXPECTED_HASH = Hex.decode("411c9c87e7c91d8c8eacc418665bd2e1")
+
+        // Act
+        Map<Integer, byte[]> results = hashLengths.collectEntries { hashLength ->
+            Argon2SecureHasher ash = new Argon2SecureHasher(hashLength, 8, 1, 3)
+            def hash = ash.hashRaw(PASSWORD.bytes, SALT)
+            logger.info("Hashed password ${PASSWORD} with salt ${Hex.encode(SALT)} to ${Hex.encode(hash)}".toString())
+            [hashLength, hash]
+        }
+
+        // Assert
+        assert results[16][0..15] != results[32][0..15]
+        // Demonstrates that internal hash truncation is not supported
+//        assert results.every { int k, byte[] v -> v[0..15] as byte[] == EXPECTED_HASH}
     }
 }

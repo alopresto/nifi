@@ -134,8 +134,6 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
             throw new IllegalArgumentException(keyLength + " is not a valid key length for " + cipherName);
         }
 
-//        byte[] rawSalt = extractRawSalt(salt);
-
         String saltString = new String(salt, StandardCharsets.UTF_8);
         byte[] rawSalt = new byte[Scrypt.getDefaultSaltLength()];
         int workFactor = 0;
@@ -238,35 +236,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
 
         // Bcrypt uses a custom Radix64 encoding alphabet that is not compatible with default Base64
         return new Radix64Encoder.Default().decode(saltComponents[3].getBytes(StandardCharsets.UTF_8));
-//        return Base64.decodeBase64(saltComponents[3]);
     }
-
-//    public static byte[] extractRawSalt(byte[] fullSalt) {
-//        try {
-//            String formattedSalt = formatSaltForBcrypt(fullSalt);
-//            String rawSalt = formattedSalt.substring(formattedSalt.lastIndexOf("$") + 1);
-//            if (rawSalt.length() != 22) {
-//                throw new IllegalArgumentException("The formatted salt did not contain a raw salt");
-//            }
-//            return new Radix64Encoder.Default().decode(rawSalt.getBytes(StandardCharsets.UTF_8));
-//        } catch (IllegalArgumentException e) {
-//            logger.warn("Unable to extract a raw salt from bcrypt salt {}", new String(fullSalt, StandardCharsets.UTF_8));
-//            throw e;
-//        }
-//    }
-
-//    /**
-//     * Returns the raw salt as a {@code byte[]} extracted from the Bcrypt formatted salt String.
-//     *
-//     * @param fullSalt the Bcrypt salt sequence
-//     * @return the raw salt (16 bytes)
-//     */
-//    public static String[] extractRawSalt(String fullSalt) {
-//        if (fullSalt == null) {
-//            return new byte[0];
-//        }
-//        return extractRawSalt(fullSalt);
-//    }
 
     @Override
     public int getDefaultSaltLength() {

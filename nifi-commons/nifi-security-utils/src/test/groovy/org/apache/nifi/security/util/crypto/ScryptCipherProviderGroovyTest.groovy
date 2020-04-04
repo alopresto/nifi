@@ -395,7 +395,6 @@ class ScryptCipherProviderGroovyTest {
 
         final String PLAINTEXT = "This is a plaintext message."
 
-        // Currently only AES ciphers are compatible with Bcrypt, so redundant to test all algorithms
         final def VALID_KEY_LENGTHS = AES_KEY_LENGTHS
         EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
 

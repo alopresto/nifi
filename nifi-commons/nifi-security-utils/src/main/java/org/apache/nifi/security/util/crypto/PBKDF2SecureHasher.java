@@ -251,7 +251,6 @@ public class PBKDF2SecureHasher extends AbstractSecureHasher {
         gen.init(input, rawSalt, iterationCount);
         // The generateDerivedParameters method expects the dkLength in bits
         byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength * 8)).getKey();
-//        byte[] hash = ((KeyParameter) gen.generateDerivedParameters(dkLength)).getKey();
         final long generateNanos = System.nanoTime();
 
         final long totalDurationMillis = TimeUnit.NANOSECONDS.toMillis(generateNanos - startNanos);
