@@ -523,25 +523,11 @@ public class EncryptContent extends AbstractProcessor {
         StreamCallback callback;
         try {
             if (isPGPAlgorithm(algorithm)) {
-                final String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
-                final String publicKeyring = context.getProperty(PUBLIC_KEYRING).getValue();
-                final String privateKeyring = context.getProperty(PRIVATE_KEYRING).getValue();
-                if (encrypt && publicKeyring != null) {
-                    final String publicUserId = context.getProperty(PUBLIC_KEY_USERID).getValue();
-                    encryptor = new OpenPGPKeyBasedEncryptor(algorithm, pgpCipher, providerName, publicKeyring, publicUserId, null, filename);
-                } else if (!encrypt && privateKeyring != null) {
-                    final char[] keyringPassphrase = context.getProperty(PRIVATE_KEYRING_PASSPHRASE).evaluateAttributeExpressions().getValue().toCharArray();
-                    encryptor = new OpenPGPKeyBasedEncryptor(algorithm, pgpCipher, providerName, privateKeyring, null, keyringPassphrase, filename);
-                } else {
-                    final char[] passphrase = Normalizer.normalize(password, Normalizer.Form.NFC).toCharArray();
-                    encryptor = new OpenPGPPasswordBasedEncryptor(algorithm, pgpCipher, providerName, passphrase, filename);
-                }
+                encryptor = createPGPEncryptor(context, flowFile, providerName, algorithm, pgpCipher, password, encrypt);
             } else if (kdf.equals(KeyDerivationFunction.NONE)) { // Raw key
-                final String keyHex = context.getProperty(RAW_KEY_HEX).getValue();
-                encryptor = new KeyedEncryptor(encryptionMethod, Hex.decodeHex(keyHex.toCharArray()));
+                encryptor = createKeyedEncryptor(context, encryptionMethod);
             } else { // PBE
-                final char[] passphrase = Normalizer.normalize(password, Normalizer.Form.NFC).toCharArray();
-                encryptor = new PasswordBasedEncryptor(encryptionMethod, passphrase, kdf);
+                encryptor = createPBEEncryptor(encryptionMethod, password, kdf);
             }
 
             if (encrypt) {
@@ -567,6 +553,38 @@ public class EncryptContent extends AbstractProcessor {
             logger.error("Cannot {}crypt {} - ", new Object[]{encrypt ? "en" : "de", flowFile, e});
             session.transfer(flowFile, REL_FAILURE);
         }
+    }
+
+    private Encryptor createPGPEncryptor(ProcessContext context, FlowFile flowFile, String providerName, String algorithm, Integer pgpCipher, String password, boolean encrypt) {
+        Encryptor encryptor;
+        final String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
+        final String publicKeyring = context.getProperty(PUBLIC_KEYRING).getValue();
+        final String privateKeyring = context.getProperty(PRIVATE_KEYRING).getValue();
+        if (encrypt && publicKeyring != null) {
+            final String publicUserId = context.getProperty(PUBLIC_KEY_USERID).getValue();
+            encryptor = new OpenPGPKeyBasedEncryptor(algorithm, pgpCipher, providerName, publicKeyring, publicUserId, null, filename);
+        } else if (!encrypt && privateKeyring != null) {
+            final char[] keyringPassphrase = context.getProperty(PRIVATE_KEYRING_PASSPHRASE).evaluateAttributeExpressions().getValue().toCharArray();
+            encryptor = new OpenPGPKeyBasedEncryptor(algorithm, pgpCipher, providerName, privateKeyring, null, keyringPassphrase, filename);
+        } else {
+            final char[] passphrase = Normalizer.normalize(password, Normalizer.Form.NFC).toCharArray();
+            encryptor = new OpenPGPPasswordBasedEncryptor(algorithm, pgpCipher, providerName, passphrase, filename);
+        }
+        return encryptor;
+    }
+
+    private Encryptor createKeyedEncryptor(ProcessContext context, EncryptionMethod encryptionMethod) throws DecoderException {
+        Encryptor encryptor;
+        final String keyHex = context.getProperty(RAW_KEY_HEX).getValue();
+        encryptor = new KeyedEncryptor(encryptionMethod, Hex.decodeHex(keyHex.toCharArray()));
+        return encryptor;
+    }
+
+    private Encryptor createPBEEncryptor(EncryptionMethod encryptionMethod, String password, KeyDerivationFunction kdf) {
+        Encryptor encryptor;
+        final char[] passphrase = Normalizer.normalize(password, Normalizer.Form.NFC).toCharArray();
+        encryptor = new PasswordBasedEncryptor(encryptionMethod, passphrase, kdf);
+        return encryptor;
     }
 
     public interface Encryptor {
