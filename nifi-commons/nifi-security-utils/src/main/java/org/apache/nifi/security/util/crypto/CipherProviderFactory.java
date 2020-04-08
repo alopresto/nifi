@@ -47,11 +47,11 @@ public class CipherProviderFactory {
             try {
                 return clazz.newInstance();
             } catch (Exception e) {
-               logger.error("Error instantiating new {} with default parameters for {}", clazz.getName(), kdf.getName());
+               logger.error("Error instantiating new {} with default parameters for {}", clazz.getName(), kdf.getKdfName());
                 throw new ProcessException("Error instantiating cipher provider");
             }
         }
 
-        throw new IllegalArgumentException("No cipher provider registered for " + kdf.getName());
+        throw new IllegalArgumentException("No cipher provider registered for " + kdf.getKdfName());
     }
 }

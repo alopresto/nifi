@@ -16,18 +16,23 @@
  */
 package org.apache.nifi.processors.standard;
 
+import static org.bouncycastle.openpgp.PGPUtil.getDecoderStream;
+import static org.junit.Assert.fail;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-
+import java.util.Set;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.SystemUtils;
 import org.apache.nifi.components.AllowableValue;
@@ -50,9 +55,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.bouncycastle.openpgp.PGPUtil.getDecoderStream;
-import static org.junit.Assert.fail;
 
 public class TestEncryptContent {
 
@@ -207,8 +209,8 @@ public class TestEncryptContent {
         final String AES_ALGORITHM = EncryptionMethod.MD5_256AES.getAlgorithm();
         final String DES_ALGORITHM = EncryptionMethod.MD5_DES.getAlgorithm();
 
-        final int AES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 128;
-        final int DES_MAX_LENGTH = PasswordBasedEncryptor.supportsUnlimitedStrength() ? Integer.MAX_VALUE : 64;
+        final int AES_MAX_LENGTH = CipherUtility.isUnlimitedStrengthCryptoSupported() ? Integer.MAX_VALUE : 128;
+        final int DES_MAX_LENGTH = CipherUtility.isUnlimitedStrengthCryptoSupported() ? Integer.MAX_VALUE : 64;
 
         // Act
         int determinedAESMaxLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(AES_ALGORITHM);
@@ -223,7 +225,7 @@ public class TestEncryptContent {
     public void testShouldDecryptOpenSSLRawSalted() throws IOException {
         // Arrange
         Assume.assumeTrue("Test is being skipped due to this JVM lacking JCE Unlimited Strength Jurisdiction Policy file.",
-                PasswordBasedEncryptor.supportsUnlimitedStrength());
+                CipherUtility.isUnlimitedStrengthCryptoSupported());
 
         final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent());
 
@@ -247,7 +249,7 @@ public class TestEncryptContent {
 
         MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0);
         logger.info("Decrypted contents (hex): {}", Hex.encodeHexString(flowFile.toByteArray()));
-        logger.info("Decrypted contents: {}", new String(flowFile.toByteArray(), "UTF-8"));
+        logger.info("Decrypted contents: {}", new String(flowFile.toByteArray(), StandardCharsets.UTF_8));
 
         // Assert
         flowFile.assertContentEquals(new File("src/test/resources/TestEncryptContent/plain.txt"));
@@ -257,7 +259,7 @@ public class TestEncryptContent {
     public void testShouldDecryptOpenSSLRawUnsalted() throws IOException {
         // Arrange
         Assume.assumeTrue("Test is being skipped due to this JVM lacking JCE Unlimited Strength Jurisdiction Policy file.",
-                PasswordBasedEncryptor.supportsUnlimitedStrength());
+                CipherUtility.isUnlimitedStrengthCryptoSupported());
 
         final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent());
 
@@ -281,20 +283,20 @@ public class TestEncryptContent {
 
         MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0);
         logger.info("Decrypted contents (hex): {}", Hex.encodeHexString(flowFile.toByteArray()));
-        logger.info("Decrypted contents: {}", new String(flowFile.toByteArray(), "UTF-8"));
+        logger.info("Decrypted contents: {}", new String(flowFile.toByteArray(), StandardCharsets.UTF_8));
 
         // Assert
         flowFile.assertContentEquals(new File("src/test/resources/TestEncryptContent/plain.txt"));
     }
 
     @Test
-    public void testDecryptShouldDefaultToBcrypt() throws IOException {
+    public void testDecryptShouldDefaultToNone() throws IOException {
         // Arrange
         final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent());
 
         // Assert
-        Assert.assertEquals("Decrypt should default to Legacy KDF", testRunner.getProcessor().getPropertyDescriptor(EncryptContent.KEY_DERIVATION_FUNCTION
-                .getName()).getDefaultValue(), KeyDerivationFunction.BCRYPT.name());
+        Assert.assertEquals("Decrypt should default to None", testRunner.getProcessor().getPropertyDescriptor(EncryptContent.KEY_DERIVATION_FUNCTION
+                .getName()).getDefaultValue(), KeyDerivationFunction.NONE.name());
     }
 
     @Test
@@ -454,10 +456,24 @@ public class TestEncryptContent {
         runner.enqueue(new byte[0]);
         pc = (MockProcessContext) runner.getProcessContext();
         results = pc.validate();
-        Assert.assertEquals(results.toString(), 1, results.size());
+
+        for (ValidationResult vr : results) {
+            logger.info(vr.toString());
+        }
+
+        // The two default validation errors are:
+        // Password cannot be empty
+        final String PASSWORD_ERROR = "'Password' is invalid because Password is required when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL and KDF None";
+        // KDF must be LEGACY or OPENSSL for default algorithm of "MD5_AES128"
+        final String KDF_ERROR = "'Key Derivation Function' is invalid because Key Derivation Function is required to be NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL. See Admin Guide.";
+
+        final Set<String>  EXPECTED_ERRORS = new HashSet<>();
+        EXPECTED_ERRORS.add(PASSWORD_ERROR);
+        EXPECTED_ERRORS.add(KDF_ERROR);
+
+        Assert.assertEquals(results.toString(), 2, results.size());
         for (final ValidationResult vr : results) {
-            Assert.assertTrue(vr.toString()
-                    .contains(EncryptContent.PASSWORD.getDisplayName() + " is required when using algorithm"));
+            Assert.assertTrue(EXPECTED_ERRORS.contains(vr.toString()));
         }
 
         runner.enqueue(new byte[0]);
@@ -467,7 +483,7 @@ public class TestEncryptContent {
         runner.setProperty(EncryptContent.PASSWORD, "ThisIsAPasswordThatIsLongerThanSixteenCharacters");
         pc = (MockProcessContext) runner.getProcessContext();
         results = pc.validate();
-        if (!PasswordBasedEncryptor.supportsUnlimitedStrength()) {
+        if (!CipherUtility.isUnlimitedStrengthCryptoSupported()) {
             logger.info(results.toString());
             Assert.assertEquals(1, results.size());
             for (final ValidationResult vr : results) {

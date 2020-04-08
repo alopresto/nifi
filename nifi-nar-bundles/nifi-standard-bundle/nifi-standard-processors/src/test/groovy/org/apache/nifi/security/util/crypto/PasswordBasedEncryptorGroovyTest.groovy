@@ -82,7 +82,7 @@ class PasswordBasedEncryptorGroovyTest {
             OutputStream cipherStream = new ByteArrayOutputStream()
             OutputStream recoveredStream = new ByteArrayOutputStream()
 
-            logger.info("Using ${kdf.name} and ${encryptionMethod.name()}")
+            logger.info("Using ${kdf.kdfName} and ${encryptionMethod.name()}")
             PasswordBasedEncryptor encryptor = new PasswordBasedEncryptor(encryptionMethod, shortPassword.toCharArray(), kdf)
 
             StreamCallback encryptionCallback = encryptor.getEncryptionCallback()
@@ -109,7 +109,7 @@ class PasswordBasedEncryptorGroovyTest {
     @Test
     void testShouldDecryptLegacyOpenSSLSaltedCipherText() throws Exception {
         // Arrange
-        Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", PasswordBasedEncryptor.supportsUnlimitedStrength())
+        Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", CipherUtility.isUnlimitedStrengthCryptoSupported())
 
         final String PLAINTEXT = new File("${TEST_RESOURCES_PREFIX}/plain.txt").text
         logger.info("Plaintext: {}", PLAINTEXT)
@@ -138,7 +138,7 @@ class PasswordBasedEncryptorGroovyTest {
     @Test
     void testShouldDecryptLegacyOpenSSLUnsaltedCipherText() throws Exception {
         // Arrange
-        Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", PasswordBasedEncryptor.supportsUnlimitedStrength())
+        Assume.assumeTrue("Skipping test because unlimited strength crypto policy not installed", CipherUtility.isUnlimitedStrengthCryptoSupported())
 
         final String PLAINTEXT = new File("${TEST_RESOURCES_PREFIX}/plain.txt").text
         logger.info("Plaintext: {}", PLAINTEXT)

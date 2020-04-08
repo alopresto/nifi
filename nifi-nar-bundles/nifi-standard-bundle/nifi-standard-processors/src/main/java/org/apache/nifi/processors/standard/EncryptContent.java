@@ -93,7 +93,7 @@ public class EncryptContent extends AbstractProcessor {
             .description("Specifies the key derivation function to generate the key from the password (and salt)")
             .required(true)
             .allowableValues(buildKeyDerivationFunctionAllowableValues())
-            .defaultValue(KeyDerivationFunction.BCRYPT.name())
+            .defaultValue(KeyDerivationFunction.NONE.name())
             .build();
     public static final PropertyDescriptor ENCRYPTION_ALGORITHM = new PropertyDescriptor.Builder()
             .name("Encryption Algorithm")
@@ -186,7 +186,7 @@ public class EncryptContent extends AbstractProcessor {
         final KeyDerivationFunction[] keyDerivationFunctions = KeyDerivationFunction.values();
         List<AllowableValue> allowableValues = new ArrayList<>(keyDerivationFunctions.length);
         for (KeyDerivationFunction kdf : keyDerivationFunctions) {
-            allowableValues.add(new AllowableValue(kdf.name(), kdf.getName(), kdf.getDescription()));
+            allowableValues.add(new AllowableValue(kdf.name(), kdf.getKdfName(), kdf.getDescription()));
         }
 
         return allowableValues.toArray(new AllowableValue[0]);
@@ -217,7 +217,7 @@ public class EncryptContent extends AbstractProcessor {
 
     private static AllowableValue[] buildPGPSymmetricCipherAllowableValues() {
         // Allowed values are inferred from SymmetricKeyAlgorithmTags. Note that NULL and SAFER cipher are not supported and therefore not listed
-        return new AllowableValue[] {
+        return new AllowableValue[]{
                 new AllowableValue("1", "IDEA"),
                 new AllowableValue("2", "TRIPLE_DES"),
                 new AllowableValue("3", "CAST5"),
@@ -229,7 +229,7 @@ public class EncryptContent extends AbstractProcessor {
                 new AllowableValue("10", "TWOFISH"),
                 new AllowableValue("11", "CAMELLIA_128"),
                 new AllowableValue("12", "CAMELLIA_192"),
-                new AllowableValue("13", "CAMELLIA_256") };
+                new AllowableValue("13", "CAMELLIA_256")};
     }
 
     @Override
@@ -291,10 +291,10 @@ public class EncryptContent extends AbstractProcessor {
             validationResults.addAll(validatePGP(encryptionMethod, password, encrypt, publicKeyring, publicUserId,
                     privateKeyring, privateKeyringPassphrase, cipher));
         } else { // Not PGP
-            if (encryptionMethod.isKeyedCipher()) { // Raw key
-                validationResults.addAll(validateKeyed(encryptionMethod, kdf, keyHex));
+            boolean allowWeakCrypto = context.getProperty(ALLOW_WEAK_CRYPTO).getValue().equalsIgnoreCase(WEAK_CRYPTO_ALLOWED_NAME);
+            if (encryptionMethod.isKeyedCipher()) { // Raw key or derived key from password
+                validationResults.addAll(validateKeyed(encryptionMethod, kdf, keyHex, password, allowWeakCrypto));
             } else { // PBE
-                boolean allowWeakCrypto = context.getProperty(ALLOW_WEAK_CRYPTO).getValue().equalsIgnoreCase(WEAK_CRYPTO_ALLOWED_NAME);
                 validationResults.addAll(validatePBE(encryptionMethod, kdf, password, allowWeakCrypto));
             }
         }
@@ -316,7 +316,7 @@ public class EncryptContent extends AbstractProcessor {
                                                String privateKeyringPassphrase, int cipher) {
         List<ValidationResult> validationResults = new ArrayList<>();
 
-        if(encrypt && password != null && !isValidCipher(cipher)) {
+        if (encrypt && password != null && !isValidCipher(cipher)) {
             validationResults.add(new ValidationResult.Builder().subject(PGP_SYMMETRIC_ENCRYPTION_CIPHER.getDisplayName())
                     .explanation("When performing an encryption with " + encryptionMethod.getAlgorithm() + " and a symmetric " +
                             PASSWORD.getDisplayName() + ", a" + PGP_SYMMETRIC_ENCRYPTION_CIPHER.getDisplayName() + " is required")
@@ -378,13 +378,30 @@ public class EncryptContent extends AbstractProcessor {
     }
 
     private List<ValidationResult> validatePBE(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, String password, boolean allowWeakCrypto) {
+        // Start by validating the password specifically
+        List<ValidationResult> validationResults = validatePassword(encryptionMethod, kdf, password, allowWeakCrypto);
+
+        // Check the KDF for compatibility with this algorithm
+        List<String> kdfsForPBECipher = getKDFsForPBECipher(encryptionMethod);
+        if (kdf == null || !kdfsForPBECipher.contains(kdf.name())) {
+            final String displayName = KEY_DERIVATION_FUNCTION.getDisplayName();
+            validationResults.add(new ValidationResult.Builder().subject(displayName)
+                    .explanation(displayName + " is required to be " + StringUtils.join(kdfsForPBECipher,
+                            ", ") + " when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
+        }
+
+        return validationResults;
+    }
+
+    private List<ValidationResult> validatePassword(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, String password, boolean allowWeakCrypto) {
         List<ValidationResult> validationResults = new ArrayList<>();
-        boolean limitedStrengthCrypto = !PasswordBasedEncryptor.supportsUnlimitedStrength();
+
+        boolean limitedStrengthCrypto = !CipherUtility.isUnlimitedStrengthCryptoSupported();
 
         // Password required (short circuits validation because other conditions depend on password presence)
         if (StringUtils.isEmpty(password)) {
             validationResults.add(new ValidationResult.Builder().subject(PASSWORD.getName())
-                    .explanation(PASSWORD.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm()).build());
+                    .explanation(PASSWORD.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + " and KDF " + kdf.getKdfName()).build());
             return validationResults;
         }
 
@@ -417,21 +434,13 @@ public class EncryptContent extends AbstractProcessor {
             }
         }
 
-        // Check the KDF for compatibility with this algorithm
-        List<String> kdfsForPBECipher = getKDFsForPBECipher(encryptionMethod);
-        if (kdf == null || !kdfsForPBECipher.contains(kdf.name())) {
-            final String displayName = KEY_DERIVATION_FUNCTION.getDisplayName();
-            validationResults.add(new ValidationResult.Builder().subject(displayName)
-                    .explanation(displayName + " is required to be " + StringUtils.join(kdfsForPBECipher,
-                            ", ") + " when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
-        }
-
         return validationResults;
     }
 
-    private List<ValidationResult> validateKeyed(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, String keyHex) {
+
+    private List<ValidationResult> validateKeyed(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, String keyHex, String password, boolean allowWeakCrypto) {
         List<ValidationResult> validationResults = new ArrayList<>();
-        boolean limitedStrengthCrypto = !PasswordBasedEncryptor.supportsUnlimitedStrength();
+        boolean limitedStrengthCrypto = !CipherUtility.isUnlimitedStrengthCryptoSupported();
 
         if (limitedStrengthCrypto) {
             if (encryptionMethod.isUnlimitedStrength()) {
@@ -442,39 +451,51 @@ public class EncryptContent extends AbstractProcessor {
         }
         int allowedKeyLength = PasswordBasedEncryptor.getMaxAllowedKeyLength(ENCRYPTION_ALGORITHM.getName());
 
-        if (StringUtils.isEmpty(keyHex)) {
-            validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
-                    .explanation(RAW_KEY_HEX.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + ". See Admin Guide.").build());
+        // Scenario 1: RKH is present & KDF == NONE
+        if (kdf == KeyDerivationFunction.NONE) {
+            if (StringUtils.isEmpty(keyHex)) {
+                validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
+                        .explanation(RAW_KEY_HEX.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + " and KDF " + KeyDerivationFunction.NONE + ". See Admin Guide.").build());
+            } else {
+                validateKeyHex(encryptionMethod, keyHex, validationResults, allowedKeyLength);
+            }
+        } else if (kdf.isStrongKDF()) {
+            // Scenario 2: PW is present & KDF is strong
+            if (StringUtils.isEmpty(password)) {
+                validationResults.add(new ValidationResult.Builder().subject(PASSWORD.getName())
+                        .explanation(PASSWORD.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + " and KDF " + kdf.getKdfName() + ". See Admin Guide.").build());
+            } else {
+                // Password must still be validated
+                validationResults.addAll(validatePassword(encryptionMethod, kdf, password, allowWeakCrypto));
+            }
         } else {
-            byte[] keyBytes = new byte[0];
-            try {
-                keyBytes = Hex.decodeHex(keyHex.toCharArray());
-            } catch (DecoderException e) {
-                validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
-                        .explanation("Key must be valid hexadecimal string. See Admin Guide.").build());
-            }
-            if (keyBytes.length * 8 > allowedKeyLength) {
-                validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
-                        .explanation("Key length greater than " + allowedKeyLength + " bits is not supported by this JVM" +
-                                " due to lacking JCE Unlimited Strength Jurisdiction Policy files. See Admin Guide.").build());
-            }
-            if (!CipherUtility.isValidKeyLengthForAlgorithm(keyBytes.length * 8, encryptionMethod.getAlgorithm())) {
-                List<Integer> validKeyLengths = CipherUtility.getValidKeyLengthsForAlgorithm(encryptionMethod.getAlgorithm());
-                validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
-                        .explanation("Key must be valid length [" + StringUtils.join(validKeyLengths, ", ") + "]. See Admin Guide.").build());
-            }
-        }
-
-        // Perform some analysis on the selected encryption algorithm to ensure the JVM can support it and the associated key
-
-        List<String> kdfsForKeyedCipher = getKDFsForKeyedCipher();
-        if (kdf == null || !kdfsForKeyedCipher.contains(kdf.name())) {
+            // KDF is legacy; not eligible for keyed cipher algorithm
+            List<String> kdfsForKeyedCipher = getKDFsForKeyedCipher();
             validationResults.add(new ValidationResult.Builder().subject(KEY_DERIVATION_FUNCTION.getName())
                     .explanation(KEY_DERIVATION_FUNCTION.getDisplayName() + " is required to be " + StringUtils.join(kdfsForKeyedCipher, ", ") + " when using algorithm " +
                             encryptionMethod.getAlgorithm()).build());
         }
-
         return validationResults;
+    }
+
+    private void validateKeyHex(EncryptionMethod encryptionMethod, String keyHex, List<ValidationResult> validationResults, int allowedKeyLength) {
+        byte[] keyBytes = new byte[0];
+        try {
+            keyBytes = Hex.decodeHex(keyHex.toCharArray());
+        } catch (DecoderException e) {
+            validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
+                    .explanation("Key must be valid hexadecimal string. See Admin Guide.").build());
+        }
+        if (keyBytes.length * 8 > allowedKeyLength) {
+            validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
+                    .explanation("Key length greater than " + allowedKeyLength + " bits is not supported by this JVM" +
+                            " due to lacking JCE Unlimited Strength Jurisdiction Policy files. See Admin Guide.").build());
+        }
+        if (!CipherUtility.isValidKeyLengthForAlgorithm(keyBytes.length * 8, encryptionMethod.getAlgorithm())) {
+            List<Integer> validKeyLengths = CipherUtility.getValidKeyLengthsForAlgorithm(encryptionMethod.getAlgorithm());
+            validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
+                    .explanation("Key must be valid length [" + StringUtils.join(validKeyLengths, ", ") + "]. See Admin Guide.").build());
+        }
     }
 
     private List<String> getKDFsForKeyedCipher() {
