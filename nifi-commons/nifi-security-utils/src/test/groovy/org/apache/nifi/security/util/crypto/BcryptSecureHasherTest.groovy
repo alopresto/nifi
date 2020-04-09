@@ -371,8 +371,9 @@ class BcryptSecureHasherTest extends GroovyTestCase {
     @Test
     void testShouldConvertRadix64ToBase64() {
         // Arrange
-        final String INPUT_RADIX_64 = "I2qeBOuL.nZmb86aq.lOOm1wh7JWnV."
+        final String INPUT_RADIX_64 = "mm7MiKjvXVYCujVUlKRKiu"
         final byte[] EXPECTED_BYTES = new Radix64Encoder.Default().decode(INPUT_RADIX_64.bytes)
+        logger.info("Plain bytes: ${Hex.encode(EXPECTED_BYTES)}")
 
         // Uses standard Base64 library but removes padding chars
         final String EXPECTED_MIME_B64 = Base64.encoder.encodeToString(EXPECTED_BYTES).replaceAll(/=/, '')
