@@ -36,6 +36,7 @@ public class CipherProviderFactory {
         registeredCipherProviders.put(KeyDerivationFunction.PBKDF2, PBKDF2CipherProvider.class);
         registeredCipherProviders.put(KeyDerivationFunction.BCRYPT, BcryptCipherProvider.class);
         registeredCipherProviders.put(KeyDerivationFunction.SCRYPT, ScryptCipherProvider.class);
+        registeredCipherProviders.put(KeyDerivationFunction.ARGON2, Argon2CipherProvider.class);
         registeredCipherProviders.put(KeyDerivationFunction.NONE, AESKeyedCipherProvider.class);
     }
 

@@ -40,7 +40,8 @@ class CipherProviderFactoryGroovyTest extends GroovyTestCase {
             (KeyDerivationFunction.NONE)                    : AESKeyedCipherProvider.class,
             (KeyDerivationFunction.OPENSSL_EVP_BYTES_TO_KEY): OpenSSLPKCS5CipherProvider.class,
             (KeyDerivationFunction.PBKDF2)                  : PBKDF2CipherProvider.class,
-            (KeyDerivationFunction.SCRYPT)                  : ScryptCipherProvider.class
+            (KeyDerivationFunction.SCRYPT)                  : ScryptCipherProvider.class,
+            (KeyDerivationFunction.ARGON2)                  : Argon2CipherProvider.class
     ]
 
     @BeforeClass
