@@ -20,12 +20,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.Security;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
@@ -499,27 +501,22 @@ public class EncryptContent extends AbstractProcessor {
     }
 
     private List<String> getKDFsForKeyedCipher() {
-        List<String> kdfsForKeyedCipher = new ArrayList<>();
-        kdfsForKeyedCipher.add(KeyDerivationFunction.NONE.name());
-        for (KeyDerivationFunction k : KeyDerivationFunction.values()) {
-            if (k.isStrongKDF()) {
-                kdfsForKeyedCipher.add(k.name());
-            }
-        }
-        return kdfsForKeyedCipher;
+        List<String> kdfs = Arrays.stream(KeyDerivationFunction.values()).filter(KeyDerivationFunction::isStrongKDF).map(Enum::name).collect(Collectors.toList());
+        kdfs.add(KeyDerivationFunction.NONE.name());
+        return kdfs;
     }
 
     private List<String> getKDFsForPBECipher(EncryptionMethod encryptionMethod) {
-        List<String> kdfsForPBECipher = new ArrayList<>();
-        for (KeyDerivationFunction k : KeyDerivationFunction.values()) {
-            // Add all weak (legacy) KDFs except NONE
-            if (!k.isStrongKDF() && !k.equals(KeyDerivationFunction.NONE)) {
-                kdfsForPBECipher.add(k.name());
-                // If this algorithm supports strong KDFs, add them as well
-            } else if ((encryptionMethod.isCompatibleWithStrongKDFs() && k.isStrongKDF())) {
-                kdfsForPBECipher.add(k.name());
-            }
+        List<String> kdfsForPBECipher;
+        if (encryptionMethod.isCompatibleWithStrongKDFs()) {
+            // Collect all
+            kdfsForPBECipher = Arrays.stream(KeyDerivationFunction.values()).map(Enum::name).collect(Collectors.toList());
+        } else {
+            // Collect all weak KDFS
+            kdfsForPBECipher = Arrays.stream(KeyDerivationFunction.values()).filter(kdf -> !kdf.isStrongKDF()).map(Enum::name).collect(Collectors.toList());
         }
+
+        kdfsForPBECipher.remove(KeyDerivationFunction.NONE.name());
         return kdfsForPBECipher;
     }
 

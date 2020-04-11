@@ -29,7 +29,8 @@ public enum KeyDerivationFunction {
     OPENSSL_EVP_BYTES_TO_KEY("OpenSSL EVP_BytesToKey", "Single iteration MD5 compatible with PKCS#5 v1.5"),
     BCRYPT("Bcrypt", "Bcrypt with configurable work factor. See Admin Guide"),
     SCRYPT("Scrypt", "Scrypt with configurable cost parameters. See Admin Guide"),
-    PBKDF2("PBKDF2", "PBKDF2 with configurable hash function and iteration count. See Admin Guide");
+    PBKDF2("PBKDF2", "PBKDF2 with configurable hash function and iteration count. See Admin Guide"),
+    ARGON2("Argon2", "Argon2 with configurable cost parameters. See Admin Guide.");
 
     private final String kdfName;
     private final String description;
@@ -48,7 +49,7 @@ public enum KeyDerivationFunction {
     }
 
     public boolean isStrongKDF() {
-        return (kdfName.equals(BCRYPT.kdfName) || kdfName.equals(SCRYPT.kdfName) || kdfName.equals(PBKDF2.kdfName));
+        return (kdfName.equals(BCRYPT.kdfName) || kdfName.equals(SCRYPT.kdfName) || kdfName.equals(PBKDF2.kdfName) || kdfName.equals(ARGON2.kdfName));
     }
 
     @Override

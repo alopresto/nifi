@@ -219,10 +219,10 @@ class TestEncryptContentGroovy {
                 assert results.size() == 1
                 ValidationResult keyLengthInvalidVR = results.first()
 
-                String expectedResult = "'key-derivation-function' is invalid because Key Derivation Function is required to be NONE, BCRYPT, SCRYPT, PBKDF2 when using " +
+                String expectedResult = "'key-derivation-function' is invalid because Key Derivation Function is required to be BCRYPT, SCRYPT, PBKDF2, ARGON2, NONE when using " +
                         "algorithm ${encryptionMethod.algorithm}"
                 String message = "'" + keyLengthInvalidVR.toString() + "' contains '" + expectedResult + "'"
-                Assert.assertTrue(message, keyLengthInvalidVR.toString().contains(expectedResult))
+                assert keyLengthInvalidVR.toString().contains(expectedResult)
             }
 
             // Scenario 2: No KDF + keyed cipher + raw-key-hex -> valid
@@ -243,8 +243,7 @@ class TestEncryptContentGroovy {
             assert results.isEmpty()
 
             // Scenario 3: Strong KDF + keyed cipher + password -> valid
-            // TODO: Add Argon2
-            final def VALID_KDFS = [KeyDerivationFunction.BCRYPT, KeyDerivationFunction.SCRYPT, KeyDerivationFunction.PBKDF2]
+            final def VALID_KDFS = [KeyDerivationFunction.BCRYPT, KeyDerivationFunction.SCRYPT, KeyDerivationFunction.PBKDF2, KeyDerivationFunction.ARGON2]
             VALID_KDFS.each { KeyDerivationFunction validKDF ->
                 logger.info("Trying KDF ${validKDF.name()}")
 
@@ -302,7 +301,7 @@ class TestEncryptContentGroovy {
         KeyDerivationFunction none = KeyDerivationFunction.NONE
         final def VALID_KDFS = KeyDerivationFunction.values().findAll { it.isStrongKDF() }
 
-        // TODO: Scenario 1 - RKH w/ KDF NONE & em in [CBC, CTR, GCM] (no password)
+        // Scenario 1 - RKH w/ KDF NONE & em in [CBC, CTR, GCM] (no password)
         keyedEncryptionMethods.each { EncryptionMethod kem ->
             logger.info("Trying encryption method ${kem.name()} with KDF ${none.name()}")
             runner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, kem.name())
@@ -321,7 +320,7 @@ class TestEncryptContentGroovy {
             // Assert
             assert results.isEmpty()
 
-            // TODO: Scenario 2 - PW w/ KDF in [BCRYPT, SCRYPT, PBKDF2, ARGON2] & em in [CBC, CTR, GCM] (no RKH)
+            // Scenario 2 - PW w/ KDF in [BCRYPT, SCRYPT, PBKDF2, ARGON2] & em in [CBC, CTR, GCM] (no RKH)
             VALID_KDFS.each { KeyDerivationFunction kdf ->
                 logger.info("Trying encryption method ${kem.name()} with KDF ${kdf.name()}")
                 runner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, kem.name())
@@ -365,8 +364,7 @@ class TestEncryptContentGroovy {
             logger.info("Trying encryption method ${encryptionMethod.name()}")
             runner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
 
-            final
-            def INVALID_KDFS = [KeyDerivationFunction.NONE, KeyDerivationFunction.BCRYPT, KeyDerivationFunction.SCRYPT, KeyDerivationFunction.PBKDF2]
+            final def INVALID_KDFS = [KeyDerivationFunction.NONE, KeyDerivationFunction.BCRYPT, KeyDerivationFunction.SCRYPT, KeyDerivationFunction.PBKDF2, KeyDerivationFunction.ARGON2]
             INVALID_KDFS.each { KeyDerivationFunction invalidKDF ->
                 logger.info("Trying KDF ${invalidKDF.name()}")
 
