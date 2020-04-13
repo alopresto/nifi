@@ -465,7 +465,9 @@ public class TestEncryptContent {
         // Password cannot be empty
         final String PASSWORD_ERROR = "'Password' is invalid because Password is required when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL and KDF None";
         // KDF must be LEGACY or OPENSSL for default algorithm of "MD5_AES128"
-        final String KDF_ERROR = "'Key Derivation Function' is invalid because Key Derivation Function is required to be NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL. See Admin Guide.";
+        final String KDF_ERROR = "'Key Derivation Function' is invalid because Key Derivation Function is required to be" +
+                " NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL. " +
+                "See Admin Guide.";
 
         final Set<String>  EXPECTED_ERRORS = new HashSet<>();
         EXPECTED_ERRORS.add(PASSWORD_ERROR);

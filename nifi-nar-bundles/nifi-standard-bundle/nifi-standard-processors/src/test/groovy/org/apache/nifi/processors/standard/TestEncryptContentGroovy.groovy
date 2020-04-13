@@ -16,11 +16,14 @@
  */
 package org.apache.nifi.processors.standard
 
+import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.components.ValidationResult
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.KeyDerivationFunction
+import org.apache.nifi.security.util.crypto.Argon2CipherProvider
 import org.apache.nifi.security.util.crypto.CipherUtility
 import org.apache.nifi.security.util.crypto.PasswordBasedEncryptor
+import org.apache.nifi.security.util.crypto.RandomIVPBECipherProvider
 import org.apache.nifi.util.MockFlowFile
 import org.apache.nifi.util.MockProcessContext
 import org.apache.nifi.util.TestRunner
@@ -37,6 +40,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 import java.security.Security
 
@@ -614,5 +618,45 @@ class TestEncryptContentGroovy {
 
         // Assert
         Assert.assertEquals(results.toString(), 0, results.size())
+    }
+
+    @Test
+    void testArgon2ShouldIncludeFullSalt() throws IOException {
+        // Arrange
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent())
+        testRunner.setProperty(EncryptContent.PASSWORD, "thisIsABadPassword")
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.ARGON2.name())
+
+        EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+
+        logger.info("Attempting {}", encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.ENCRYPT_MODE)
+
+        // Act
+        testRunner.enqueue(Paths.get("src/test/resources/hello.txt"))
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        // Assert
+        testRunner.assertAllFlowFilesTransferred(EncryptContent.REL_SUCCESS, 1)
+
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
+        testRunner.assertQueueEmpty()
+
+        def flowFileContent = flowFile.getContent()
+        logger.info("Flowfile content (${flowFile.getData().length}): ${Hex.encodeHexString(flowFile.getData())}")
+
+        def fullSalt = flowFileContent.substring(0, flowFileContent.indexOf(new String(RandomIVPBECipherProvider.SALT_DELIMITER, StandardCharsets.UTF_8)))
+        logger.info("Full salt (${fullSalt.size()}): ${fullSalt}")
+
+        boolean isValidFormattedSalt = Argon2CipherProvider.isArgon2FormattedSalt(fullSalt)
+        logger.info("Salt is Argon2 format: ${isValidFormattedSalt}")
+        assert isValidFormattedSalt
+
+        def FULL_SALT_LENGTH_RANGE = (49..57)
+        boolean fullSaltIsValidLength = FULL_SALT_LENGTH_RANGE.contains(fullSalt.bytes.length)
+        logger.info("Salt length (${fullSalt.length()}) in valid range (${FULL_SALT_LENGTH_RANGE})")
+        assert fullSaltIsValidLength
     }
 }
