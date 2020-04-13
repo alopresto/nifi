@@ -457,7 +457,12 @@ public class EncryptContent extends AbstractProcessor {
         if (kdf == KeyDerivationFunction.NONE) {
             if (StringUtils.isEmpty(keyHex)) {
                 validationResults.add(new ValidationResult.Builder().subject(RAW_KEY_HEX.getName())
-                        .explanation(RAW_KEY_HEX.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + " and KDF " + KeyDerivationFunction.NONE + ". See Admin Guide.").build());
+                        .explanation(RAW_KEY_HEX.getDisplayName() +
+                                " is required when using algorithm " +
+                                encryptionMethod.getAlgorithm() +
+                                " and KDF " +
+                                KeyDerivationFunction.NONE +
+                                ". See Admin Guide.").build());
             } else {
                 validateKeyHex(encryptionMethod, keyHex, validationResults, allowedKeyLength);
             }
@@ -465,7 +470,12 @@ public class EncryptContent extends AbstractProcessor {
             // Scenario 2: PW is present & KDF is strong
             if (StringUtils.isEmpty(password)) {
                 validationResults.add(new ValidationResult.Builder().subject(PASSWORD.getName())
-                        .explanation(PASSWORD.getDisplayName() + " is required when using algorithm " + encryptionMethod.getAlgorithm() + " and KDF " + kdf.getKdfName() + ". See Admin Guide.").build());
+                        .explanation(PASSWORD.getDisplayName() +
+                                " is required when using algorithm " +
+                                encryptionMethod.getAlgorithm() +
+                                " and KDF " +
+                                kdf.getKdfName() +
+                                ". See Admin Guide.").build());
             } else {
                 // Password must still be validated
                 validationResults.addAll(validatePassword(encryptionMethod, kdf, password, allowWeakCrypto));
