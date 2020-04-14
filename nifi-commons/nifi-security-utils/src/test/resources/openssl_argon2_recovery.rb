@@ -18,7 +18,7 @@
 require 'openssl'
 require 'base64'
 
-# Run `$ gem install scrypt`
+# Run `$ gem install argon2`
 require 'argon2'
 
 def bin_to_hex(s)
@@ -29,29 +29,28 @@ def hex_to_bin(s)
   s.scan(/../).map { |x| x.hex.chr }.join
 end
 
-# Extracts r and p directly, converts N from the hex encoding of the exponent to the hex representation of the calculated total iterations cost (e -> 14 -> 2^14 -> 16384 -> 0x4000)
+# Extracts t and m from m=4096,t=3,p=1 as p is not exposed in the ruby gem
 def format_ruby_cost(java_cost)
-  n_exp = java_cost[0].to_i(16)
-  r = java_cost[1..2].to_i
-  p = java_cost[3..-1].to_i
+  elements = java_cost.gsub(/\$/, '').split(",").collect { |pair| pair.split("=") }.to_h
+  m = Math.log2(elements["m"].to_i)
+  t = elements["t"].to_i
 
-  n_dec = 2 ** n_exp
-  [n_dec.to_s(16), r, p].join("$") + "$"
+  {:t => t, :m => m}
 end
 
-# Flowfile content from EncryptContent w/ Scrypt (default cost params) + password: thisIsABadPassword
-ciphertext = hex_to_bin("0CD1DBE7052E4674C4C91B9C109654674E69466953414C5478C1038A809FADEF23B2BAE1FC5ED85C4E69466949563168B8B12CBBA76737BF5B09F6937DE55042F8A68857B80C36D33C96658B76EF2D0EFC7C3F26E5D0F695E2007378168398B0FDDC0743B9AC0347EB2E6026925BACF9456C3C101DB5D85FF0D511B78E2E".gsub("\s", ""))
+# Flowfile content from EncryptContent w/ Argon2 (default cost params) + password: thisIsABadPassword
+ciphertext = hex_to_bin("246172676F6E32696424763D3139246D3D343039362C743D332C703D31247264562B4D39613577696C7A796651334136314C36514E69466953414C541B0D6B57611E7A5406A7F63664BD54514E69466949563A90FA629D0BA1A20545F33788C141469A754D717F8F81E22F8234AD0EC13EA139210D4652D2F448E627A9243C2A1C0D0AFF733793AF3A47A357516BDD940EEA6DB858669E961B234EFA3FE1614715C9".gsub("\s", ""))
 
-salt = ciphertext[0..31]
-salt_delimiter = ciphertext[32..39]
+salt = ciphertext[0..51]
+salt_delimiter = ciphertext[52..59]
 
 cipher = OpenSSL::Cipher.new 'AES-128-CBC'
 cipher.decrypt
-iv = ciphertext[40..55]
+iv = ciphertext[60..75]
 cipher.iv = iv
-iv_delimiter = ciphertext[56..61]
+iv_delimiter = ciphertext[76..81]
 
-cipher_bytes = ciphertext[62..-1]
+cipher_bytes = ciphertext[82..-1]
 puts "Cipher bytes: #{bin_to_hex(cipher_bytes)} #{cipher_bytes.length}"
 
 password = 'thisIsABadPassword'
@@ -60,29 +59,30 @@ key_len = cipher.key_len
 
 puts ""
 
-# 10$8$1 -> 0d16, 0d8, 0d1 -> 16 = 2^4
-# 4000$8$1 -> 0d16384, 0d8, 0d1 -> 16384 = 2^14
-#
-# Convert e0801 -> hex(2^0x0e)$8$1
-#
-# If N != hex_encoded(decimal power of 2), C code returns err -1
-#
-java_cost = salt[4..8]
+java_cost = salt[15..29]
 puts "Java cost: #{java_cost}"
 ruby_cost = format_ruby_cost(java_cost)
-puts "Ruby cost: #{ruby_cost}"
+puts "Ruby cost: t=#{ruby_cost[:t]}, m=#{ruby_cost[:m]}"
 
-# ruby_cost = "4000$8$1"
-raw_salt_bytes = Base64.decode64(salt[10..31])
-scrypt_ruby_salt = ruby_cost << bin_to_hex(raw_salt_bytes)
-puts "Ruby salt: #{scrypt_ruby_salt}"
+raw_salt_bytes = Base64.decode64(salt[30..51])
+# raw_salt_bytes = Base64.decode64("rdV+M9a5wilzyfQ3A61L6Q")
+puts "Ruby salt: #{bin_to_hex(raw_salt_bytes)}"
 
-hash = SCrypt::Engine.hash_secret(password, scrypt_ruby_salt, key_len)
-puts "Hash: #{hash}"
-full_salt = hash[0..28]
-puts "Full Salt: #{full_salt} #{full_salt.length}"
+# If the gem allowed setting an output length, the Password class would allow providing salt directly
+# through constructor map, but output length is fixed at 32 bytes
+hasher = Argon2::Password.new(:t_cost => ruby_cost[:t], :m_cost => ruby_cost[:m], :salt_do_not_supply => raw_salt_bytes)
+full_hash = hasher.create(password)
+puts "Full Hash: #{full_hash}"
 
-key = hex_to_bin(hash[-(key_len*2)..-1])
+hash_hex = Argon2::Engine.hash_argon2id(password, raw_salt_bytes, ruby_cost[:t], ruby_cost[:m], 16)
+hash_bytes = [hash_hex].pack('H*')
+puts "Hash (hex): #{hash_hex}"
+hash_base64 = Base64.encode64(hash_bytes)
+puts "Hash B64: #{hash_base64}"
+
+puts "Full Salt: #{salt} #{salt.length}"
+
+key = hex_to_bin(hash_hex)
 puts "Salt: #{bin_to_hex(raw_salt_bytes)} #{raw_salt_bytes.length}"
 puts "  IV: #{bin_to_hex(iv)} #{iv.length}"
 puts " Key: #{bin_to_hex(key)} #{key.length}"
