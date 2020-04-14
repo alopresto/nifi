@@ -305,6 +305,7 @@ public class TestEncryptContent {
         runner.setProperty(EncryptContent.PASSWORD, "Hello, World!");
         runner.setProperty(EncryptContent.MODE, EncryptContent.DECRYPT_MODE);
         runner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, KeyDerivationFunction.NIFI_LEGACY.name());
+        runner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, EncryptionMethod.MD5_128AES.name());
         runner.enqueue(new byte[4]);
         runner.run();
         runner.assertAllFlowFilesTransferred(EncryptContent.REL_FAILURE, 1);
@@ -461,19 +462,17 @@ public class TestEncryptContent {
             logger.info(vr.toString());
         }
 
-        // The two default validation errors are:
-        // Password cannot be empty
-        final String PASSWORD_ERROR = "'Password' is invalid because Password is required when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL and KDF None";
-        // KDF must be LEGACY or OPENSSL for default algorithm of "MD5_AES128"
-        final String KDF_ERROR = "'Key Derivation Function' is invalid because Key Derivation Function is required to be" +
-                " NIFI_LEGACY, OPENSSL_EVP_BYTES_TO_KEY when using algorithm PBEWITHMD5AND128BITAES-CBC-OPENSSL. " +
-                "See Admin Guide.";
+        // The default validation error is:
+        // Raw key hex cannot be empty
+        final String RAW_KEY_ERROR = "'raw-key-hex' is invalid because Raw Key (hexadecimal) is " +
+                "required when using algorithm AES/GCM/NoPadding and KDF KeyDerivationFunction[KDF " +
+                "Name=None,Description=The cipher is given a raw key conforming to the algorithm " +
+                "specifications]. See Admin Guide.";
 
         final Set<String>  EXPECTED_ERRORS = new HashSet<>();
-        EXPECTED_ERRORS.add(PASSWORD_ERROR);
-        EXPECTED_ERRORS.add(KDF_ERROR);
+        EXPECTED_ERRORS.add(RAW_KEY_ERROR);
 
-        Assert.assertEquals(results.toString(), 2, results.size());
+        Assert.assertEquals(results.toString(), EXPECTED_ERRORS.size(), results.size());
         for (final ValidationResult vr : results) {
             Assert.assertTrue(EXPECTED_ERRORS.contains(vr.toString()));
         }

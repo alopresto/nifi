@@ -84,6 +84,7 @@ public class EncryptContent extends AbstractProcessor {
 
     public static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
             .name("Mode")
+            .displayName("Mode")
             .description("Specifies whether the content should be encrypted or decrypted")
             .required(true)
             .allowableValues(ENCRYPT_MODE, DECRYPT_MODE)
@@ -99,13 +100,15 @@ public class EncryptContent extends AbstractProcessor {
             .build();
     public static final PropertyDescriptor ENCRYPTION_ALGORITHM = new PropertyDescriptor.Builder()
             .name("Encryption Algorithm")
+            .displayName("Encryption Algorithm")
             .description("The Encryption Algorithm to use")
             .required(true)
             .allowableValues(buildEncryptionMethodAllowableValues())
-            .defaultValue(EncryptionMethod.MD5_128AES.name())
+            .defaultValue(EncryptionMethod.AES_GCM.name())
             .build();
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
             .name("Password")
+            .displayName("Password")
             .description("The Password to use for encrypting or decrypting the data")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)

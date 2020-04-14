@@ -285,6 +285,23 @@ class TestEncryptContentGroovy {
     }
 
     @Test
+    void testEMShouldDefaultToAES_GCM() {
+        // Arrange
+        final TestRunner runner = TestRunners.newTestRunner(EncryptContent.class)
+        Collection<ValidationResult> results
+        MockProcessContext pc
+
+        runner.enqueue(new byte[0])
+        pc = (MockProcessContext) runner.getProcessContext()
+
+        // Act
+        String defaultEM = pc.getProperty("Encryption Algorithm").getValue()
+
+        // Assert
+        assert defaultEM == EncryptionMethod.AES_GCM.name()
+    }
+
+    @Test
     void testShouldValidateKeyMaterialSourceWhenKeyedCipherSelected() {
         // Arrange
         final TestRunner runner = TestRunners.newTestRunner(EncryptContent.class)
