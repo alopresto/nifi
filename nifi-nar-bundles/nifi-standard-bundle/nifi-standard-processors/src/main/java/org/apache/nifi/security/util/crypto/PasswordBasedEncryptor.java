@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.NoSuchAlgorithmException;
+import java.util.Map;
 import javax.crypto.Cipher;
 import javax.crypto.spec.PBEKeySpec;
 import org.apache.commons.lang3.StringUtils;
@@ -79,6 +80,11 @@ public class PasswordBasedEncryptor implements Encryptor {
      */
     public static int getMinimumSafePasswordLength() {
         return MINIMUM_SAFE_PASSWORD_LENGTH;
+    }
+
+    @Override
+    public void updateAttributes(Map<String, String> attributes) throws ProcessException {
+        // TODO: Implement
     }
 
     @Override

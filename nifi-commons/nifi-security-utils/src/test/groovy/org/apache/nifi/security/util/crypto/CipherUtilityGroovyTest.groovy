@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.security.util.crypto
 
+import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.security.util.EncryptionMethod
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
@@ -73,7 +74,7 @@ class CipherUtilityGroovyTest extends GroovyTestCase {
 
     @BeforeClass
     static void setUpOnce() {
-        Security.addProvider(new BouncyCastleProvider());
+        Security.addProvider(new BouncyCastleProvider())
 
         // Fix because TRIPLEDES -> DESede
         def tripleDESAlgorithms = ALGORITHMS_MAPPED_BY_CIPHER.remove("TRIPLEDES")
@@ -247,5 +248,41 @@ class CipherUtilityGroovyTest extends GroovyTestCase {
             // Assert
             assert validKeySizes == EXPECTED_KEY_SIZES
         }
+    }
+
+    @Test
+    void testShouldFindSequence() {
+        // Arrange
+        byte[] license = """Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
+""".bytes
+
+        byte[] apache = "Apache".bytes
+        byte[] software = "Software".bytes
+        byte[] asf = "ASF".bytes
+        byte[] kafka = "Kafka".bytes
+
+        // Act
+        int apacheIndex = CipherUtility.findSequence(license, apache)
+        logger.info("Looking for ${Hex.encodeHexString(apache)}; found at ${apacheIndex}")
+
+        int softwareIndex = CipherUtility.findSequence(license, software)
+        logger.info("Looking for ${Hex.encodeHexString(software)}; found at ${softwareIndex}")
+
+        int asfIndex = CipherUtility.findSequence(license, asf)
+        logger.info("Looking for ${Hex.encodeHexString(asf)}; found at ${asfIndex}")
+
+        int kafkaIndex = CipherUtility.findSequence(license, kafka)
+        logger.info("Looking for ${Hex.encodeHexString(kafka)}; found at ${kafkaIndex}")
+
+        // Assert
+        assert apacheIndex == 16
+        assert softwareIndex == 23
+        assert asfIndex == 44
+        assert kafkaIndex == -1
     }
 }

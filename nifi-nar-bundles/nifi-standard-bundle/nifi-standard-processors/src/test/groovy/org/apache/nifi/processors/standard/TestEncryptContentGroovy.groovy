@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.processors.standard
 
+
 import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.components.ValidationResult
 import org.apache.nifi.security.util.EncryptionMethod
@@ -34,6 +35,7 @@ import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -460,6 +462,208 @@ class TestEncryptContentGroovy {
             flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
             flowFile.assertContentEquals(new File("src/test/resources/hello.txt"))
         }
+    }
+
+    // TODO: Implement
+    @Ignore("Not yet implemented")
+    @Test
+    void testArgon2EncryptionShouldWriteAttributesWithEncryptionMetadata() throws IOException {
+        // Arrange
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent())
+        KeyDerivationFunction kdf = KeyDerivationFunction.ARGON2
+        EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        logger.info("Attempting encryption with {}", encryptionMethod.name())
+
+        testRunner.setProperty(EncryptContent.PASSWORD, "thisIsABadPassword")
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, kdf.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.ENCRYPT_MODE)
+
+        String PLAINTEXT = "This is a plaintext message. "
+
+        // Act
+        testRunner.enqueue(PLAINTEXT)
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        // Assert
+        testRunner.assertAllFlowFilesTransferred(EncryptContent.REL_SUCCESS, 1)
+        logger.info("Successfully encrypted with {}", encryptionMethod.name())
+
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
+        testRunner.assertQueueEmpty()
+
+        flowFile.getAttributes().each { attr, value ->
+            logger.info("Attribute: ${attr.padLeft(30)}: ${value}")
+        }
+
+        byte[] flowfileContentBytes = flowFile.getData()
+        String flowfileContent = flowFile.getContent()
+
+        int saltDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.SALT_DELIMITER, StandardCharsets.UTF_8))
+        int ivDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.IV_DELIMITER, StandardCharsets.UTF_8))
+
+        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
+//        final String EXPECTED_TIMESTAMP_REGEX = /.*/
+        final String EXPECTED_SALT = flowfileContent[0..<saltDelimiterStart]
+        final String EXPECTED_SALT_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart - 22)..<saltDelimiterStart] as byte[])
+        final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart + 8)..<ivDelimiterStart] as byte[])
+        final int EXPECTED_CIPHER_TEXT_LENGTH = CipherUtility.calculateCipherTextLength(PLAINTEXT.size(), EXPECTED_SALT.length())
+
+        assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
+        assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
+        assert flowFile.getAttribute("encryptcontent.action") == "encrypted"
+//        assert flowFile.getAttribute("encryptcontent.timestamp") =~ EXPECTED_TIMESTAMP_REGEX
+        assert flowFile.getAttribute("encryptcontent.salt") == EXPECTED_SALT_HEX
+        assert flowFile.getAttribute("encryptcontent.salt_length") == 16
+        assert flowFile.getAttribute("encryptcontent.kdf_salt") == EXPECTED_SALT
+        assert flowFile.getAttribute("encryptcontent.kdf_salt_length") == 52
+        assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
+        assert flowFile.getAttribute("encryptcontent.iv_length") == 16
+        assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
+        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == EXPECTED_CIPHER_TEXT_LENGTH as String
+    }
+
+    @Test
+    void testKeyedEncryptionShouldWriteAttributesWithEncryptionMetadata() throws IOException {
+        // Arrange
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent())
+        KeyDerivationFunction kdf = KeyDerivationFunction.NONE
+        EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        logger.info("Attempting encryption with {}", encryptionMethod.name())
+
+        testRunner.setProperty(EncryptContent.RAW_KEY_HEX, "0123456789ABCDEFFEDCBA9876543210")
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, kdf.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.ENCRYPT_MODE)
+
+        String PLAINTEXT = "This is a plaintext message. "
+
+        // Act
+        testRunner.enqueue(PLAINTEXT)
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        // Assert
+        testRunner.assertAllFlowFilesTransferred(EncryptContent.REL_SUCCESS, 1)
+        logger.info("Successfully encrypted with {}", encryptionMethod.name())
+
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
+        testRunner.assertQueueEmpty()
+
+        flowFile.getAttributes().sort().each { attr, value ->
+            logger.info("Attribute: ${attr.padRight(33)}: ${value}")
+        }
+
+        byte[] flowfileContentBytes = flowFile.getData()
+        String flowfileContent = flowFile.getContent()
+        logger.info("Cipher text (${flowfileContentBytes.length}): ${Hex.encodeHexString(flowfileContentBytes)}")
+
+        int ivDelimiterStart = CipherUtility.findSequence(flowfileContentBytes, RandomIVPBECipherProvider.IV_DELIMITER)
+        logger.info("IV delimiter starts at ${ivDelimiterStart}")
+        assert ivDelimiterStart == 16
+
+        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
+//        final long currentTimeMillis = System.currentTimeMillis()
+//        logger.info("Current time (ms): ${currentTimeMillis}")
+//        long parsedTimestampMillis = new Date(flowFile.getAttribute("encryptcontent.timestamp")).toInstant().toEpochMilli()
+//        logger.info("Parsed timestamp (ms): ${parsedTimestampMillis}")
+//
+//        // Assert the processing occurred within the last second
+//        assert currentTimeMillis - parsedTimestampMillis < 1_000
+
+        final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[0..<ivDelimiterStart] as byte[])
+        final int EXPECTED_CIPHER_TEXT_LENGTH = CipherUtility.calculateCipherTextLength(PLAINTEXT.size(), 0)
+
+        assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
+        assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
+        assert flowFile.getAttribute("encryptcontent.action") == "encrypted"
+        assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
+        assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
+        assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
+        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == EXPECTED_CIPHER_TEXT_LENGTH as String
+    }
+
+    @Test
+    void testKeyedDecryptionShouldWriteAttributesWithEncryptionMetadata() throws IOException {
+        // Arrange
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent())
+        KeyDerivationFunction kdf = KeyDerivationFunction.NONE
+        EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        logger.info("Attempting decryption with {}", encryptionMethod.name())
+
+        testRunner.setProperty(EncryptContent.RAW_KEY_HEX, "0123456789ABCDEFFEDCBA9876543210")
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, kdf.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.ENCRYPT_MODE)
+
+        String PLAINTEXT = "This is a plaintext message. "
+
+        testRunner.enqueue(PLAINTEXT)
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        MockFlowFile encryptedFlowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).first()
+        byte[] cipherText = encryptedFlowFile.getData()
+
+        int ivDelimiterStart = CipherUtility.findSequence(cipherText, RandomIVPBECipherProvider.IV_DELIMITER)
+        logger.info("IV delimiter starts at ${ivDelimiterStart}")
+        assert ivDelimiterStart == 16
+        final String EXPECTED_IV_HEX = Hex.encodeHexString(cipherText[0..<ivDelimiterStart] as byte[])
+
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.DECRYPT_MODE)
+        testRunner.clearTransferState()
+        testRunner.enqueue(cipherText)
+
+        // Act
+        testRunner.run()
+
+        // Assert
+        testRunner.assertAllFlowFilesTransferred(EncryptContent.REL_SUCCESS, 1)
+        logger.info("Successfully decrypted with {}", encryptionMethod.name())
+
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
+        testRunner.assertQueueEmpty()
+
+        flowFile.getAttributes().sort().each { attr, value ->
+            logger.info("Attribute: ${attr.padRight(33)}: ${value}")
+        }
+
+        byte[] flowfileContentBytes = flowFile.getData()
+        String flowfileContent = flowFile.getContent()
+        logger.info("Plaintext (${flowfileContentBytes.length}): ${Hex.encodeHexString(flowfileContentBytes)}")
+
+        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
+//        SimpleDateFormat formatter = new SimpleDateFormat("YYYY-MM-dd HH:mm:ss.SSS Z", Locale.default)
+//        final long currentTimeMillis = System.currentTimeMillis()
+//        logger.info("    Current time ${formatter.format(new Date(currentTimeMillis))} -> (ms): ${currentTimeMillis}")
+//        String timestamp = flowFile.getAttribute("encryptcontent.timestamp")
+//        Date parsedTimestamp = formatter.parse(timestamp)
+//        long parsedTimestampMillis = parsedTimestamp.toInstant().toEpochMilli()
+//        logger.info("Parsed timestamp ${timestamp} -> (ms): ${parsedTimestampMillis}")
+//
+//        def diff = TimeCategory.minus(new Date(currentTimeMillis), parsedTimestamp)
+//        logger.info("Timestamp difference: ${diff}")
+//
+//        // Assert the processing occurred within the last second
+//        assert diff.toMilliseconds() < 1_000
+
+//        LocalDateTime ldt = LocalDateTime.now()
+//        long currMillis = ldt.toInstant().toEpochMilli()
+//
+//        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("YYYY-MM-dd HH:mm:ss.SSS Z")
+//        LocalDateTime parsedTimestamp = LocalDateTime.parse(timestamp, formatter)
+//
+//        def diff = TimeCategory.minus(ldt, parsedTimestamp)
+
+
+        assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
+        assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
+        assert flowFile.getAttribute("encryptcontent.action") == "decrypted"
+        assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
+        assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
+        assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
+        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == cipherText.length as String
     }
 
     @Test
