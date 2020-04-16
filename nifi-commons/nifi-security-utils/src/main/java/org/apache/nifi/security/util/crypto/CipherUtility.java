@@ -415,11 +415,11 @@ public class CipherUtility {
     /**
      * Returns the current timestamp in a default format. Used by many encryption operations for logging/debugging.
      *
-     * @return the current timestamp in 'YYYY-MM-dd HH:mm:ss.SSS Z' format
+     * @return the current timestamp in 'yyyy-MM-dd HH:mm:ss.SSS Z' format
      */
     public static String getTimestampString() {
         Locale currentLocale = Locale.getDefault();
-        String pattern = "YYYY-MM-dd HH:mm:ss.SSS Z";
+        String pattern = "yyyy-MM-dd HH:mm:ss.SSS Z";
         SimpleDateFormat formatter = new SimpleDateFormat(pattern, currentLocale);
         Date now = new Date();
         return formatter.format(now);

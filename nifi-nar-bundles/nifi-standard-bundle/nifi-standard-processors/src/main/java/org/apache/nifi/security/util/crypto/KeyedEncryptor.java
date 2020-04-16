@@ -20,29 +20,22 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
-import org.apache.nifi.processors.standard.EncryptContent;
-import org.apache.nifi.processors.standard.EncryptContent.Encryptor;
 import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.apache.nifi.stream.io.ByteCountingInputStream;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
 
-public class KeyedEncryptor implements Encryptor {
+public class KeyedEncryptor extends AbstractEncryptor {
 
     private EncryptionMethod encryptionMethod;
     private SecretKey key;
     private byte[] iv;
-
-    private transient Map<String, String> flowfileAttributes = new HashMap<>();
 
     private static final int DEFAULT_MAX_ALLOWED_KEY_LENGTH = 128;
 
@@ -110,36 +103,6 @@ public class KeyedEncryptor implements Encryptor {
 
     public static boolean supportsUnlimitedStrength() {
         return isUnlimitedStrengthCryptographyEnabled;
-    }
-
-    @Override
-    public void updateAttributes(Map<String, String> attributes) throws ProcessException {
-        if (attributes == null) {
-            throw new IllegalArgumentException("Cannot update null flowfile attributes");
-        }
-
-        attributes.putAll(flowfileAttributes);
-    }
-
-    static Map<String, String> writeAttributes(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, byte[] iv, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, boolean encryptMode) {
-        Map<String, String> attributes = new HashMap<>();
-        attributes.put(EncryptContent.ACTION_ATTR, encryptMode ? "encrypted" : "decrypted");
-        attributes.put(EncryptContent.ALGORITHM_ATTR, encryptionMethod.name());
-        attributes.put(EncryptContent.KDF_ATTR, kdf.name());
-        attributes.put(EncryptContent.TS_ATTR, CipherUtility.getTimestampString());
-        attributes.put(EncryptContent.IV_ATTR, Hex.encodeHexString(iv));
-        attributes.put(EncryptContent.IV_LEN_ATTR, String.valueOf(iv.length));
-
-        // If encrypting, the plaintext is the input and the cipher text is the output
-        if (encryptMode) {
-            attributes.put(EncryptContent.PT_LEN_ATTR, String.valueOf(bcis.getBytesRead()));
-            attributes.put(EncryptContent.CT_LEN_ATTR, String.valueOf(bcos.getBytesWritten()));
-        } else {
-            // If decrypting, switch the streams
-            attributes.put(EncryptContent.PT_LEN_ATTR, String.valueOf(bcos.getBytesWritten()));
-            attributes.put(EncryptContent.CT_LEN_ATTR, String.valueOf(bcis.getBytesRead()));
-        }
-        return attributes;
     }
 
     @Override

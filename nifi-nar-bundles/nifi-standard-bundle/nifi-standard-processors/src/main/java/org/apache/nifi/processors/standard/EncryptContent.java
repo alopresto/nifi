@@ -644,7 +644,7 @@ public class EncryptContent extends AbstractProcessor {
 
         StreamCallback getDecryptionCallback() throws Exception;
 
-        void updateAttributes(Map<String, String> attributes) throws ProcessException;
+        void updateAttributes(Map<String, String> attributes);
     }
 
 }
