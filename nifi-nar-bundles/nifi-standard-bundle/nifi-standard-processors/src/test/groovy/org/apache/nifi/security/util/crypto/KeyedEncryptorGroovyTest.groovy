@@ -31,7 +31,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
 import java.security.Security
 
-public class KeyedEncryptorGroovyTest {
+class KeyedEncryptorGroovyTest {
     private static final Logger logger = LoggerFactory.getLogger(KeyedEncryptorGroovyTest.class)
 
     private static final String TEST_RESOURCES_PREFIX = "src/test/resources/TestEncryptContent/"
@@ -42,7 +42,7 @@ public class KeyedEncryptorGroovyTest {
     private static final SecretKey KEY = new SecretKeySpec(Hex.decodeHex(KEY_HEX as char[]), "AES")
 
     @BeforeClass
-    public static void setUpOnce() throws Exception {
+    static void setUpOnce() throws Exception {
         Security.addProvider(new BouncyCastleProvider())
 
         logger.metaClass.methodMissing = { String name, args ->
@@ -51,15 +51,15 @@ public class KeyedEncryptorGroovyTest {
     }
 
     @Before
-    public void setUp() throws Exception {
+    void setUp() throws Exception {
     }
 
     @After
-    public void tearDown() throws Exception {
+    void tearDown() throws Exception {
     }
 
     @Test
-    public void testShouldEncryptAndDecrypt() throws Exception {
+    void testShouldEncryptAndDecrypt() throws Exception {
         // Arrange
         final String PLAINTEXT = "This is a plaintext message."
         logger.info("Plaintext: {}", PLAINTEXT)
@@ -92,7 +92,7 @@ public class KeyedEncryptorGroovyTest {
     }
 
     @Test
-    public void testShouldDecryptOpenSSLUnsaltedCipherTextWithKnownIV() throws Exception {
+    void testShouldDecryptOpenSSLUnsaltedCipherTextWithKnownIV() throws Exception {
         // Arrange
         final String PLAINTEXT = new File("${TEST_RESOURCES_PREFIX}/plain.txt").text
         logger.info("Plaintext: {}", PLAINTEXT)

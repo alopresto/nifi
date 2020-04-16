@@ -16,7 +16,8 @@
  */
 package org.apache.nifi.processors.standard
 
-
+import groovy.time.TimeCategory
+import groovy.time.TimeDuration
 import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.components.ValidationResult
 import org.apache.nifi.security.util.EncryptionMethod
@@ -45,6 +46,9 @@ import org.slf4j.LoggerFactory
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 import java.security.Security
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 @RunWith(JUnit4.class)
 class TestEncryptContentGroovy {
@@ -503,17 +507,20 @@ class TestEncryptContentGroovy {
         int saltDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.SALT_DELIMITER, StandardCharsets.UTF_8))
         int ivDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.IV_DELIMITER, StandardCharsets.UTF_8))
 
-        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
-//        final String EXPECTED_TIMESTAMP_REGEX = /.*/
+
         final String EXPECTED_SALT = flowfileContent[0..<saltDelimiterStart]
         final String EXPECTED_SALT_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart - 22)..<saltDelimiterStart] as byte[])
         final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart + 8)..<ivDelimiterStart] as byte[])
         final int EXPECTED_CIPHER_TEXT_LENGTH = CipherUtility.calculateCipherTextLength(PLAINTEXT.size(), EXPECTED_SALT.length())
 
+        def diff = calculateTimestampDifference(new Date(), flowFile.getAttribute("encryptcontent.timestamp"))
+        logger.info("Timestamp difference: ${diff}")
+
+        // Assert the timestamp attribute was written and is accurate
+        assert diff.toMilliseconds() < 1_000
         assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
         assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
         assert flowFile.getAttribute("encryptcontent.action") == "encrypted"
-//        assert flowFile.getAttribute("encryptcontent.timestamp") =~ EXPECTED_TIMESTAMP_REGEX
         assert flowFile.getAttribute("encryptcontent.salt") == EXPECTED_SALT_HEX
         assert flowFile.getAttribute("encryptcontent.salt_length") == 16
         assert flowFile.getAttribute("encryptcontent.kdf_salt") == EXPECTED_SALT
@@ -563,14 +570,11 @@ class TestEncryptContentGroovy {
         logger.info("IV delimiter starts at ${ivDelimiterStart}")
         assert ivDelimiterStart == 16
 
-        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
-//        final long currentTimeMillis = System.currentTimeMillis()
-//        logger.info("Current time (ms): ${currentTimeMillis}")
-//        long parsedTimestampMillis = new Date(flowFile.getAttribute("encryptcontent.timestamp")).toInstant().toEpochMilli()
-//        logger.info("Parsed timestamp (ms): ${parsedTimestampMillis}")
-//
-//        // Assert the processing occurred within the last second
-//        assert currentTimeMillis - parsedTimestampMillis < 1_000
+        def diff = calculateTimestampDifference(new Date(), flowFile.getAttribute("encryptcontent.timestamp"))
+        logger.info("Timestamp difference: ${diff}")
+
+        // Assert the timestamp attribute was written and is accurate
+        assert diff.toMilliseconds() < 1_000
 
         final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[0..<ivDelimiterStart] as byte[])
         final int EXPECTED_CIPHER_TEXT_LENGTH = CipherUtility.calculateCipherTextLength(PLAINTEXT.size(), 0)
@@ -633,7 +637,73 @@ class TestEncryptContentGroovy {
         String flowfileContent = flowFile.getContent()
         logger.info("Plaintext (${flowfileContentBytes.length}): ${Hex.encodeHexString(flowfileContentBytes)}")
 
-        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
+        def diff = calculateTimestampDifference(new Date(), flowFile.getAttribute("encryptcontent.timestamp"))
+        logger.info("Timestamp difference: ${diff}")
+
+        // Assert the timestamp attribute was written and is accurate
+        assert diff.toMilliseconds() < 1_000
+        assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
+        assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
+        assert flowFile.getAttribute("encryptcontent.action") == "decrypted"
+        assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
+        assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
+        assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
+        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == cipherText.length as String
+    }
+
+    private static TimeDuration calculateTimestampDifference(Date date, String timestamp) {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z")
+        final long dateMillis = date.toInstant().toEpochMilli()
+        logger.info("Provided timestamp ${formatter.format(date)} -> (ms): ${dateMillis}")
+        Date parsedTimestamp = formatter.parse(timestamp)
+        long parsedTimestampMillis = parsedTimestamp.toInstant().toEpochMilli()
+        logger.info("Parsed timestamp   ${timestamp} -> (ms): ${parsedTimestampMillis}")
+
+        TimeCategory.minus(date, parsedTimestamp)
+    }
+
+    @Test
+    void testShouldCompareDate() {
+        // Arrange
+        Date now = new Date()
+        logger.info("Now: ${now} -- ${now.toInstant().toEpochMilli()}")
+
+        Instant fiveSecondsLater = now.toInstant().plus(5, ChronoUnit.SECONDS)
+        Date fSLDate = Date.from(fiveSecondsLater)
+        logger.info("FSL: ${fSLDate} -- ${fiveSecondsLater.toEpochMilli()}")
+
+        // Convert entirely to String & parse back
+        Instant tenSecondsLater = fiveSecondsLater.plusMillis(5000)
+        Date tSLDate = Date.from(tenSecondsLater)
+        logger.info("TSL: ${tSLDate} -- ${tenSecondsLater.toEpochMilli()}")
+
+        // Java way ('y' is deterministic vs. 'Y' which is week-based and calendar & JVM dependent)
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z")
+        String tslString = sdf.format(tSLDate)
+        logger.info("TSL formatted: ${tslString}")
+
+        // Parse back to date
+        Date parsedTSLDate = sdf.parse(tslString)
+        logger.info("TSL parsed: ${parsedTSLDate} -- ${parsedTSLDate.toInstant().toEpochMilli()}")
+
+        // Act
+        def fiveSecondDiff = TimeCategory.minus(fSLDate, now)
+        logger.info(" FSL - now difference: ${fiveSecondDiff}")
+
+        def tenSecondDiff = TimeCategory.minus(tSLDate, now)
+        logger.info(" TSL - now difference: ${tenSecondDiff}")
+
+        def parsedTenSecondDiff = TimeCategory.minus(parsedTSLDate, now)
+        logger.info("PTSL - now difference: ${parsedTenSecondDiff}")
+
+        // Assert
+        assert fiveSecondDiff.seconds == 5
+        assert tenSecondDiff.seconds == 10
+        assert parsedTenSecondDiff.seconds == 10
+
+        assert [fiveSecondDiff, tenSecondDiff, parsedTenSecondDiff].every { it.days == 0 }
+
+//        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
 //        SimpleDateFormat formatter = new SimpleDateFormat("YYYY-MM-dd HH:mm:ss.SSS Z", Locale.default)
 //        final long currentTimeMillis = System.currentTimeMillis()
 //        logger.info("    Current time ${formatter.format(new Date(currentTimeMillis))} -> (ms): ${currentTimeMillis}")
@@ -644,26 +714,6 @@ class TestEncryptContentGroovy {
 //
 //        def diff = TimeCategory.minus(new Date(currentTimeMillis), parsedTimestamp)
 //        logger.info("Timestamp difference: ${diff}")
-//
-//        // Assert the processing occurred within the last second
-//        assert diff.toMilliseconds() < 1_000
-
-//        LocalDateTime ldt = LocalDateTime.now()
-//        long currMillis = ldt.toInstant().toEpochMilli()
-//
-//        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("YYYY-MM-dd HH:mm:ss.SSS Z")
-//        LocalDateTime parsedTimestamp = LocalDateTime.parse(timestamp, formatter)
-//
-//        def diff = TimeCategory.minus(ldt, parsedTimestamp)
-
-
-        assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
-        assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
-        assert flowFile.getAttribute("encryptcontent.action") == "decrypted"
-        assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
-        assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
-        assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
-        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == cipherText.length as String
     }
 
     @Test
