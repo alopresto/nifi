@@ -76,8 +76,8 @@ public abstract class AbstractEncryptor implements EncryptContent.Encryptor {
         attributes.put(EncryptContent.ALGORITHM_ATTR, encryptionMethod.name());
         attributes.put(EncryptContent.KDF_ATTR, kdf.name());
         attributes.put(EncryptContent.TS_ATTR, CipherUtility.getTimestampString());
-        attributes.put(EncryptContent.IV_ATTR, Hex.encodeHexString(iv));
-        attributes.put(EncryptContent.IV_LEN_ATTR, String.valueOf(iv.length));
+        attributes.put(EncryptContent.IV_ATTR, iv != null ? Hex.encodeHexString(iv) : "N/A");
+        attributes.put(EncryptContent.IV_LEN_ATTR, iv != null ? String.valueOf(iv.length) : "0");
 
         // If encrypting, the plaintext is the input and the cipher text is the output
         if (encryptMode) {
