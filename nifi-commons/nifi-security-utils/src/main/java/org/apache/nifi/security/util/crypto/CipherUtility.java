@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -46,6 +47,7 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.security.util.EncryptionMethod;
+import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.apache.nifi.stream.io.ByteCountingInputStream;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
 import org.apache.nifi.stream.io.StreamUtils;
@@ -452,7 +454,7 @@ public class CipherUtility {
     /**
      * Returns the calculated cipher text length given the plaintext length and salt length, if any. If the salt length is > 0, the salt delimiter length ({@code 8}) is included as well.
      *
-     * @param ptLength the plaintext length
+     * @param ptLength   the plaintext length
      * @param saltLength the salt length
      * @return the complete cipher text, salt (optional), IV, and delimiter(s) length
      */
@@ -485,5 +487,38 @@ public class CipherUtility {
         }
 
         return -1;
+    }
+
+    /**
+     * Returns the raw salt from the provided "full salt" which could be KDF-specific.
+     *
+     * Examples:
+     *
+     * Argon2 -> {@code $argon2id$v=19$m=4096,t=3,p=1$abcdefABCDEF0123456789}
+     * Bcrypt -> {@code $2a$10$abcdefABCDEF0123456789}
+     * Scrypt -> {@code $s0$e0801$abcdefABCDEF0123456789}
+     *
+     * If the KDF does not have a custom encoding for the salt, the provided "full salt" is returned intact.
+     *
+     * @param fullSalt the KDF-formatted salt
+     * @param kdf the KDF used
+     * @return the raw salt
+     */
+    public static byte[] extractRawSalt(byte[] fullSalt, KeyDerivationFunction kdf) {
+        final String saltString = new String(fullSalt, StandardCharsets.UTF_8);
+        switch (kdf) {
+            case ARGON2:
+                return Argon2CipherProvider.isArgon2FormattedSalt(saltString) ? Argon2CipherProvider.extractRawSaltFromArgon2Salt(saltString) : fullSalt;
+            case BCRYPT:
+                return BcryptCipherProvider.isBcryptFormattedSalt(saltString) ? BcryptCipherProvider.extractRawSalt(saltString) : fullSalt;
+            case SCRYPT:
+                return ScryptCipherProvider.isScryptFormattedSalt(saltString) ? ScryptCipherProvider.extractRawSaltFromScryptSalt(saltString) : fullSalt;
+            // case PBKDF2:
+            // case NONE:
+            // case NIFI_LEGACY:
+            // case OPENSSL_EVP_BYTES_TO_KEY:
+            default:
+                return fullSalt;
+        }
     }
 }

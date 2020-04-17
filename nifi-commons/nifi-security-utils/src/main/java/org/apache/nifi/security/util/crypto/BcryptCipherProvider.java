@@ -139,7 +139,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
             // parseSalt will extract workFactor from salt
             workFactor = parseSalt(saltString, rawSalt);
         } else {
-           throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG);
+            throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG);
         }
 
         try {
@@ -167,7 +167,13 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         }
     }
 
-    private boolean isBcryptFormattedSalt(String salt) {
+    /**
+     * Returns {@code true} if the salt string is a valid Bcrypt salt string ({@code $2a$10$abcdefghi..{22}}).
+     *
+     * @param salt the salt string to evaluate
+     * @return true if valid Bcrypt salt
+     */
+    public static boolean isBcryptFormattedSalt(String salt) {
         if (salt == null || salt.length() == 0) {
             throw new IllegalArgumentException("The salt cannot be empty. To generate a salt, use BcryptCipherProvider#generateSalt()");
         }
@@ -195,12 +201,16 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         return Integer.parseInt(saltComponents[2]);
     }
 
-    private String formatSaltForBcrypt(byte[] salt) {
-        String saltString = new String(salt, StandardCharsets.UTF_8);
-        if (isBcryptFormattedSalt(saltString)) {
-            return saltString;
+    public static String formatSaltForBcrypt(byte[] salt, int workFactor) {
+        String rawSaltString = new String(salt, StandardCharsets.UTF_8);
+        if (isBcryptFormattedSalt(rawSaltString)) {
+            return rawSaltString;
         } else {
-            throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG);
+            // TODO: This library allows for 2a, 2b, and 2y versions so this should be changed to be configurable
+            String saltString = "$2a$" +
+                    StringUtils.leftPad(String.valueOf(workFactor), 2, "0") +
+                    "$" + new String(new Radix64Encoder.Default().encode(salt), StandardCharsets.UTF_8);
+            return saltString;
         }
     }
 
@@ -214,10 +224,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         byte[] salt = new byte[DEFAULT_SALT_LENGTH];
         SecureRandom sr = new SecureRandom();
         sr.nextBytes(salt);
-        // TODO: This library allows for 2a, 2b, and 2y versions so this should be changed to be configurable
-        String saltString = "$2a$" +
-                StringUtils.leftPad(String.valueOf(workFactor), 2, "0") +
-                "$" + new String(new Radix64Encoder.Default().encode(salt), StandardCharsets.UTF_8);
+        String saltString = formatSaltForBcrypt(salt, getWorkFactor());
         return saltString.getBytes(StandardCharsets.UTF_8);
     }
 

@@ -18,6 +18,7 @@ package org.apache.nifi.security.util.crypto
 
 import org.apache.commons.codec.binary.Hex
 import org.apache.nifi.security.util.EncryptionMethod
+import org.apache.nifi.security.util.KeyDerivationFunction
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Before
@@ -284,5 +285,28 @@ the License.  You may obtain a copy of the License at
         assert softwareIndex == 23
         assert asfIndex == 44
         assert kafkaIndex == -1
+    }
+
+    @Test
+    void testShouldExtractRawSalt() {
+        // Arrange
+        byte[] PLAIN_SALT = [0xab] * 16
+
+        String ARGON2_SALT = Argon2CipherProvider.formSalt(PLAIN_SALT, 8, 1, 1)
+        String BCRYPT_SALT = BcryptCipherProvider.formatSaltForBcrypt(PLAIN_SALT, 10)
+        String SCRYPT_SALT = ScryptCipherProvider.formatSaltForScrypt(PLAIN_SALT, 10, 1, 1)
+
+        // Act
+        def results = KeyDerivationFunction.values().findAll { !it.isStrongKDF() }.collectEntries { KeyDerivationFunction weakKdf ->
+            [weakKdf, CipherUtility.extractRawSalt(PLAIN_SALT, weakKdf)]
+        }
+
+        results.put(KeyDerivationFunction.ARGON2, CipherUtility.extractRawSalt(ARGON2_SALT.bytes, KeyDerivationFunction.ARGON2))
+        results.put(KeyDerivationFunction.BCRYPT, CipherUtility.extractRawSalt(BCRYPT_SALT.bytes, KeyDerivationFunction.BCRYPT))
+        results.put(KeyDerivationFunction.SCRYPT, CipherUtility.extractRawSalt(SCRYPT_SALT.bytes, KeyDerivationFunction.SCRYPT))
+        results.put(KeyDerivationFunction.PBKDF2, CipherUtility.extractRawSalt(PLAIN_SALT, KeyDerivationFunction.PBKDF2))
+
+        // Assert
+        assert results.every { k, v -> v == PLAIN_SALT }
     }
 }
