@@ -651,7 +651,7 @@ class TestEncryptContentGroovy {
         assert flowFile.getAttribute("encryptcontent.cipher_text_length") == cipherText.length as String
     }
 
-    private static TimeDuration calculateTimestampDifference(Date date, String timestamp) {
+    static TimeDuration calculateTimestampDifference(Date date, String timestamp) {
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z")
         final long dateMillis = date.toInstant().toEpochMilli()
         logger.info("Provided timestamp ${formatter.format(date)} -> (ms): ${dateMillis}")
