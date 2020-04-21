@@ -48,7 +48,7 @@ public class ScryptCipherProvider extends RandomIVPBECipherProvider {
     private static final int DEFAULT_R = 8;
     private static final int DEFAULT_P = 1;
 
-    private static final Pattern SCRYPT_SALT_FORMAT = Pattern.compile("^\\$s0\\$[a-f0-9]{5,16}\\$[\\w\\/\\.]{12,44}");
+    private static final Pattern SCRYPT_SALT_FORMAT = Pattern.compile("^\\$s0\\$[a-f0-9]{5,16}\\$[\\w\\/\\+]{12,44}");
     private static final Pattern MCRYPT_SALT_FORMAT = Pattern.compile("^\\$\\d+\\$\\d+\\$\\d+\\$[a-f0-9]{16,64}");
 
     /**
