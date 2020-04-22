@@ -201,6 +201,7 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
             // Generate cipher
             try {
                 Cipher cipher = cipherProvider.getCipher(encryptionMethod, new String(password.getPassword()), salt, keyLength, ENCRYPT);
+
                 // Write IV if necessary
                 if (cipherProvider instanceof RandomIVPBECipherProvider) {
                     ((RandomIVPBECipherProvider) cipherProvider).writeIV(cipher.getIV(), bcos);

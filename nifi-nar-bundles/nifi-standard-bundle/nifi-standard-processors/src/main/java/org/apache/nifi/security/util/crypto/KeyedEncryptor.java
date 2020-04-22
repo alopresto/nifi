@@ -23,6 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
@@ -30,8 +31,11 @@ import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.apache.nifi.stream.io.ByteCountingInputStream;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class KeyedEncryptor extends AbstractEncryptor {
+    private static final Logger logger = LoggerFactory.getLogger(KeyedEncryptor.class);
 
     private EncryptionMethod encryptionMethod;
     private SecretKey key;
@@ -132,6 +136,23 @@ public class KeyedEncryptor extends AbstractEncryptor {
             // Generate cipher
             Cipher cipher;
             try {
+                if (!bcis.markSupported()) {
+                    logger.warn("The incoming cipher text stream does not support #mark(); unable to scan for possible salt");
+                } else {
+                    // Skip salt if present (could have been used during encrypt in combination with KDF)
+                    bcis.mark(100);
+                    byte[] first80Bytes = new byte[80];
+                    IOUtils.read(bcis, first80Bytes, 0, first80Bytes.length);
+                    final int saltDelimiterStart = CipherUtility.findSequence(first80Bytes, RandomIVPBECipherProvider.SALT_DELIMITER);
+
+                    // Reset whether salt is detected or not (to skip salt or read IV)
+                    bcis.reset();
+                    if (saltDelimiterStart != -1) {
+                        byte[] saltBytes = bcis.readNBytes(saltDelimiterStart + RandomIVPBECipherProvider.SALT_DELIMITER.length);
+                        logger.info("Detected salt in incoming cipher text; skipped {} bytes", saltBytes.length);
+                    }
+                }
+
                 // The IV could have been set by the constructor, but if not, read from the cipher stream
                 if (iv.length == 0) {
                     iv = cipherProvider.readIV(bcis);
