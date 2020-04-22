@@ -275,9 +275,6 @@ public class ScryptCipherProvider extends RandomIVPBECipherProvider {
      * The salt is expected to be in the format {@code new String(saltBytes, StandardCharsets.UTF_8) => "$s0$e0801$ABCDEF...."}.
      *
      * @param salt the provided salt
-     * @param n    the N param
-     * @param r    the r param
-     * @param p    the p param
      * @return the properly-formatted and complete salt
      */
     public String formatSaltForScrypt(byte[] salt) {

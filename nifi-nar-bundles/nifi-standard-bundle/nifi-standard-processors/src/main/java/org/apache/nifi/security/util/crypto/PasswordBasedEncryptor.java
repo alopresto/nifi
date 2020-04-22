@@ -86,7 +86,8 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
         return MINIMUM_SAFE_PASSWORD_LENGTH;
     }
 
-    static Map<String, String> writeAttributes(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, byte[] iv, byte[] kdfSalt, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, boolean encryptMode) {
+    static Map<String, String> writeAttributes(EncryptionMethod encryptionMethod,
+                                               KeyDerivationFunction kdf, byte[] iv, byte[] kdfSalt, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, boolean encryptMode) {
         Map<String, String> attributes = AbstractEncryptor.writeAttributes(encryptionMethod, kdf, iv, bcis, bcos, encryptMode);
 
         if (kdf.hasFormattedSalt()) {

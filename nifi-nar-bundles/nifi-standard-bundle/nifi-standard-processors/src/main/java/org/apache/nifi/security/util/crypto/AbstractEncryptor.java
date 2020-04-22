@@ -70,7 +70,8 @@ public abstract class AbstractEncryptor implements EncryptContent.Encryptor {
      * @param encryptMode      {@code true} for {@code encrypt}; {@code false} for {@code decrypt}
      * @return the map of attributes to be added to the flowfile
      */
-    static Map<String, String> writeAttributes(EncryptionMethod encryptionMethod, KeyDerivationFunction kdf, byte[] iv, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, boolean encryptMode) {
+    static Map<String, String> writeAttributes(EncryptionMethod encryptionMethod,
+                                               KeyDerivationFunction kdf, byte[] iv, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, boolean encryptMode) {
         Map<String, String> attributes = new HashMap<>();
         attributes.put(EncryptContent.ACTION_ATTR, encryptMode ? "encrypted" : "decrypted");
         attributes.put(EncryptContent.ALGORITHM_ATTR, encryptionMethod.name());
