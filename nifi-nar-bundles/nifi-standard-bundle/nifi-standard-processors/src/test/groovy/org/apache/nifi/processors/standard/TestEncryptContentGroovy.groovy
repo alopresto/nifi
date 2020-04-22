@@ -23,6 +23,7 @@ import org.apache.nifi.components.ValidationResult
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.KeyDerivationFunction
 import org.apache.nifi.security.util.crypto.Argon2CipherProvider
+import org.apache.nifi.security.util.crypto.Argon2SecureHasher
 import org.apache.nifi.security.util.crypto.CipherUtility
 import org.apache.nifi.security.util.crypto.PasswordBasedEncryptor
 import org.apache.nifi.security.util.crypto.RandomIVPBECipherProvider
@@ -42,6 +43,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import javax.crypto.Cipher
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 import java.security.Security
@@ -649,6 +651,82 @@ class TestEncryptContentGroovy {
         assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
         assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
         assert flowFile.getAttribute("encryptcontent.cipher_text_length") == cipherText.length as String
+    }
+
+    @Test
+    void testDifferentCompatibleConfigurations() throws IOException {
+        // Arrange
+        final TestRunner testRunner = TestRunners.newTestRunner(new EncryptContent())
+        KeyDerivationFunction argon2 = KeyDerivationFunction.ARGON2
+        EncryptionMethod aesCbcEM = EncryptionMethod.AES_CBC
+        logger.info("Attempting encryption with ${argon2} and ${aesCbcEM.name()}")
+        int keyLength = CipherUtility.parseKeyLengthFromAlgorithm(aesCbcEM.algorithm)
+
+        final String PASSWORD = "thisIsABadPassword"
+        testRunner.setProperty(EncryptContent.PASSWORD, PASSWORD)
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, argon2.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, aesCbcEM.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.ENCRYPT_MODE)
+
+        String PLAINTEXT = "This is a plaintext message. "
+
+        testRunner.enqueue(PLAINTEXT)
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        MockFlowFile encryptedFlowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).first()
+        byte[] fullCipherBytes = encryptedFlowFile.getData()
+        printFlowFileAttributes(encryptedFlowFile.getAttributes())
+
+        // Extract the KDF salt from the encryption metadata in the flowfile attribute
+        String argon2Salt = encryptedFlowFile.getAttribute("encryptcontent.kdf_salt")
+        Argon2SecureHasher a2sh = new Argon2SecureHasher(keyLength / 8 as int)
+        byte[] fullSaltBytes = argon2Salt.getBytes(StandardCharsets.UTF_8)
+        byte[] rawSaltBytes = Hex.decodeHex(encryptedFlowFile.getAttribute("encryptcontent.salt"))
+        byte[] keyBytes = a2sh.hashRaw(PASSWORD.getBytes(StandardCharsets.UTF_8), rawSaltBytes)
+        String keyHex = Hex.encodeHexString(keyBytes)
+        logger.sanity("Derived key bytes: ${keyHex}")
+
+        byte[] ivBytes = Hex.decodeHex(encryptedFlowFile.getAttribute("encryptcontent.iv"))
+        logger.sanity("Extracted IV bytes: ${Hex.encodeHexString(ivBytes)}")
+
+        // Sanity check the encryption
+        Argon2CipherProvider a2cp = new Argon2CipherProvider()
+        Cipher sanityCipher = a2cp.getCipher(aesCbcEM, PASSWORD, fullSaltBytes, ivBytes, CipherUtility.parseKeyLengthFromAlgorithm(aesCbcEM.algorithm), false)
+        byte[] cipherTextBytes = fullCipherBytes[-32..-1]
+        byte[] recoveredBytes = sanityCipher.doFinal(cipherTextBytes)
+        logger.sanity("Recovered text: ${new String(recoveredBytes, StandardCharsets.UTF_8)}")
+
+        // Act
+
+        // Configure decrypting processor with raw key
+        KeyDerivationFunction kdf = KeyDerivationFunction.NONE
+        EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        logger.info("Attempting decryption with {}", encryptionMethod.name())
+
+        testRunner.setProperty(EncryptContent.RAW_KEY_HEX, keyHex)
+        testRunner.setProperty(EncryptContent.KEY_DERIVATION_FUNCTION, kdf.name())
+        testRunner.setProperty(EncryptContent.ENCRYPTION_ALGORITHM, encryptionMethod.name())
+        testRunner.setProperty(EncryptContent.MODE, EncryptContent.DECRYPT_MODE)
+        testRunner.removeProperty(EncryptContent.PASSWORD)
+
+        testRunner.enqueue(fullCipherBytes)
+        testRunner.clearTransferState()
+        testRunner.run()
+
+        // Assert
+        testRunner.assertAllFlowFilesTransferred(EncryptContent.REL_SUCCESS, 1)
+        logger.info("Successfully decrypted with {}", encryptionMethod.name())
+
+        MockFlowFile decryptedFlowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
+        testRunner.assertQueueEmpty()
+
+        printFlowFileAttributes(decryptedFlowFile.getAttributes())
+
+        byte[] flowfileContentBytes = decryptedFlowFile.getData()
+        logger.info("Plaintext (${flowfileContentBytes.length}): ${new String(flowfileContentBytes, StandardCharsets.UTF_8)}")
+
+        assert flowfileContentBytes == recoveredBytes
     }
 
     static TimeDuration calculateTimestampDifference(Date date, String timestamp) {
