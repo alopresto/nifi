@@ -164,7 +164,7 @@ public class KeyedEncryptor extends AbstractEncryptor {
             }
 
             // Update the attributes in the temporary holder
-            flowfileAttributes = writeAttributes(encryptionMethod, KeyDerivationFunction.NONE, iv, bcis, bcos, false);
+            flowfileAttributes.putAll(writeAttributes(encryptionMethod, KeyDerivationFunction.NONE, iv, bcis, bcos, false));
         }
     }
 
@@ -193,7 +193,7 @@ public class KeyedEncryptor extends AbstractEncryptor {
             }
 
             // Update the attributes in the temporary holder
-            flowfileAttributes = writeAttributes(encryptionMethod, KeyDerivationFunction.NONE, cipher.getIV(), bcis, bcos, true);
+            flowfileAttributes.putAll(writeAttributes(encryptionMethod, KeyDerivationFunction.NONE, cipher.getIV(), bcis, bcos, true));
         }
     }
 }

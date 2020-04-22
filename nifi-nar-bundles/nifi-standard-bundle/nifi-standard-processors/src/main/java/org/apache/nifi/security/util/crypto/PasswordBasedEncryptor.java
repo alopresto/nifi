@@ -160,7 +160,7 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
                 CipherUtility.processStreams(cipher, bcis, bcos);
 
                 // Update the attributes in the temporary holder
-                flowfileAttributes = writeAttributes(encryptionMethod, kdf, cipher.getIV(), salt, bcis, bcos, DECRYPT);
+                flowfileAttributes.putAll(writeAttributes(encryptionMethod, kdf, cipher.getIV(), salt, bcis, bcos, DECRYPT));
             } catch (Exception e) {
                 throw new ProcessException(e);
             }
@@ -179,6 +179,9 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
         public void process(final InputStream in, final OutputStream out) throws IOException {
             // Initialize cipher provider
             PBECipherProvider cipherProvider = (PBECipherProvider) CipherProviderFactory.getCipherProvider(kdf);
+            if (kdf == KeyDerivationFunction.PBKDF2) {
+                flowfileAttributes.put("encryptcontent.pbkdf2_iterations", String.valueOf(((PBKDF2CipherProvider) cipherProvider).getIterationCount()));
+            }
 
             // Generate salt
             byte[] salt;
@@ -210,7 +213,7 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
                 CipherUtility.processStreams(cipher, bcis, bcos);
 
                 // Update the attributes in the temporary holder
-                flowfileAttributes = writeAttributes(encryptionMethod, kdf, cipher.getIV(), salt, bcis, bcos, ENCRYPT);
+                flowfileAttributes.putAll(writeAttributes(encryptionMethod, kdf, cipher.getIV(), salt, bcis, bcos, ENCRYPT));
             } catch (Exception e) {
                 throw new ProcessException(e);
             }

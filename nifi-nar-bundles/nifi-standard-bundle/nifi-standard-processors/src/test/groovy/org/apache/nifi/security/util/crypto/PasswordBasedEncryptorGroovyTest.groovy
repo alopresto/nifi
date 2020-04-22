@@ -337,11 +337,45 @@ class PasswordBasedEncryptorGroovyTest {
         }
     }
 
+    @Test
+    void testPBKDF2ShouldWriteIterationsAsAttribute() throws Exception {
+        // Arrange
+        final String PLAINTEXT = "This is a plaintext message. "
+        logger.info("Plaintext: ${PLAINTEXT}")
+
+        final EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        KeyDerivationFunction kdf = KeyDerivationFunction.PBKDF2
+        PBKDF2CipherProvider pbkdf2CipherProvider = new PBKDF2CipherProvider()
+        final String EXPECTED_ITERATIONS = pbkdf2CipherProvider.getIterationCount() as String
+
+        // Act
+        PasswordBasedEncryptor encryptor = new PasswordBasedEncryptor(encryptionMethod, PASSWORD.toCharArray(), kdf)
+        StreamCallback encryptCallback = encryptor.getEncryptionCallback()
+
+        // Reset the streams
+        InputStream inputStream = new ByteArrayInputStream(PLAINTEXT.bytes)
+        OutputStream cipherStream = new ByteArrayOutputStream()
+
+        encryptCallback.process(inputStream, cipherStream)
+
+        // Assert
+        byte[] cipherBytes = ((ByteArrayOutputStream) cipherStream).toByteArray()
+        String cipherTextHex = Hex.encodeHexString(cipherBytes)
+        logger.info("Cipher text (${cipherBytes.size()}): ${cipherTextHex}")
+
+        TestEncryptContentGroovy.printFlowFileAttributes(encryptor.flowfileAttributes)
+
+        assert encryptor.flowfileAttributes.get("encryptcontent.algorithm") == encryptionMethod.name()
+        assert encryptor.flowfileAttributes.get("encryptcontent.kdf") == kdf.name()
+        assert encryptor.flowfileAttributes.get("encryptcontent.action") == "encrypted"
+        assert encryptor.flowfileAttributes.get("encryptcontent.pbkdf2_iterations") == EXPECTED_ITERATIONS
+    }
+
     /**
      * This test was added to detect a non-deterministic problem with Scrypt expected salts being
      * 32 bytes. This was ultimately determined to be a problem with the Scrypt salt regex failing
      * to match salts containing a '+' in the first 12 characters. See
-     * {@code ScryptCipherProviderGroovyTest#testShouldAcceptFormattedSaltWithPlus()}.
+     * {@code ScryptCipherProviderGroovyTest#testShouldAcceptFormattedSaltWithPlus( )}.
      *
      * @throws Exception
      */
