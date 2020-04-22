@@ -280,6 +280,29 @@ public class ScryptCipherProvider extends RandomIVPBECipherProvider {
      * @param p    the p param
      * @return the properly-formatted and complete salt
      */
+    public String formatSaltForScrypt(byte[] salt) {
+        String saltString = new String(salt, StandardCharsets.UTF_8);
+        if (isScryptFormattedSalt(saltString)) {
+            return saltString;
+        } else {
+            // The provided salt is not complete, so get the current instance cost parameters
+            return formatSaltForScrypt(salt, getN(), getR(), getP());
+        }
+    }
+
+    /**
+     * Formats the salt into a string which Scrypt can understand containing the N, r, p values along with the salt
+     * value. If the provided salt contains all values, the response will be unchanged.
+     * If it only contains the raw salt value, the resulting return value will also include the  provided N, r, and p.
+     * <p>
+     * The salt is expected to be in the format {@code new String(saltBytes, StandardCharsets.UTF_8) => "$s0$e0801$ABCDEF...."}.
+     *
+     * @param salt the provided salt
+     * @param n    the N param
+     * @param r    the r param
+     * @param p    the p param
+     * @return the properly-formatted and complete salt
+     */
     public static String formatSaltForScrypt(byte[] salt, int n, int r, int p) {
         String saltString = new String(salt, StandardCharsets.UTF_8);
         if (isScryptFormattedSalt(saltString)) {
