@@ -307,14 +307,14 @@ class PasswordBasedEncryptorGroovyTest {
             int ivDelimiterStart = CipherUtility.findSequence(cipherBytes, RandomIVPBECipherProvider.IV_DELIMITER)
             logger.info("IV delimiter starts at ${ivDelimiterStart}")
 
-            final byte[] EXPECTED_KDF_SALT_BYTES = extractFullSaltFromCipherBytes(cipherBytes)
+            final byte[] EXPECTED_KDF_SALT_BYTES = TestEncryptContentGroovy.extractFullSaltFromCipherBytes(cipherBytes)
             final String EXPECTED_KDF_SALT = new String(EXPECTED_KDF_SALT_BYTES)
-            final String EXPECTED_SALT_HEX = extractRawSaltHexFromFullSalt(EXPECTED_KDF_SALT_BYTES, kdf)
+            final String EXPECTED_SALT_HEX = TestEncryptContentGroovy.extractRawSaltHexFromFullSalt(EXPECTED_KDF_SALT_BYTES, kdf)
             logger.info("Extracted expected raw salt (hex): ${EXPECTED_SALT_HEX}")
 
             final String EXPECTED_IV_HEX = Hex.encodeHexString(cipherBytes[(ivDelimiterStart - 16)..<ivDelimiterStart] as byte[])
 
-            encryptor.flowfileAttributes.sort().each { k, v -> logger.info("${k} -> ${v}") }
+            TestEncryptContentGroovy.printFlowFileAttributes(encryptor.flowfileAttributes)
 
             // Assert the timestamp attribute was written and is accurate
             def diff = TestEncryptContentGroovy.calculateTimestampDifference(new Date(), encryptor.flowfileAttributes.get("encryptcontent.timestamp"))
@@ -341,7 +341,7 @@ class PasswordBasedEncryptorGroovyTest {
      * This test was added to detect a non-deterministic problem with Scrypt expected salts being
      * 32 bytes. This was ultimately determined to be a problem with the Scrypt salt regex failing
      * to match salts containing a '+' in the first 12 characters. See
-     * {@link ScryptCipherProviderGroovyTest#ttestShouldAcceptFormattedSaltWithPlus()}.
+     * {@code ScryptCipherProviderGroovyTest#testShouldAcceptFormattedSaltWithPlus()}.
      *
      * @throws Exception
      */
@@ -373,14 +373,14 @@ class PasswordBasedEncryptorGroovyTest {
         int ivDelimiterStart = CipherUtility.findSequence(cipherBytes, RandomIVPBECipherProvider.IV_DELIMITER)
         logger.info("IV delimiter starts at ${ivDelimiterStart}")
 
-        final byte[] EXPECTED_KDF_SALT_BYTES = extractFullSaltFromCipherBytes(cipherBytes)
+        final byte[] EXPECTED_KDF_SALT_BYTES = TestEncryptContentGroovy.extractFullSaltFromCipherBytes(cipherBytes)
         final String EXPECTED_KDF_SALT = new String(EXPECTED_KDF_SALT_BYTES)
-        final String EXPECTED_SALT_HEX = extractRawSaltHexFromFullSalt(EXPECTED_KDF_SALT_BYTES, kdf)
+        final String EXPECTED_SALT_HEX = TestEncryptContentGroovy.extractRawSaltHexFromFullSalt(EXPECTED_KDF_SALT_BYTES, kdf)
         logger.info("Extracted expected raw salt (hex): ${EXPECTED_SALT_HEX}")
 
         final String EXPECTED_IV_HEX = Hex.encodeHexString(cipherBytes[(ivDelimiterStart - 16)..<ivDelimiterStart] as byte[])
 
-        encryptor.flowfileAttributes.sort().each { k, v -> logger.info("${k} -> ${v}") }
+        TestEncryptContentGroovy.printFlowFileAttributes(encryptor.flowfileAttributes)
 
         // Assert the timestamp attribute was written and is accurate
         def diff = TestEncryptContentGroovy.calculateTimestampDifference(new Date(), encryptor.flowfileAttributes.get("encryptcontent.timestamp"))
@@ -397,23 +397,5 @@ class PasswordBasedEncryptorGroovyTest {
 
         assert encryptor.flowfileAttributes.get("encryptcontent.kdf_salt") == EXPECTED_KDF_SALT
         assert (29..54)*.toString().contains(encryptor.flowfileAttributes.get("encryptcontent.kdf_salt_length"))
-    }
-
-    private static byte[] extractFullSaltFromCipherBytes(byte[] cipherBytes) {
-        int saltDelimiterStart = CipherUtility.findSequence(cipherBytes, RandomIVPBECipherProvider.SALT_DELIMITER)
-        logger.info("Salt delimiter starts at ${saltDelimiterStart}")
-        byte[] saltBytes = cipherBytes[0..<saltDelimiterStart]
-        logger.info("Extracted full salt (${saltBytes.length}): ${new String(saltBytes, StandardCharsets.UTF_8)}")
-        saltBytes
-    }
-
-    private static String extractRawSaltHexFromFullSalt(byte[] fullSaltBytes, KeyDerivationFunction kdf) {
-        logger.info("Full salt (${fullSaltBytes.length}): ${Hex.encodeHexString(fullSaltBytes)}")
-        // Salt will be in Base64 (or Radix64) for strong KDFs
-        byte[] rawSaltBytes = CipherUtility.extractRawSalt(fullSaltBytes, kdf)
-        logger.info("Raw salt (${rawSaltBytes.length}): ${Hex.encodeHexString(rawSaltBytes)}")
-        String rawSaltHex = Hex.encodeHexString(rawSaltBytes)
-        logger.info("Extracted expected raw salt (hex): ${rawSaltHex}")
-        rawSaltHex
     }
 }

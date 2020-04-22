@@ -36,7 +36,6 @@ import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
 import org.junit.BeforeClass
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -469,7 +468,6 @@ class TestEncryptContentGroovy {
     }
 
     // TODO: Implement
-    @Ignore("Not yet implemented")
     @Test
     void testArgon2EncryptionShouldWriteAttributesWithEncryptionMetadata() throws IOException {
         // Arrange
@@ -497,38 +495,44 @@ class TestEncryptContentGroovy {
         MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
         testRunner.assertQueueEmpty()
 
-        flowFile.getAttributes().each { attr, value ->
-            logger.info("Attribute: ${attr.padLeft(30)}: ${value}")
-        }
+        printFlowFileAttributes(flowFile.getAttributes())
 
         byte[] flowfileContentBytes = flowFile.getData()
         String flowfileContent = flowFile.getContent()
 
-        int saltDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.SALT_DELIMITER, StandardCharsets.UTF_8))
-        int ivDelimiterStart = flowfileContent.indexOf(new String(RandomIVPBECipherProvider.IV_DELIMITER, StandardCharsets.UTF_8))
+        int ivDelimiterStart = CipherUtility.findSequence(flowfileContentBytes, RandomIVPBECipherProvider.IV_DELIMITER)
+        logger.info("IV delimiter starts at ${ivDelimiterStart}")
 
+        final byte[] EXPECTED_KDF_SALT_BYTES = extractFullSaltFromCipherBytes(flowfileContentBytes)
+        final String EXPECTED_KDF_SALT = new String(EXPECTED_KDF_SALT_BYTES)
+        final String EXPECTED_SALT_HEX = extractRawSaltHexFromFullSalt(EXPECTED_KDF_SALT_BYTES, kdf)
+        logger.info("Extracted expected raw salt (hex): ${EXPECTED_SALT_HEX}")
 
-        final String EXPECTED_SALT = flowfileContent[0..<saltDelimiterStart]
-        final String EXPECTED_SALT_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart - 22)..<saltDelimiterStart] as byte[])
-        final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[(saltDelimiterStart + 8)..<ivDelimiterStart] as byte[])
-        final int EXPECTED_CIPHER_TEXT_LENGTH = CipherUtility.calculateCipherTextLength(PLAINTEXT.size(), EXPECTED_SALT.length())
+        final String EXPECTED_IV_HEX = Hex.encodeHexString(flowfileContentBytes[(ivDelimiterStart - 16)..<ivDelimiterStart] as byte[])
 
-        def diff = calculateTimestampDifference(new Date(), flowFile.getAttribute("encryptcontent.timestamp"))
-        logger.info("Timestamp difference: ${diff}")
+        printFlowFileAttributes(flowFile.getAttributes())
 
         // Assert the timestamp attribute was written and is accurate
+        def diff = calculateTimestampDifference(new Date(), flowFile.getAttribute("encryptcontent.timestamp"))
         assert diff.toMilliseconds() < 1_000
         assert flowFile.getAttribute("encryptcontent.algorithm") == encryptionMethod.name()
         assert flowFile.getAttribute("encryptcontent.kdf") == kdf.name()
         assert flowFile.getAttribute("encryptcontent.action") == "encrypted"
         assert flowFile.getAttribute("encryptcontent.salt") == EXPECTED_SALT_HEX
-        assert flowFile.getAttribute("encryptcontent.salt_length") == 16
-        assert flowFile.getAttribute("encryptcontent.kdf_salt") == EXPECTED_SALT
-        assert flowFile.getAttribute("encryptcontent.kdf_salt_length") == 52
+        assert flowFile.getAttribute("encryptcontent.salt_length") == "16"
+        assert flowFile.getAttribute("encryptcontent.kdf_salt") == EXPECTED_KDF_SALT
+        assert (29..54)*.toString().contains(flowFile.getAttribute("encryptcontent.kdf_salt_length"))
         assert flowFile.getAttribute("encryptcontent.iv") == EXPECTED_IV_HEX
-        assert flowFile.getAttribute("encryptcontent.iv_length") == 16
+        assert flowFile.getAttribute("encryptcontent.iv_length") == "16"
         assert flowFile.getAttribute("encryptcontent.plaintext_length") == PLAINTEXT.size() as String
-        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == EXPECTED_CIPHER_TEXT_LENGTH as String
+        assert flowFile.getAttribute("encryptcontent.cipher_text_length") == flowfileContentBytes.size() as String
+    }
+
+    static void printFlowFileAttributes(Map<String, String> attributes) {
+        int maxLength = attributes.keySet()*.length().max()
+        attributes.sort().each { attr, value ->
+            logger.info("Attribute: ${attr.padRight(maxLength)}: ${value}")
+        }
     }
 
     @Test
@@ -558,9 +562,7 @@ class TestEncryptContentGroovy {
         MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
         testRunner.assertQueueEmpty()
 
-        flowFile.getAttributes().sort().each { attr, value ->
-            logger.info("Attribute: ${attr.padRight(33)}: ${value}")
-        }
+        printFlowFileAttributes(flowFile.getAttributes())
 
         byte[] flowfileContentBytes = flowFile.getData()
         String flowfileContent = flowFile.getContent()
@@ -629,9 +631,7 @@ class TestEncryptContentGroovy {
         MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(EncryptContent.REL_SUCCESS).get(0)
         testRunner.assertQueueEmpty()
 
-        flowFile.getAttributes().sort().each { attr, value ->
-            logger.info("Attribute: ${attr.padRight(33)}: ${value}")
-        }
+        printFlowFileAttributes(flowFile.getAttributes())
 
         byte[] flowfileContentBytes = flowFile.getData()
         String flowfileContent = flowFile.getContent()
@@ -660,6 +660,24 @@ class TestEncryptContentGroovy {
         logger.info("Parsed timestamp   ${timestamp} -> (ms): ${parsedTimestampMillis}")
 
         TimeCategory.minus(date, parsedTimestamp)
+    }
+
+    static byte[] extractFullSaltFromCipherBytes(byte[] cipherBytes) {
+        int saltDelimiterStart = CipherUtility.findSequence(cipherBytes, RandomIVPBECipherProvider.SALT_DELIMITER)
+        logger.info("Salt delimiter starts at ${saltDelimiterStart}")
+        byte[] saltBytes = cipherBytes[0..<saltDelimiterStart]
+        logger.info("Extracted full salt (${saltBytes.length}): ${new String(saltBytes, StandardCharsets.UTF_8)}")
+        saltBytes
+    }
+
+    static String extractRawSaltHexFromFullSalt(byte[] fullSaltBytes, KeyDerivationFunction kdf) {
+        logger.info("Full salt (${fullSaltBytes.length}): ${Hex.encodeHexString(fullSaltBytes)}")
+        // Salt will be in Base64 (or Radix64) for strong KDFs
+        byte[] rawSaltBytes = CipherUtility.extractRawSalt(fullSaltBytes, kdf)
+        logger.info("Raw salt (${rawSaltBytes.length}): ${Hex.encodeHexString(rawSaltBytes)}")
+        String rawSaltHex = Hex.encodeHexString(rawSaltBytes)
+        logger.info("Extracted expected raw salt (hex): ${rawSaltHex}")
+        rawSaltHex
     }
 
     @Test
@@ -702,18 +720,6 @@ class TestEncryptContentGroovy {
         assert parsedTenSecondDiff.seconds == 10
 
         assert [fiveSecondDiff, tenSecondDiff, parsedTenSecondDiff].every { it.days == 0 }
-
-//        // TODO: Timestamp comparison has millisecond difference correct but introduces 107 day offset
-//        SimpleDateFormat formatter = new SimpleDateFormat("YYYY-MM-dd HH:mm:ss.SSS Z", Locale.default)
-//        final long currentTimeMillis = System.currentTimeMillis()
-//        logger.info("    Current time ${formatter.format(new Date(currentTimeMillis))} -> (ms): ${currentTimeMillis}")
-//        String timestamp = flowFile.getAttribute("encryptcontent.timestamp")
-//        Date parsedTimestamp = formatter.parse(timestamp)
-//        long parsedTimestampMillis = parsedTimestamp.toInstant().toEpochMilli()
-//        logger.info("Parsed timestamp ${timestamp} -> (ms): ${parsedTimestampMillis}")
-//
-//        def diff = TimeCategory.minus(new Date(currentTimeMillis), parsedTimestamp)
-//        logger.info("Timestamp difference: ${diff}")
     }
 
     @Test
