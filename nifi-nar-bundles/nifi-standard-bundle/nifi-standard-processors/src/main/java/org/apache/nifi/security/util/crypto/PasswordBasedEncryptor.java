@@ -188,7 +188,27 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
             }
         }
 
-        protected void handleBcryptDecryption(BcryptCipherProvider bcryptCipherProvider, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, byte[] salt, int keyLength, Cipher cipher, byte[] iv, String password) throws IOException, ProcessException {
+        /**
+         * Handles the {@code Bcrypt} decryption separately, as the Bcrypt key derivation process changed during NiFi 1.12.0
+         * and some cipher texts encrypted with a legacy key may need to be decrypted. This method attempts to decrypt normally,
+         * and if certain conditions are met (the cipher text is under 10 MB and the failure was specifically due to the wrong
+         * key), the legacy key derivation is used to make a second attempt.
+         *
+         * @param bcryptCipherProvider the cipher provider
+         * @param bcis                 the input stream (cipher text)
+         * @param bcos                 the output stream to write the plaintext to
+         * @param salt                 the salt
+         * @param keyLength            the key length to derive in bits
+         * @param cipher               the initial cipher object
+         * @param iv                   the IV
+         * @param password             the password
+         * @throws IOException      if there is a problem reading/writing to the streams
+         * @throws ProcessException if there is any other exception
+         */
+        protected void handleBcryptDecryption(BcryptCipherProvider bcryptCipherProvider, ByteCountingInputStream bcis,
+                                              ByteCountingOutputStream bcos, byte[] salt, int keyLength, Cipher cipher,
+                                              byte[] iv, String password)
+                throws IOException, ProcessException {
             // Attempt the decryption and if it fails due to pad block exception (wrong key), derive key using legacy process and attempt to decrypt again
             bcis.mark(RETRY_LIMIT_LENGTH);
 
@@ -210,6 +230,14 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
             }
         }
 
+        /**
+         * Returns {@code true} if the Bcrypt decryption failed for reasons that might be resolved by attempting a second
+         * decryption using the legacy key derivation process.
+         *
+         * @param e             the exception thrown during the initial decryption attempt
+         * @param bytesConsumed the number of bytes consumed from the cipher text stream
+         * @return true if the legacy key derivation process should be attempted
+         */
         protected boolean shouldAttemptLegacyDecrypt(ProcessException e, long bytesConsumed) {
             final boolean causeIsWrongKey = e.getCause() instanceof BadPaddingException;
             final boolean bytesConsumedWithinLimit = bytesConsumed < RETRY_LIMIT_LENGTH;

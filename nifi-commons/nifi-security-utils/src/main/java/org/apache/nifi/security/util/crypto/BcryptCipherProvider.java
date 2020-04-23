@@ -137,7 +137,8 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         return createCipherAndHandleExceptions(encryptionMethod, password, salt, iv, keyLength, false, true);
     }
 
-    protected Cipher getInitializedCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength, boolean encryptMode, boolean useLegacyKeyDerivation) throws Exception {
+    protected Cipher getInitializedCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv,
+                                          int keyLength, boolean encryptMode, boolean useLegacyKeyDerivation) throws Exception {
         if (encryptionMethod == null) {
             throw new IllegalArgumentException("The encryption method must be specified");
         }
@@ -186,7 +187,8 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         }
     }
 
-    private SecretKey deriveKey(String password, int keyLength, String algorithm, String provider, byte[] rawSalt, int workFactor, boolean useLegacyKeyDerivation) throws NoSuchAlgorithmException, NoSuchProviderException {
+    private SecretKey deriveKey(String password, int keyLength, String algorithm, String provider, byte[] rawSalt,
+                                int workFactor, boolean useLegacyKeyDerivation) throws NoSuchAlgorithmException, NoSuchProviderException {
     /* The SHA-512 hash is required in order to derive a key longer than 184 bits (the resulting size of the Bcrypt hash) and ensuring the avalanche effect causes higher key entropy (if all
 derived keys follow a consistent pattern, it weakens the strength of the encryption) */
         MessageDigest digest = MessageDigest.getInstance("SHA-512", provider);
