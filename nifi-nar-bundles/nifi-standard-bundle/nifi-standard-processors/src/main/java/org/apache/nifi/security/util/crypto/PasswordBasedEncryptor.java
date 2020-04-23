@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.security.util.crypto;
 
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.spec.PBEKeySpec;
 import org.apache.commons.codec.binary.Hex;
@@ -34,8 +36,11 @@ import org.apache.nifi.security.util.EncryptionMethod;
 import org.apache.nifi.security.util.KeyDerivationFunction;
 import org.apache.nifi.stream.io.ByteCountingInputStream;
 import org.apache.nifi.stream.io.ByteCountingOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PasswordBasedEncryptor extends AbstractEncryptor {
+    private static final Logger logger = LoggerFactory.getLogger(PasswordBasedEncryptor.class);
 
     private EncryptionMethod encryptionMethod;
     private PBEKeySpec password;
@@ -118,6 +123,9 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
 
         private static final boolean DECRYPT = false;
 
+        // Limit retry mechanism to 10 MB; more than that is wasteful
+        private static final int RETRY_LIMIT_LENGTH = 10 * 1024 * 1024;
+
         public DecryptCallback() {
         }
 
@@ -149,21 +157,67 @@ public class PasswordBasedEncryptor extends AbstractEncryptor {
             // Generate cipher
             try {
                 Cipher cipher;
+                final String password = new String(PasswordBasedEncryptor.this.password.getPassword());
                 // Read IV if necessary
+                byte[] iv = new byte[0];
                 if (cipherProvider instanceof RandomIVPBECipherProvider) {
                     RandomIVPBECipherProvider rivpcp = (RandomIVPBECipherProvider) cipherProvider;
-                    byte[] iv = rivpcp.readIV(bcis);
-                    cipher = rivpcp.getCipher(encryptionMethod, new String(password.getPassword()), salt, iv, keyLength, DECRYPT);
+                    iv = rivpcp.readIV(bcis);
+                    cipher = rivpcp.getCipher(encryptionMethod, password, salt, iv, keyLength, DECRYPT);
                 } else {
-                    cipher = cipherProvider.getCipher(encryptionMethod, new String(password.getPassword()), salt, keyLength, DECRYPT);
+                    cipher = cipherProvider.getCipher(encryptionMethod, password, salt, keyLength, DECRYPT);
                 }
-                CipherUtility.processStreams(cipher, bcis, bcos);
+
+                // Bcrypt has multiple versions of KDF which can cause BC problems
+                if (kdf == KeyDerivationFunction.BCRYPT) {
+                    final boolean cipherProviderIsSafeType = cipherProvider instanceof BcryptCipherProvider;
+                    logger.debug("Cipher provider instance of BcryptCipherProvider: {}", cipherProviderIsSafeType);
+                    if (!cipherProviderIsSafeType) {
+                        throw new ProcessException("The KDF is Bcrypt but the cipher provider is not a Bcrypt cipher provider; " + cipherProvider.getClass().getSimpleName());
+                    }
+                    handleBcryptDecryption((BcryptCipherProvider) cipherProvider, bcis, bcos, salt, keyLength, cipher, iv, password);
+                } else {
+                    // For any other KDF, only attempt decryption once
+                    CipherUtility.processStreams(cipher, bcis, bcos);
+                }
 
                 // Update the attributes in the temporary holder
                 flowfileAttributes.putAll(writeAttributes(encryptionMethod, kdf, cipher.getIV(), salt, bcis, bcos, DECRYPT));
             } catch (Exception e) {
                 throw new ProcessException(e);
             }
+        }
+
+        protected void handleBcryptDecryption(BcryptCipherProvider bcryptCipherProvider, ByteCountingInputStream bcis, ByteCountingOutputStream bcos, byte[] salt, int keyLength, Cipher cipher, byte[] iv, String password) throws IOException, ProcessException {
+            // Attempt the decryption and if it fails due to pad block exception (wrong key), derive key using legacy process and attempt to decrypt again
+            bcis.mark(RETRY_LIMIT_LENGTH);
+
+            try {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                CipherUtility.processStreams(cipher, bcis, baos);
+                bcos.write(baos.toByteArray());
+            } catch (ProcessException e) {
+                // All exceptions from processStreams are wrapped in ProcessException, so check the underlying cause
+                if (shouldAttemptLegacyDecrypt(e, bcis.getBytesConsumed())) {
+                    logger.warn("Error decrypting content using Bcrypt-derived key; attempting legacy key derivation for backward compatibility");
+                    bcis.reset();
+                    cipher = bcryptCipherProvider.getLegacyDecryptCipher(encryptionMethod, password, salt, iv, keyLength);
+                    CipherUtility.processStreams(cipher, bcis, bcos);
+                } else {
+                    // Some other exception or too much content to retry
+                    throw e;
+                }
+            }
+        }
+
+        protected boolean shouldAttemptLegacyDecrypt(ProcessException e, long bytesConsumed) {
+            final boolean causeIsWrongKey = e.getCause() instanceof BadPaddingException;
+            final boolean bytesConsumedWithinLimit = bytesConsumed < RETRY_LIMIT_LENGTH;
+            if (logger.isDebugEnabled()) {
+                logger.debug("Exception cause instance of BadPaddingException: {}", causeIsWrongKey);
+                logger.debug("Bytes consumed ({} B) < retry limit ({} B): {}", bytesConsumed, RETRY_LIMIT_LENGTH, bytesConsumedWithinLimit);
+            }
+            return causeIsWrongKey && bytesConsumedWithinLimit;
         }
     }
 

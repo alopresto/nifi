@@ -22,6 +22,8 @@ import org.apache.nifi.processors.standard.TestEncryptContentGroovy
 import org.apache.nifi.security.kms.CryptoUtils
 import org.apache.nifi.security.util.EncryptionMethod
 import org.apache.nifi.security.util.KeyDerivationFunction
+import org.apache.nifi.stream.io.ByteCountingInputStream
+import org.apache.nifi.stream.io.ByteCountingOutputStream
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Assume
@@ -33,6 +35,7 @@ import org.slf4j.LoggerFactory
 
 import javax.crypto.Cipher
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.security.Security
 
 class PasswordBasedEncryptorGroovyTest {
@@ -369,6 +372,77 @@ class PasswordBasedEncryptorGroovyTest {
         assert encryptor.flowfileAttributes.get("encryptcontent.kdf") == kdf.name()
         assert encryptor.flowfileAttributes.get("encryptcontent.action") == "encrypted"
         assert encryptor.flowfileAttributes.get("encryptcontent.pbkdf2_iterations") == EXPECTED_ITERATIONS
+    }
+
+    @Test
+    void testBcryptDecryptShouldSupportLegacyKeyDerivationProcess() throws Exception {
+        // Arrange
+        final String PLAINTEXT = "This is a plaintext message. "
+        logger.info("Plaintext: ${PLAINTEXT}")
+
+        final EncryptionMethod encryptionMethod = EncryptionMethod.AES_CBC
+        KeyDerivationFunction kdf = KeyDerivationFunction.BCRYPT
+        BcryptCipherProvider bcryptCipherProvider = new BcryptCipherProvider()
+
+        // Replicate PBE encryptor with manual legacy key derivation to encrypt
+        final String PASSWORD = "shortPassword"
+        final byte[] SALT = bcryptCipherProvider.generateSalt()
+        String saltString = new String(SALT, StandardCharsets.UTF_8)
+        logger.test("Using fixed Bcrypt salt: ${saltString}")
+
+        // Determine the expected key bytes using the legacy key derivation process
+        BcryptSecureHasher bcryptSecureHasher = new BcryptSecureHasher(bcryptCipherProvider.getWorkFactor(), bcryptCipherProvider.getDefaultSaltLength())
+        byte[] rawSaltBytes = BcryptCipherProvider.extractRawSalt(saltString)
+        byte[] hashOutputBytes = bcryptSecureHasher.hashRaw(PASSWORD.getBytes(StandardCharsets.UTF_8), rawSaltBytes)
+        logger.test("Raw hash output (${hashOutputBytes.length}): ${Hex.encodeHexString(hashOutputBytes)}")
+
+        MessageDigest sha512 = MessageDigest.getInstance("SHA-512", "BC")
+        byte[] keyDigestBytes = sha512.digest(hashOutputBytes)
+        logger.test("Key digest (${keyDigestBytes.length}): ${Hex.encodeHexString(keyDigestBytes)}")
+
+        int keyLength = CipherUtility.parseKeyLengthFromAlgorithm(encryptionMethod.algorithm)
+        byte[] derivedKeyBytes = Arrays.copyOf(keyDigestBytes, keyLength / 8 as int)
+        logger.test("Derived key (${derivedKeyBytes.length}): ${Hex.encodeHexString(derivedKeyBytes)}")
+
+        StreamCallback customEncryptCallback = { InputStream is, OutputStream os ->
+            byte[] saltBytes = bcryptCipherProvider.generateSalt()
+            ByteCountingInputStream bcis = new ByteCountingInputStream(is)
+            ByteCountingOutputStream bcos = new ByteCountingOutputStream(os)
+            bcryptCipherProvider.writeSalt(saltBytes, bcos)
+
+            Cipher cipher = bcryptCipherProvider.getInitializedCipher(encryptionMethod, PASSWORD, saltBytes, new byte[16], keyLength, true, true)
+
+            bcryptCipherProvider.writeIV(cipher.getIV(), bcos)
+            CipherUtility.processStreams(cipher, bcis, bcos)
+        } as StreamCallback
+
+        // Reset the streams
+        InputStream inputStream = new ByteArrayInputStream(PLAINTEXT.bytes)
+        OutputStream cipherStream = new ByteArrayOutputStream()
+
+        customEncryptCallback.process(inputStream, cipherStream)
+
+        byte[] cipherBytes = ((ByteArrayOutputStream) cipherStream).toByteArray()
+        String cipherTextHex = Hex.encodeHexString(cipherBytes)
+        logger.info("Cipher text (${cipherBytes.size()}): ${cipherTextHex}")
+
+        // Act
+        PasswordBasedEncryptor encryptor = new PasswordBasedEncryptor(encryptionMethod, PASSWORD.toCharArray(), kdf)
+        StreamCallback pbeDecryptCallback = encryptor.getDecryptionCallback()
+
+        // Reset the streams
+        InputStream cipherInputStream = new ByteArrayInputStream(cipherBytes)
+        OutputStream recoveredOutputStream = new ByteArrayOutputStream()
+
+        // Use PBE w/ Bcrypt to decrypt (and handle legacy key derivation process)
+        pbeDecryptCallback.process(cipherInputStream, recoveredOutputStream)
+
+        // Assert
+        byte[] recoveredBytes = ((ByteArrayOutputStream) recoveredOutputStream).toByteArray()
+        String recovered = new String(recoveredBytes, StandardCharsets.UTF_8)
+        logger.info("Plaintext (${recoveredBytes.size()}): ${recovered}")
+
+        assert recovered == PLAINTEXT
     }
 
     /**

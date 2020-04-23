@@ -19,6 +19,8 @@ package org.apache.nifi.security.util.crypto;
 import at.favre.lib.crypto.bcrypt.Radix64Encoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.regex.Matcher;
@@ -64,6 +66,11 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         }
     }
 
+    @Override
+    Logger getLogger() {
+        return logger;
+    }
+
     /**
      * Returns an initialized cipher for the specified algorithm. The key is derived by the KDF of the implementation. The IV is provided externally to allow for non-deterministic IVs, as IVs
      * deterministically derived from the password are a potential vulnerability and compromise semantic security. See
@@ -80,18 +87,17 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
      */
     @Override
     public Cipher getCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength, boolean encryptMode) throws Exception {
+        return createCipherAndHandleExceptions(encryptionMethod, password, salt, iv, keyLength, encryptMode, false);
+    }
+
+    private Cipher createCipherAndHandleExceptions(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength, boolean encryptMode, boolean useLegacyKeyDerivation) {
         try {
-            return getInitializedCipher(encryptionMethod, password, salt, iv, keyLength, encryptMode);
+            return getInitializedCipher(encryptionMethod, password, salt, iv, keyLength, encryptMode, useLegacyKeyDerivation);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             throw new ProcessException("Error initializing the cipher", e);
         }
-    }
-
-    @Override
-    Logger getLogger() {
-        return logger;
     }
 
     /**
@@ -112,7 +118,26 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         return getCipher(encryptionMethod, password, salt, new byte[0], keyLength, encryptMode);
     }
 
-    protected Cipher getInitializedCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength, boolean encryptMode) throws Exception {
+    /**
+     * Returns a {@link Cipher} instance in {@code Cipher.DECRYPT_MODE} configured with the provided inputs and using <em>the
+     * legacy key derivation process for {@code Bcrypt}</em> where the complete Bcrypt hash output (including algorithm, work
+     * factor, and salt) was used as the input to the key stretching SHA-512 digest function. This is only used for
+     * backward-compatibility decryptions for NiFi versions prior to 1.12.0. All encryption operations moving forward use the
+     * correct key derivation process.
+     *
+     * @param encryptionMethod the {@link EncryptionMethod}
+     * @param password         the secret input
+     * @param salt             the complete salt (e.g. {@code "$2a$10$gUVbkVzp79H8YaCOsCVZNu".getBytes(StandardCharsets.UTF_8)})
+     * @param iv               the Initialization Vector in bits
+     * @param keyLength        the desired key length in bits
+     * @return the initialized cipher using the legacy key derivation process
+     * @throws Exception if there is a problem initializing the cipher
+     */
+    public Cipher getLegacyDecryptCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength) {
+        return createCipherAndHandleExceptions(encryptionMethod, password, salt, iv, keyLength, false, true);
+    }
+
+    protected Cipher getInitializedCipher(EncryptionMethod encryptionMethod, String password, byte[] salt, byte[] iv, int keyLength, boolean encryptMode, boolean useLegacyKeyDerivation) throws Exception {
         if (encryptionMethod == null) {
             throw new IllegalArgumentException("The encryption method must be specified");
         }
@@ -132,6 +157,9 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
             throw new IllegalArgumentException(keyLength + " is not a valid key length for " + cipherName);
         }
 
+        if (salt == null || salt.length == 0) {
+            throw new IllegalArgumentException(BCRYPT_SALT_FORMAT_MSG);
+        }
         String saltString = new String(salt, StandardCharsets.UTF_8);
         byte[] rawSalt = new byte[DEFAULT_SALT_LENGTH];
         int workFactor = 0;
@@ -143,16 +171,7 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
         }
 
         try {
-            /* The SHA-512 hash is required in order to derive a key longer than 184 bits (the resulting size of the Bcrypt hash) and ensuring the avalanche effect causes higher key entropy (if all
-        derived keys follow a consistent pattern, it weakens the strength of the encryption) */
-            MessageDigest digest = MessageDigest.getInstance("SHA-512", provider);
-            BcryptSecureHasher bcryptSecureHasher = new BcryptSecureHasher(workFactor);
-            byte[] hashBytes = bcryptSecureHasher.hashRaw(password.getBytes(StandardCharsets.UTF_8), rawSalt);
-            // TODO: Need to only digest "hash" (last 31 bytes)
-            byte[] derivedKeyBytes = digest.digest(hashBytes);
-            derivedKeyBytes = Arrays.copyOf(derivedKeyBytes, keyLength / 8);
-            SecretKey tempKey = new SecretKeySpec(derivedKeyBytes, algorithm);
-
+            SecretKey tempKey = deriveKey(password, keyLength, algorithm, provider, rawSalt, workFactor, useLegacyKeyDerivation);
             KeyedCipherProvider keyedCipherProvider = new AESKeyedCipherProvider();
             return keyedCipherProvider.getCipher(encryptionMethod, tempKey, iv, encryptMode);
         } catch (IllegalArgumentException e) {
@@ -165,6 +184,30 @@ public class BcryptCipherProvider extends RandomIVPBECipherProvider {
                 throw e;
             }
         }
+    }
+
+    private SecretKey deriveKey(String password, int keyLength, String algorithm, String provider, byte[] rawSalt, int workFactor, boolean useLegacyKeyDerivation) throws NoSuchAlgorithmException, NoSuchProviderException {
+    /* The SHA-512 hash is required in order to derive a key longer than 184 bits (the resulting size of the Bcrypt hash) and ensuring the avalanche effect causes higher key entropy (if all
+derived keys follow a consistent pattern, it weakens the strength of the encryption) */
+        MessageDigest digest = MessageDigest.getInstance("SHA-512", provider);
+        BcryptSecureHasher bcryptSecureHasher = new BcryptSecureHasher(workFactor);
+        byte[] fullHashOutputBytes = bcryptSecureHasher.hashRaw(password.getBytes(StandardCharsets.UTF_8), rawSalt);
+        byte[] derivedKeyBytes;
+
+        // Depending on the legacy key derivation process indicator, run the digest over the full or partial hash output
+        if (useLegacyKeyDerivation) {
+            // The "legacy" process included the algorithm, work factor, and salt in the digest input
+            derivedKeyBytes = digest.digest(fullHashOutputBytes);
+            logger.warn("Using legacy key derivation process for backward compatibility (digest run on full {} bytes of Bcrypt hash output)", fullHashOutputBytes.length);
+        } else {
+            // Only digest "hash" (last 31 bytes) not the algorithm, version, work factor, and salt (first 29 bytes)
+            final int HASH_OUTPUT_START = 29;
+            byte[] hashBytes = Arrays.copyOfRange(fullHashOutputBytes, HASH_OUTPUT_START, fullHashOutputBytes.length);
+            derivedKeyBytes = digest.digest(hashBytes);
+        }
+
+        derivedKeyBytes = Arrays.copyOf(derivedKeyBytes, keyLength / 8);
+        return new SecretKeySpec(derivedKeyBytes, algorithm);
     }
 
     /**
