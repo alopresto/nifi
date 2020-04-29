@@ -80,6 +80,7 @@ public final class CertificateUtils {
     private static final Map<ASN1ObjectIdentifier, Integer> dnOrderMap = createDnOrderMap();
 
     public static final String CURRENT_TLS_PROTOCOL_VERSION = "TLSv1.2";
+    public static final String[] CURRENT_SUPPORTED_TLS_PROTOCOL_VERSIONS = new String[] {"TLSv1.2", "TLSv1.3"};
 
     static {
         Security.addProvider(new BouncyCastleProvider());
