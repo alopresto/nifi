@@ -17,7 +17,6 @@
 package org.apache.nifi.io.socket;
 
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
@@ -27,13 +26,12 @@ import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Arrays;
-
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
-
+import org.apache.nifi.security.util.CertificateUtils;
 import org.apache.nifi.security.util.KeyStoreUtils;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.util.file.FileUtils;
@@ -51,7 +49,7 @@ public class SSLContextFactory {
     private final KeyManager[] keyManagers;
     private final TrustManager[] trustManagers;
 
-    public SSLContextFactory(final NiFiProperties properties) throws NoSuchAlgorithmException, CertificateException, FileNotFoundException, IOException, KeyStoreException, UnrecoverableKeyException {
+    public SSLContextFactory(final NiFiProperties properties) throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException, UnrecoverableKeyException {
         keystore = properties.getProperty(NiFiProperties.SECURITY_KEYSTORE);
         keystorePass = getPass(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD));
         keystoreType = properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE);
@@ -114,7 +112,7 @@ public class SSLContextFactory {
             UnrecoverableKeyException, KeyManagementException {
 
         // initialize the ssl context
-        final SSLContext sslContext = SSLContext.getInstance("TLS");
+        final SSLContext sslContext = SSLContext.getInstance(CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
         sslContext.init(keyManagers, trustManagers, new SecureRandom());
         sslContext.getDefaultSSLParameters().setNeedClientAuth(true);
 

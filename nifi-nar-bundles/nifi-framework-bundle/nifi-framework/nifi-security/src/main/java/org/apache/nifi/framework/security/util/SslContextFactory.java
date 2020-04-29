@@ -16,13 +16,6 @@
  */
 package org.apache.nifi.framework.security.util;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.security.util.KeyStoreUtils;
-import org.apache.nifi.util.NiFiProperties;
-
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,6 +25,13 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.security.util.CertificateUtils;
+import org.apache.nifi.security.util.KeyStoreUtils;
+import org.apache.nifi.util.NiFiProperties;
 
 /**
  * A factory for creating SSL contexts using the application's security
@@ -78,7 +78,7 @@ public final class SslContextFactory {
             }
 
             // initialize the ssl context
-            final SSLContext sslContext = SSLContext.getInstance("TLS");
+            final SSLContext sslContext = SSLContext.getInstance(CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
             sslContext.init(keyManagerFactory.getKeyManagers(),
                     trustManagerFactory.getTrustManagers(), null);
             sslContext.getDefaultSSLParameters().setNeedClientAuth(true);

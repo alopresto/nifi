@@ -79,6 +79,8 @@ public final class CertificateUtils {
     private static final String PEER_NOT_AUTHENTICATED_MSG = "peer not authenticated";
     private static final Map<ASN1ObjectIdentifier, Integer> dnOrderMap = createDnOrderMap();
 
+    public static final String CURRENT_TLS_PROTOCOL_VERSION = "TLSv1.2";
+
     static {
         Security.addProvider(new BouncyCastleProvider());
     }

@@ -16,7 +16,17 @@
  */
 package org.apache.nifi.integration.accesscontrol;
 
-import org.apache.nifi.web.security.jwt.JwtServiceTest;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.StringJoiner;
+import javax.net.ssl.SSLContext;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.core.Response;
 import net.minidev.json.JSONObject;
 import org.apache.commons.io.FileUtils;
 import org.apache.nifi.bundle.Bundle;
@@ -29,6 +39,7 @@ import org.apache.nifi.nar.NarClassLoadersHolder;
 import org.apache.nifi.nar.NarUnpacker;
 import org.apache.nifi.nar.StandardExtensionDiscoveringManager;
 import org.apache.nifi.nar.SystemBundle;
+import org.apache.nifi.security.util.CertificateUtils;
 import org.apache.nifi.security.util.SslContextFactory;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.web.api.dto.AccessConfigurationDTO;
@@ -38,23 +49,12 @@ import org.apache.nifi.web.api.dto.RevisionDTO;
 import org.apache.nifi.web.api.entity.AccessConfigurationEntity;
 import org.apache.nifi.web.api.entity.AccessStatusEntity;
 import org.apache.nifi.web.api.entity.ProcessorEntity;
+import org.apache.nifi.web.security.jwt.JwtServiceTest;
 import org.apache.nifi.web.util.WebUtils;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import javax.net.ssl.SSLContext;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.core.Response;
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.Calendar;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.StringJoiner;
 
 /**
  * Access token endpoint test.
@@ -117,7 +117,7 @@ public class ITAccessTokenEndpoint {
     private static SSLContext createTrustContext(final NiFiProperties props) throws Exception {
         return SslContextFactory.createTrustSslContext(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE),
                 props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD).toCharArray(),
-                props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE), "TLS");
+                props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE), CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
     }
 
     // -----------
