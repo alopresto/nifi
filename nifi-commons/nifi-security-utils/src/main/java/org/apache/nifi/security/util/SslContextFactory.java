@@ -318,7 +318,7 @@ public final class SslContextFactory {
     }
 
     /**
-     * Creates an SSLContext instance paired with its TrustManager instances using the given information.
+     * Creates an {@link SSLContext} instance paired with its {@link TrustManager} instances using the given information.
      *
      * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
