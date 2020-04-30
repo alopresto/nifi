@@ -16,8 +16,6 @@
  */
 package org.apache.nifi.security.util;
 
-import org.apache.nifi.util.Tuple;
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,48 +26,80 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
-
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
+import org.apache.nifi.util.Tuple;
 
 /**
  * A factory for creating SSL contexts using the application's security
  * properties.
- *
  */
 public final class SslContextFactory {
 
-    public static enum ClientAuth {
+    /**
+     * This enum is used to indicate the three possible options for a server requesting a client certificate during TLS handshake negotiation.
+     */
+    public enum ClientAuth {
+        WANT("Want", "Requests the client certificate on handshake and validates if present but does not require it"),
+        REQUIRED("Required", "Requests the client certificate on handshake and rejects the connection if it is not present and valid"),
+        NONE("None", "Does not request the client certificate on handshake");
 
-        WANT,
-        REQUIRED,
-        NONE
+        private final String type;
+        private final String description;
+
+        ClientAuth(String type, String description) {
+            this.type = type;
+            this.description = description;
+        }
+
+        public String getType() {
+            return this.type;
+        }
+
+        public String getDescription() {
+            return this.description;
+        }
+
+        @Override
+        public String toString() {
+            final ToStringBuilder builder = new ToStringBuilder(this);
+            ToStringBuilder.setDefaultStyle(ToStringStyle.SHORT_PREFIX_STYLE);
+            builder.append("Type", type);
+            builder.append("Description", description);
+            return builder.toString();
+        }
     }
+
+    // TODO: Wrapper method accepting NiFiProperties
+    // TODO: Wrapper methods (w/ and w/o key password) accepting Strings vs. char[]
+    // TODO: Better names for component methods & Javadoc for "trust managers"
+    // TODO: Underlying methods should allow List<String> protocols as parameter
 
     /**
      * Creates an SSLContext instance using the given information. The password for the key is assumed to be the same
      * as the password for the keystore. If this is not the case, the {@link #createSslContext(String, char[], char[], String, String, char[], String, ClientAuth, String)}
      * method should be used instead
      *
-     * @param keystore the full path to the keystore
-     * @param keystorePasswd the keystore password
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param truststore the full path to the truststore
+     * @param keystore         the full path to the keystore
+     * @param keystorePasswd   the keystore password
+     * @param keystoreType     the type of keystore (e.g., PKCS12, JKS)
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param clientAuth the type of client authentication
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param clientAuth       the type of client authentication
      * @param protocol         the protocol to use for the SSL connection
-     *
      * @return an SSLContext instance
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static SSLContext createSslContext(
             final String keystore, final char[] keystorePasswd, final String keystoreType,
@@ -85,23 +115,22 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance using the given information.
      *
-     * @param keystore the full path to the keystore
-     * @param keystorePasswd the keystore password
-     * @param keyPasswd the password for the key within the keystore
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param truststore the full path to the truststore
+     * @param keystore         the full path to the keystore
+     * @param keystorePasswd   the keystore password
+     * @param keyPasswd        the password for the key within the keystore
+     * @param keystoreType     the type of keystore (e.g., PKCS12, JKS)
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param clientAuth the type of client authentication
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param clientAuth       the type of client authentication
      * @param protocol         the protocol to use for the SSL connection
-     *
      * @return an SSLContext instance
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static SSLContext createSslContext(
             final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType,
@@ -116,23 +145,22 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance paired with its TrustManager instances using the given information.
      *
-     * @param keystore the full path to the keystore
-     * @param keystorePasswd the keystore password
-     * @param keyPasswd the password for the key within the keystore
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param truststore the full path to the truststore
+     * @param keystore         the full path to the keystore
+     * @param keystorePasswd   the keystore password
+     * @param keyPasswd        the password for the key within the keystore
+     * @param keystoreType     the type of keystore (e.g., PKCS12, JKS)
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param clientAuth the type of client authentication
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param clientAuth       the type of client authentication
      * @param protocol         the protocol to use for the SSL connection
-     *
      * @return a {@link Tuple} pairing an SSLContext instance with its TrustManagers
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static Tuple<SSLContext, TrustManager[]> createSslContextWithTrustManagers(
             final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType,
@@ -180,23 +208,22 @@ public final class SslContextFactory {
      * the same as the keystore password. If this is not the case, use the {@link #createSslContext(String, char[], char[], String, String)}
      * method instead.
      *
-     * @param keystore the full path to the keystore
+     * @param keystore       the full path to the keystore
      * @param keystorePasswd the keystore password
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param protocol the protocol to use for the SSL connection
-     *
+     * @param keystoreType   the type of keystore (e.g., PKCS12, JKS)
+     * @param protocol       the protocol to use for the SSL connection
      * @return an SSLContext instance
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static SSLContext createSslContext(
-        final String keystore, final char[] keystorePasswd, final String keystoreType, final String protocol)
-        throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException,
-        UnrecoverableKeyException, KeyManagementException {
+            final String keystore, final char[] keystorePasswd, final String keystoreType, final String protocol)
+            throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException,
+            UnrecoverableKeyException, KeyManagementException {
 
         // create SSL Context passing keystore password as the key password
         return createSslContext(keystore, keystorePasswd, keystorePasswd, keystoreType, protocol);
@@ -205,22 +232,21 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance using the given information.
      *
-     * @param keystore the full path to the keystore
+     * @param keystore       the full path to the keystore
      * @param keystorePasswd the keystore password
-     * @param keyPasswd the password for the key within the keystore
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param protocol the protocol to use for the SSL connection
-     *
+     * @param keyPasswd      the password for the key within the keystore
+     * @param keystoreType   the type of keystore (e.g., PKCS12, JKS)
+     * @param protocol       the protocol to use for the SSL connection
      * @return an SSLContext instance
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static SSLContext createSslContext(
-        final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType, final String protocol)
+            final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType, final String protocol)
             throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException,
             UnrecoverableKeyException, KeyManagementException {
         return createSslContextWithTrustManagers(keystore, keystorePasswd, keyPasswd, keystoreType, protocol).getKey();
@@ -229,19 +255,18 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance paired with its TrustManager instances using the given information.
      *
-     * @param keystore the full path to the keystore
+     * @param keystore       the full path to the keystore
      * @param keystorePasswd the keystore password
-     * @param keyPasswd the password for the key within the keystore
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param protocol the protocol to use for the SSL connection
-     *
+     * @param keyPasswd      the password for the key within the keystore
+     * @param keystoreType   the type of keystore (e.g., PKCS12, JKS)
+     * @param protocol       the protocol to use for the SSL connection
      * @return a {@link Tuple} pairing an SSLContext instance paired with its TrustManager instances
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static Tuple<SSLContext, TrustManager[]> createSslContextWithTrustManagers(
             final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType, final String protocol)
@@ -271,18 +296,17 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance using the given information.
      *
-     * @param truststore the full path to the truststore
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param protocol the protocol to use for the SSL connection
-     *
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param protocol         the protocol to use for the SSL connection
      * @return an SSLContext instance
-     * @throws java.security.KeyStoreException if any issues accessing the keystore
-     * @throws java.io.IOException for any problems loading the keystores
-     * @throws java.security.NoSuchAlgorithmException if an algorithm is found to be used but is unknown
+     * @throws java.security.KeyStoreException         if any issues accessing the keystore
+     * @throws java.io.IOException                     for any problems loading the keystores
+     * @throws java.security.NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
      * @throws java.security.cert.CertificateException if there is an issue with the certificate
      * @throws java.security.UnrecoverableKeyException if the key is insufficient
-     * @throws java.security.KeyManagementException if unable to manage the key
+     * @throws java.security.KeyManagementException    if unable to manage the key
      */
     public static SSLContext createTrustSslContext(
             final String truststore, final char[] truststorePasswd, final String truststoreType, final String protocol)
@@ -296,18 +320,17 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance paired with its TrustManager instances using the given information.
      *
-     * @param truststore the full path to the truststore
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param protocol the protocol to use for the SSL connection
-     *
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param protocol         the protocol to use for the SSL connection
      * @return a {@link Tuple} pairing an SSLContext instance paired with its TrustManager instances
-     * @throws KeyStoreException if any issues accessing the keystore
-     * @throws IOException for any problems loading the keystores
-     * @throws NoSuchAlgorithmException if an algorithm is found to be used but is unknown
-     * @throws CertificateException if there is an issue with the certificate
+     * @throws KeyStoreException         if any issues accessing the keystore
+     * @throws IOException               for any problems loading the keystores
+     * @throws NoSuchAlgorithmException  if an algorithm is found to be used but is unknown
+     * @throws CertificateException      if there is an issue with the certificate
      * @throws UnrecoverableKeyException if the key is insufficient
-     * @throws KeyManagementException if unable to manage the key
+     * @throws KeyManagementException    if unable to manage the key
      */
     public static Tuple<SSLContext, TrustManager[]> createTrustSslContextWithTrustManagers(
             final String truststore, final char[] truststorePasswd, final String truststoreType, final String protocol)
@@ -332,18 +355,16 @@ public final class SslContextFactory {
     /**
      * Creates an SSLContext instance paired with its TrustManager instances using the given information.
      *
-     * @param keystore the full path to the keystore
-     * @param keystorePasswd the keystore password
-     * @param keyPasswd the password for the key within the keystore
-     * @param keystoreType the type of keystore (e.g., PKCS12, JKS)
-     * @param truststore the full path to the truststore
+     * @param keystore         the full path to the keystore
+     * @param keystorePasswd   the keystore password
+     * @param keyPasswd        the password for the key within the keystore
+     * @param keystoreType     the type of keystore (e.g., PKCS12, JKS)
+     * @param truststore       the full path to the truststore
      * @param truststorePasswd the truststore password
-     * @param truststoreType the type of truststore (e.g., PKCS12, JKS)
-     * @param clientAuth the type of client authentication
+     * @param truststoreType   the type of truststore (e.g., PKCS12, JKS)
+     * @param clientAuth       the type of client authentication
      * @param protocol         the protocol to use for the SSL connection
-     *
      * @return a {@link Tuple} pairing an SSLSocketFactory instance with its TrustManagers
-     *
      */
     public static Tuple<SSLContext, TrustManager[]> createTrustSslContextWithTrustManagers(
             final String keystore, final char[] keystorePasswd, final char[] keyPasswd, final String keystoreType,
@@ -351,16 +372,16 @@ public final class SslContextFactory {
             final ClientAuth clientAuth, final String protocol) throws CertificateException, UnrecoverableKeyException,
             NoSuchAlgorithmException, KeyStoreException, KeyManagementException, IOException {
 
-            final Tuple<SSLContext, TrustManager[]> sslContextWithTrustManagers;
-            if (keystore == null) {
-                sslContextWithTrustManagers = createTrustSslContextWithTrustManagers(truststore, truststorePasswd, truststoreType, protocol);
-            } else if (truststore == null) {
-                sslContextWithTrustManagers = createSslContextWithTrustManagers(keystore, keystorePasswd, keyPasswd, keystoreType, protocol);
-            } else {
-                sslContextWithTrustManagers = createSslContextWithTrustManagers(keystore, keystorePasswd, keyPasswd, keystoreType, truststore,
-                        truststorePasswd, truststoreType, clientAuth, protocol);
-            }
-            return new Tuple<>(sslContextWithTrustManagers.getKey(), sslContextWithTrustManagers.getValue());
+        final Tuple<SSLContext, TrustManager[]> sslContextWithTrustManagers;
+        if (keystore == null) {
+            sslContextWithTrustManagers = createTrustSslContextWithTrustManagers(truststore, truststorePasswd, truststoreType, protocol);
+        } else if (truststore == null) {
+            sslContextWithTrustManagers = createSslContextWithTrustManagers(keystore, keystorePasswd, keyPasswd, keystoreType, protocol);
+        } else {
+            sslContextWithTrustManagers = createSslContextWithTrustManagers(keystore, keystorePasswd, keyPasswd, keystoreType, truststore,
+                    truststorePasswd, truststoreType, clientAuth, protocol);
+        }
+        return new Tuple<>(sslContextWithTrustManagers.getKey(), sslContextWithTrustManagers.getValue());
 
     }
 }
