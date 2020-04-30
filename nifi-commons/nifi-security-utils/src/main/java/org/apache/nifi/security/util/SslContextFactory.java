@@ -34,12 +34,15 @@ import javax.net.ssl.TrustManagerFactory;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.nifi.util.Tuple;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A factory for creating SSL contexts using the application's security
  * properties.
  */
 public final class SslContextFactory {
+    private static final Logger logger = LoggerFactory.getLogger(SslContextFactory.class);
 
     /**
      * This enum is used to indicate the three possible options for a server requesting a client certificate during TLS handshake negotiation.
@@ -78,7 +81,89 @@ public final class SslContextFactory {
     // TODO: Wrapper method accepting NiFiProperties
     // TODO: Wrapper methods (w/ and w/o key password) accepting Strings vs. char[]
     // TODO: Better names for component methods & Javadoc for "trust managers"
-    // TODO: Underlying methods should allow List<String> protocols as parameter
+    // TODO: Underlying methods should allow List<String> protocols as parameter [X]
+
+    /**
+     * Returns a configured {@link SSLContext} from the provided TLS configuration.
+     *
+     * @param tlsConfiguration the TLS configuration container object
+     * @param clientAuth       the {@link ClientAuth} setting
+     * @return the configured SSLContext
+     * @throws TlsException if there is a problem configuring the SSLContext
+     */
+    public static SSLContext createSslContext(TlsConfiguration tlsConfiguration, ClientAuth clientAuth) throws TlsException {
+        if (tlsConfiguration == null) {
+            logger.debug("Cannot create SSLContext from null TLS configuration");
+            return null;
+        }
+
+        if (clientAuth == null) {
+            clientAuth = ClientAuth.REQUIRED;
+            logger.debug("ClientAuth was null so defaulting to {}", clientAuth);
+        }
+
+        // Create the keystore components
+        KeyManager[] keyManagers = getKeyManagers(tlsConfiguration);
+
+        // Create the truststore components
+        TrustManager[] trustManagers = getTrustManagers(tlsConfiguration);
+
+        // Initialize the ssl context
+        return initializeSSLContext(tlsConfiguration, clientAuth, keyManagers, trustManagers);
+    }
+
+    private static KeyManager[] getKeyManagers(TlsConfiguration tlsConfiguration) throws TlsException {
+        KeyManager[] keyManagers = null;
+        if (tlsConfiguration.isKeystoreValid()) {
+            KeyManagerFactory keyManagerFactory = KeyStoreUtils.loadKeyManagerFactory(tlsConfiguration);
+            keyManagers = keyManagerFactory.getKeyManagers();
+        } else {
+            if (tlsConfiguration.isKeystorePopulated()) {
+                logger.warn("The keystore properties are populated ({}, {}, {}, {}) but not valid", tlsConfiguration.getKeystorePropertiesForLogging());
+            } else {
+                logger.debug("The keystore properties are not populated");
+            }
+        }
+        return keyManagers;
+    }
+
+    private static TrustManager[] getTrustManagers(TlsConfiguration tlsConfiguration) throws TlsException {
+        TrustManager[] trustManagers = null;
+        if (tlsConfiguration.isTruststoreValid()) {
+            TrustManagerFactory trustManagerFactory = KeyStoreUtils.loadTrustManagerFactory(tlsConfiguration);
+            trustManagers = trustManagerFactory.getTrustManagers();
+        } else {
+            if (tlsConfiguration.isTruststorePopulated()) {
+                logger.warn("The truststore properties are populated ({}, {}, {}) but not valid", tlsConfiguration.getTruststorePropertiesForLogging());
+            } else {
+                logger.debug("The truststore properties are not populated");
+            }
+        }
+        return trustManagers;
+    }
+
+    private static SSLContext initializeSSLContext(TlsConfiguration tlsConfiguration, ClientAuth clientAuth, KeyManager[] keyManagers, TrustManager[] trustManagers) throws TlsException {
+        final SSLContext sslContext;
+        try {
+            sslContext = SSLContext.getInstance(tlsConfiguration.getProtocol());
+            sslContext.init(keyManagers, trustManagers, new SecureRandom());
+            switch (clientAuth) {
+                case REQUIRED:
+                    sslContext.getDefaultSSLParameters().setNeedClientAuth(true);
+                    break;
+                case WANT:
+                    sslContext.getDefaultSSLParameters().setWantClientAuth(true);
+                    break;
+                case NONE:
+                default:
+                    sslContext.getDefaultSSLParameters().setWantClientAuth(false);
+            }
+            return sslContext;
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            logger.error("Encountered an error creating SSLContext from TLS configuration ({}): {}", tlsConfiguration.toString(), e.getLocalizedMessage());
+            throw new TlsException("Error creating SSL context", e);
+        }
+    }
 
     /**
      * Creates an SSLContext instance using the given information. The password for the key is assumed to be the same

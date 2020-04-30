@@ -156,8 +156,26 @@ public class TlsConfiguration {
         return keystorePassword;
     }
 
+    /**
+     * Returns {@code "********"} if the keystore password is populated, {@code "null"} if not.
+     *
+     * @return a loggable String representation of the keystore password
+     */
+    public String getKeystorePasswordForLogging() {
+        return StringUtils.isNotBlank(keystorePassword) ? "********" : "null";
+    }
+
     public String getKeyPassword() {
         return keyPassword;
+    }
+
+    /**
+     * Returns {@code "********"} if the key password is populated, {@code "null"} if not.
+     *
+     * @return a loggable String representation of the key password
+     */
+    public String getKeyPasswordForLogging() {
+        return StringUtils.isNotBlank(keyPassword) ? "********" : "null";
     }
 
     /**
@@ -167,6 +185,15 @@ public class TlsConfiguration {
      */
     public String getFunctionalKeyPassword() {
         return keyPassword != null && !keyPassword.isEmpty() ? keyPassword : keystorePassword;
+    }
+
+    /**
+     * Returns {@code "********"} if the functional key password is populated, {@code "null"} if not.
+     *
+     * @return a loggable String representation of the functional key password
+     */
+    public String getFunctionalKeyPasswordForLogging() {
+        return StringUtils.isNotBlank(getFunctionalKeyPassword()) ? "********" : "null";
     }
 
     public KeystoreType getKeystoreType() {
@@ -179,6 +206,15 @@ public class TlsConfiguration {
 
     public String getTruststorePassword() {
         return truststorePassword;
+    }
+
+    /**
+     * Returns {@code "********"} if the truststore password is populated, {@code "null"} if not.
+     *
+     * @return a loggable String representation of the truststore password
+     */
+    public String getTruststorePasswordForLogging() {
+        return StringUtils.isNotBlank(truststorePassword) ? "********" : "null";
     }
 
     public KeystoreType getTruststoreType() {
@@ -240,15 +276,37 @@ public class TlsConfiguration {
         return isStoreValid(truststorePath, truststorePassword, truststoreType, "truststore");
     }
 
+    /**
+     * Returns a {@code String[]} containing the keystore properties for logging. The order is
+     * {@link #getKeystorePath()}, {@link #getKeystorePasswordForLogging()},
+     * {@link #getFunctionalKeyPasswordForLogging()}, {@link #getKeystoreType()} (using the type or "null").
+     *
+     * @return a loggable String[]
+     */
+    public String[] getKeystorePropertiesForLogging() {
+        return new String[]{getKeystorePath(), getKeystorePasswordForLogging(), getFunctionalKeyPasswordForLogging(), getKeystoreType() != null ? getKeystoreType().getType() : "null"};
+    }
+
+    /**
+     * Returns a {@code String[]} containing the truststore properties for logging. The order is
+     * {@link #getTruststorePath()}, {@link #getTruststorePasswordForLogging()},
+     * {@link #getTruststoreType()} (using the type or "null").
+     *
+     * @return a loggable String[]
+     */
+    public String[] getTruststorePropertiesForLogging() {
+        return new String[]{getTruststorePath(), getTruststorePasswordForLogging(), getKeystoreType() != null ? getTruststoreType().getType() : "null"};
+    }
+
     @Override
     public String toString() {
         return new ToStringBuilder(this)
                 .append("keystorePath", keystorePath)
-                .append("keystorePassword", StringUtils.isNotBlank(keystorePassword) ? "********" : "null")
-                .append("keyPassword", StringUtils.isNotBlank(keyPassword) ? "********" : "null")
+                .append("keystorePassword", getKeystorePasswordForLogging())
+                .append("keyPassword", getKeyPasswordForLogging())
                 .append("keystoreType", keystoreType)
                 .append("truststorePath", truststorePath)
-                .append("truststorePassword", StringUtils.isNotBlank(truststorePassword) ? "********" : "null")
+                .append("truststorePassword", getTruststorePasswordForLogging())
                 .append("truststoreType", truststoreType)
                 .append("protocol", protocol)
                 .toString();
