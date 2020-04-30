@@ -30,8 +30,11 @@ import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -334,5 +337,25 @@ public class KeyStoreUtils {
                 }
             }
         }
+    }
+
+    public static String sslContextToString(SSLContext sslContext) {
+        return new ToStringBuilder(sslContext)
+                .append("protocol", sslContext.getProtocol())
+                .append("provider", sslContext.getProvider().toString())
+                .toString();
+    }
+
+    public static String sslParametersToString(SSLParameters sslParameters) {
+        return new ToStringBuilder(sslParameters)
+                .append("protocols", sslParameters.getProtocols())
+                // .append("cipherSuites", sslParameters.getCipherSuites())
+                .append("wantClientAuth", sslParameters.getWantClientAuth())
+                .append("needClientAuth", sslParameters.getNeedClientAuth())
+                // .append("identificationAlgorithm", sslParameters.getEndpointIdentificationAlgorithm())
+                // .append("algorithmConstraints", sslParameters.getAlgorithmConstraints())
+                // .append("sniNames", sslParameters.getServerNames())
+                // .append("sniMatchers", sslParameters.getSNIMatchers())
+                .toString();
     }
 }

@@ -112,6 +112,7 @@ public final class SslContextFactory {
         return initializeSSLContext(tlsConfiguration, clientAuth, keyManagers, trustManagers);
     }
 
+    @SuppressWarnings("RedundantCast")
     private static KeyManager[] getKeyManagers(TlsConfiguration tlsConfiguration) throws TlsException {
         KeyManager[] keyManagers = null;
         if (tlsConfiguration.isKeystoreValid()) {
@@ -119,7 +120,7 @@ public final class SslContextFactory {
             keyManagers = keyManagerFactory.getKeyManagers();
         } else {
             if (tlsConfiguration.isKeystorePopulated()) {
-                logger.warn("The keystore properties are populated ({}, {}, {}, {}) but not valid", tlsConfiguration.getKeystorePropertiesForLogging());
+                logger.warn("The keystore properties are populated ({}, {}, {}, {}) but not valid", (Object[]) tlsConfiguration.getKeystorePropertiesForLogging());
             } else {
                 logger.debug("The keystore properties are not populated");
             }
@@ -127,6 +128,7 @@ public final class SslContextFactory {
         return keyManagers;
     }
 
+    @SuppressWarnings("RedundantCast")
     private static TrustManager[] getTrustManagers(TlsConfiguration tlsConfiguration) throws TlsException {
         TrustManager[] trustManagers = null;
         if (tlsConfiguration.isTruststoreValid()) {
@@ -134,7 +136,7 @@ public final class SslContextFactory {
             trustManagers = trustManagerFactory.getTrustManagers();
         } else {
             if (tlsConfiguration.isTruststorePopulated()) {
-                logger.warn("The truststore properties are populated ({}, {}, {}) but not valid", tlsConfiguration.getTruststorePropertiesForLogging());
+                logger.warn("The truststore properties are populated ({}, {}, {}) but not valid", (Object[]) tlsConfiguration.getTruststorePropertiesForLogging());
             } else {
                 logger.debug("The truststore properties are not populated");
             }
@@ -158,6 +160,11 @@ public final class SslContextFactory {
                 default:
                     sslContext.getDefaultSSLParameters().setWantClientAuth(false);
             }
+
+            // Override the default SSL parameter protocol versions
+            // sslContext.getDefaultSSLParameters().setProtocols(new String[] {tlsConfiguration.getProtocol()});
+
+
             return sslContext;
         } catch (NoSuchAlgorithmException | KeyManagementException e) {
             logger.error("Encountered an error creating SSLContext from TLS configuration ({}): {}", tlsConfiguration.toString(), e.getLocalizedMessage());
