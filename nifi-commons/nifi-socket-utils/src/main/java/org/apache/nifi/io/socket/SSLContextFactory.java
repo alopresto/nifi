@@ -49,6 +49,11 @@ public class SSLContextFactory {
     private final KeyManager[] keyManagers;
     private final TrustManager[] trustManagers;
 
+    // TODO: Added default constructor for mocking during testing as this class will be removed anyway
+    public SSLContextFactory() throws UnrecoverableKeyException, CertificateException, NoSuchAlgorithmException, KeyStoreException, IOException {
+        this(null);
+    }
+
     public SSLContextFactory(final NiFiProperties properties) throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException, UnrecoverableKeyException {
         keystore = properties.getProperty(NiFiProperties.SECURITY_KEYSTORE);
         keystorePass = getPass(properties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD));

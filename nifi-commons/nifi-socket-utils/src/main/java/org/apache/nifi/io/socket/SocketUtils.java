@@ -25,13 +25,12 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
-
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
-
 import org.apache.nifi.logging.NiFiLog;
-
+import org.apache.nifi.security.util.CertificateUtils;
+import org.apache.nifi.security.util.TlsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +95,7 @@ public final class SocketUtils {
         return socket;
     }
 
+    // TODO: Change method signature to throw TlsException
     public static ServerSocket createServerSocket(final int port, final ServerSocketConfiguration config)
             throws IOException, KeyManagementException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, CertificateException {
         if (config == null) {
@@ -108,7 +108,10 @@ public final class SocketUtils {
             serverSocket = new ServerSocket(port);
         } else {
             serverSocket = sslContext.getServerSocketFactory().createServerSocket(port);
-            ((SSLServerSocket) serverSocket).setNeedClientAuth(config.getNeedClientAuth());
+            final SSLServerSocket sslServerSocket = (SSLServerSocket) serverSocket;
+            sslServerSocket.setNeedClientAuth(config.getNeedClientAuth());
+            // Enforce custom protocols on socket
+            sslServerSocket.setEnabledProtocols(CertificateUtils.CURRENT_SUPPORTED_TLS_PROTOCOL_VERSIONS);
         }
 
         if (config.getSocketTimeout() != null) {
@@ -126,6 +129,29 @@ public final class SocketUtils {
         return serverSocket;
     }
 
+    /**
+     * Returns a {@link SSLServerSocket} for the given port and configuration.
+     *
+     * @param port the port for the socket
+     * @param serverSocketConfiguration the {@link ServerSocketConfiguration}
+     * @return the SSL server socket
+     * @throws TlsException if there was a problem creating the socket
+     */
+    public static SSLServerSocket createSSLServerSocket(final int port, final ServerSocketConfiguration serverSocketConfiguration) throws TlsException {
+        try {
+            ServerSocket serverSocket = createServerSocket(port, serverSocketConfiguration);
+            if (serverSocket instanceof SSLServerSocket) {
+                return ((SSLServerSocket) serverSocket);
+            } else {
+                throw new TlsException("Created server socket does not support SSL/TLS");
+            }
+        } catch (IOException | KeyManagementException | UnrecoverableKeyException | NoSuchAlgorithmException | KeyStoreException | CertificateException e) {
+            logger.error("Encountered an error creating SSLServerSocket: {}", e.getLocalizedMessage());
+            throw new TlsException("Error creating SSLServerSocket", e);
+        }
+
+    }
+
     public static void closeQuietly(final Socket socket) {
         if (socket == null) {
             return;
@@ -133,17 +159,17 @@ public final class SocketUtils {
 
         try {
             try {
-                // can't shudown input/output individually with secure sockets
-                if ((socket instanceof SSLSocket) == false) {
-                    if (socket.isInputShutdown() == false) {
+                // Can't shutdown input/output individually with secure sockets
+                if (!(socket instanceof SSLSocket)) {
+                    if (!socket.isInputShutdown()) {
                         socket.shutdownInput();
                     }
-                    if (socket.isOutputShutdown() == false) {
+                    if (!socket.isOutputShutdown()) {
                         socket.shutdownOutput();
                     }
                 }
             } finally {
-                if (socket.isClosed() == false) {
+                if (!socket.isClosed()) {
                     socket.close();
                 }
             }
