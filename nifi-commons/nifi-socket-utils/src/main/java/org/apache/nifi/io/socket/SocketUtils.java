@@ -20,11 +20,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
@@ -97,7 +92,7 @@ public final class SocketUtils {
 
     // TODO: Change method signature to throw TlsException
     public static ServerSocket createServerSocket(final int port, final ServerSocketConfiguration config)
-            throws IOException, KeyManagementException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, CertificateException {
+            throws IOException, TlsException {
         if (config == null) {
             throw new NullPointerException("Configuration may not be null.");
         }
@@ -145,7 +140,7 @@ public final class SocketUtils {
             } else {
                 throw new TlsException("Created server socket does not support SSL/TLS");
             }
-        } catch (IOException | KeyManagementException | UnrecoverableKeyException | NoSuchAlgorithmException | KeyStoreException | CertificateException e) {
+        } catch (IOException e) {
             logger.error("Encountered an error creating SSLServerSocket: {}", e.getLocalizedMessage());
             throw new TlsException("Error creating SSLServerSocket", e);
         }

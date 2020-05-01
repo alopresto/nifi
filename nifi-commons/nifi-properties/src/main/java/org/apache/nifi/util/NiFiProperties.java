@@ -1658,7 +1658,8 @@ public abstract class NiFiProperties {
      * If one is not specified no properties will be loaded by default.
      *
      * @param propertiesFilePath   if provided properties will be loaded from
-     *                             given file; else will be loaded from System property. Can be null.
+     *                             given file; else will be loaded from System property.
+     *                             Can be null. Passing {@code ""} skips any attempt to load from the file system.
      * @param additionalProperties allows overriding of properties with the
      *                             supplied values. these will be applied after loading from any properties
      *                             file. Can be null or empty.
@@ -1667,18 +1668,39 @@ public abstract class NiFiProperties {
     public static NiFiProperties createBasicNiFiProperties(final String propertiesFilePath, final Map<String, String> additionalProperties) {
         final Map<String, String> addProps = (additionalProperties == null) ? Collections.EMPTY_MAP : additionalProperties;
         final Properties properties = new Properties();
+
+        // If the provided file path is provided but empty, skip the attempt to load from file
+        if (propertiesFilePath != null && !propertiesFilePath.equals("")) {
+            readFromPropertiesFile(propertiesFilePath, properties);
+        }
+
+        addProps.forEach(properties::setProperty);
+        return new NiFiProperties() {
+            @Override
+            public String getProperty(String key) {
+                return properties.getProperty(key);
+            }
+
+            @Override
+            public Set<String> getPropertyKeys() {
+                return properties.stringPropertyNames();
+            }
+        };
+    }
+
+    private static void readFromPropertiesFile(String propertiesFilePath, Properties properties) {
         final String nfPropertiesFilePath = (propertiesFilePath == null)
                 ? System.getProperty(NiFiProperties.PROPERTIES_FILE_PATH)
                 : propertiesFilePath;
         if (nfPropertiesFilePath != null) {
             final File propertiesFile = new File(nfPropertiesFilePath.trim());
             if (!propertiesFile.exists()) {
-                throw new RuntimeException("Properties file doesn't exist \'"
-                        + propertiesFile.getAbsolutePath() + "\'");
+                throw new RuntimeException("Properties file doesn't exist '"
+                        + propertiesFile.getAbsolutePath() + "'");
             }
             if (!propertiesFile.canRead()) {
-                throw new RuntimeException("Properties file exists but cannot be read \'"
-                        + propertiesFile.getAbsolutePath() + "\'");
+                throw new RuntimeException("Properties file exists but cannot be read '"
+                        + propertiesFile.getAbsolutePath() + "'");
             }
             InputStream inStream = null;
             try {
@@ -1699,20 +1721,6 @@ public abstract class NiFiProperties {
                 }
             }
         }
-        addProps.entrySet().stream().forEach((entry) -> {
-            properties.setProperty(entry.getKey(), entry.getValue());
-        });
-        return new NiFiProperties() {
-            @Override
-            public String getProperty(String key) {
-                return properties.getProperty(key);
-            }
-
-            @Override
-            public Set<String> getPropertyKeys() {
-                return properties.stringPropertyNames();
-            }
-        };
     }
 
     /**

@@ -16,10 +16,8 @@
  */
 package org.apache.nifi.io.socket
 
-
 import org.apache.nifi.security.util.CertificateUtils
 import org.apache.nifi.security.util.KeystoreType
-import org.apache.nifi.security.util.SslContextFactory
 import org.apache.nifi.security.util.TlsConfiguration
 import org.apache.nifi.util.NiFiProperties
 import org.bouncycastle.jce.provider.BouncyCastleProvider
@@ -32,7 +30,6 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
 import java.security.Security
 
@@ -64,8 +61,8 @@ class SocketUtilsTest extends GroovyTestCase {
     private NiFiProperties mockNiFiProperties = NiFiProperties.createBasicNiFiProperties(null, DEFAULT_PROPS)
 
     // A static TlsConfiguration referencing the test resource keystore and truststore
-    private static final TlsConfiguration TLS_CONFIGURATION = new TlsConfiguration(KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_PASSWORD, KEYSTORE_TYPE, TRUSTSTORE_PATH, TRUSTSTORE_PASSWORD, TRUSTSTORE_TYPE, PROTOCOL)
-    private static final SSLContext sslContext = SslContextFactory.createSslContext(TLS_CONFIGURATION, SslContextFactory.ClientAuth.NONE)
+//    private static final TlsConfiguration TLS_CONFIGURATION = new TlsConfiguration(KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_PASSWORD, KEYSTORE_TYPE, TRUSTSTORE_PATH, TRUSTSTORE_PASSWORD, TRUSTSTORE_TYPE, PROTOCOL)
+//    private static final SSLContext sslContext = SslContextFactory.createSslContext(TLS_CONFIGURATION, SslContextFactory.ClientAuth.NONE)
 
     @BeforeClass
     static void setUpOnce() throws Exception {
@@ -89,9 +86,8 @@ class SocketUtilsTest extends GroovyTestCase {
     @Test
     void testCreateSSLServerSocketShouldRestrictTlsProtocols() {
         // Arrange
-        SSLContextFactory sslContextFactory = new SSLContextFactory(mockNiFiProperties)
         ServerSocketConfiguration mockServerSocketConfiguration = new ServerSocketConfiguration()
-        mockServerSocketConfiguration.setSSLContextFactory(sslContextFactory)
+        mockServerSocketConfiguration.setTlsConfiguration(TlsConfiguration.fromNiFiProperties(mockNiFiProperties))
 
         // Act
         SSLServerSocket sslServerSocket = SocketUtils.createSSLServerSocket(0, mockServerSocketConfiguration)
@@ -108,9 +104,8 @@ class SocketUtilsTest extends GroovyTestCase {
     @Test
     void testCreateServerSocketShouldRestrictTlsProtocols() {
         // Arrange
-        SSLContextFactory sslContextFactory = new SSLContextFactory(mockNiFiProperties)
         ServerSocketConfiguration mockServerSocketConfiguration = new ServerSocketConfiguration()
-        mockServerSocketConfiguration.setSSLContextFactory(sslContextFactory)
+        mockServerSocketConfiguration.setTlsConfiguration(TlsConfiguration.fromNiFiProperties(mockNiFiProperties))
 
         // Act
         SSLServerSocket sslServerSocket = SocketUtils.createServerSocket(0, mockServerSocketConfiguration) as SSLServerSocket

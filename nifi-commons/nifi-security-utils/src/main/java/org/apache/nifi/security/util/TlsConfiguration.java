@@ -127,6 +127,10 @@ public class TlsConfiguration {
      * @return a populated TlsConfiguration container object
      */
     public static TlsConfiguration fromNiFiProperties(NiFiProperties niFiProperties) {
+        if (niFiProperties == null) {
+            throw new IllegalArgumentException("The NiFi properties cannot be null");
+        }
+
         String keystorePath = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE);
         String keystorePassword = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD);
         String keyPassword = niFiProperties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD);
@@ -184,7 +188,7 @@ public class TlsConfiguration {
      * @return the key or keystore password actually populated
      */
     public String getFunctionalKeyPassword() {
-        return keyPassword != null && !keyPassword.isEmpty() ? keyPassword : keystorePassword;
+        return StringUtils.isNotBlank(keyPassword) ? keyPassword : keystorePassword;
     }
 
     /**

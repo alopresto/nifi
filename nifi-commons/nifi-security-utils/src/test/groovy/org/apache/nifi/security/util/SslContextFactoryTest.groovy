@@ -110,4 +110,43 @@ class SslContextFactoryTest extends GroovyTestCase {
         customSslSocket.setSSLParameters(customParameters)
         assert customSslSocket.enabledProtocols == ["TLSv1.2"] as String[]
     }
+
+    @Test
+    void testCreateSslContextFromTlsConfigurationShouldHandleEmptyKeyPassword() {
+        // Arrange
+
+        // Change the keystore to one with the same keystore and key password, but don't provide the key password
+        Map missingKeyPasswordProps = DEFAULT_PROPS + [
+                (NiFiProperties.SECURITY_KEYSTORE): "src/test/resources/samepassword.jks",
+                (NiFiProperties.SECURITY_KEY_PASSWD): "",
+        ]
+        NiFiProperties propertiesWithoutKeyPassword = NiFiProperties.createBasicNiFiProperties(null, missingKeyPasswordProps)
+        TlsConfiguration configWithoutKeyPassword = TlsConfiguration.fromNiFiProperties(propertiesWithoutKeyPassword)
+        logger.info("Creating SSL Context from TLS Configuration: ${configWithoutKeyPassword}")
+
+        // Act
+        SSLContext sslContext = SslContextFactory.createSslContext(configWithoutKeyPassword, SslContextFactory.ClientAuth.NONE)
+        logger.info("Created SSL Context: ${KeyStoreUtils.sslContextToString(sslContext)}")
+
+        // Assert
+        assert sslContext.protocol == configWithoutKeyPassword.protocol
+
+        def defaultSSLParameters = sslContext.defaultSSLParameters
+        logger.info("Default SSL Parameters: ${KeyStoreUtils.sslParametersToString(defaultSSLParameters)}" as String)
+        assert defaultSSLParameters.getProtocols() == ["TLSv1.2", "TLSv1.1", "TLSv1"] as String[]
+        assert !defaultSSLParameters.needClientAuth
+        assert !defaultSSLParameters.wantClientAuth
+
+        // Check a socket created from this context
+        SSLServerSocket sslSocket = sslContext.serverSocketFactory.createServerSocket() as SSLServerSocket
+        logger.info("Created SSL (server) socket: ${sslSocket}")
+        assert sslSocket.enabledProtocols.contains("TLSv1.2")
+
+        // Override the SSL parameters protocol version
+        SSLServerSocket customSslSocket = sslContext.serverSocketFactory.createServerSocket() as SSLServerSocket
+        def customParameters = customSslSocket.getSSLParameters()
+        customParameters.setProtocols(["TLSv1.2"] as String[])
+        customSslSocket.setSSLParameters(customParameters)
+        assert customSslSocket.enabledProtocols == ["TLSv1.2"] as String[]
+    }
 }
