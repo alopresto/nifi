@@ -75,7 +75,8 @@ public class TlsConfiguration {
      * @param truststorePassword the truststore password
      * @param truststoreType     the truststore type
      */
-    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword, KeystoreType keystoreType, String truststorePath, String truststorePassword, KeystoreType truststoreType) {
+    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
+                            KeystoreType keystoreType, String truststorePath, String truststorePassword, KeystoreType truststoreType) {
         this(keystorePath, keystorePassword, keyPassword, keystoreType, truststorePath, truststorePassword, truststoreType, TLS_PROTOCOL_VERSION);
     }
 
@@ -91,7 +92,8 @@ public class TlsConfiguration {
      * @param truststoreType     the truststore type
      * @param protocol           the TLS protocol version string
      */
-    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword, KeystoreType keystoreType, String truststorePath, String truststorePassword, KeystoreType truststoreType, String protocol) {
+    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
+                            KeystoreType keystoreType, String truststorePath, String truststorePassword, KeystoreType truststoreType, String protocol) {
         this.keystorePath = keystorePath;
         this.keystorePassword = keystorePassword;
         this.keyPassword = keyPassword;
@@ -144,10 +146,13 @@ public class TlsConfiguration {
             String logKeystorePassword = StringUtils.isNotBlank(keystorePassword) ? "********" : "null";
             String logKeyPassword = StringUtils.isNotBlank(keyPassword) ? "********" : "null";
             String logTruststorePassword = StringUtils.isNotBlank(truststorePassword) ? "********" : "null";
-            logger.debug("Instantiating TlsConfiguration from NiFi properties: {}, {}, {}, {}, {}, {}, {}, {}", keystorePath, logKeystorePassword, logKeyPassword, keystoreType, truststorePath, logTruststorePassword, truststoreType, protocol);
+            logger.debug("Instantiating TlsConfiguration from NiFi properties: {}, {}, {}, {}, {}, {}, {}, {}",
+                    keystorePath, logKeystorePassword, logKeyPassword, keystoreType, truststorePath, logTruststorePassword, truststoreType, protocol);
         }
 
-        return new TlsConfiguration(keystorePath, keystorePassword, keyPassword, KeystoreType.valueOf(keystoreType), truststorePath, truststorePassword, KeystoreType.valueOf(truststoreType), protocol);
+        return new TlsConfiguration(keystorePath, keystorePassword, keyPassword,
+                KeystoreType.valueOf(keystoreType), truststorePath, truststorePassword,
+                KeystoreType.valueOf(truststoreType), protocol);
     }
 
     // Getters & setters
@@ -252,7 +257,9 @@ public class TlsConfiguration {
         } else if (StringUtils.isNotBlank(keystorePassword) && !keystorePassword.equals(keyPassword)) {
             logger.debug("Simple keystore validity check failed; trying with separate key password");
             try {
-                return isKeystorePopulated() && KeyStoreUtils.isKeyPasswordCorrect(new File(keystorePath).toURI().toURL(), keystoreType, keystorePassword.toCharArray(), getFunctionalKeyPassword().toCharArray());
+                return isKeystorePopulated()
+                        && KeyStoreUtils.isKeyPasswordCorrect(new File(keystorePath).toURI().toURL(), keystoreType, keystorePassword.toCharArray(),
+                        getFunctionalKeyPassword().toCharArray());
             } catch (MalformedURLException e) {
                 logger.error("Encountered an error validating the keystore: " + e.getLocalizedMessage());
                 return false;

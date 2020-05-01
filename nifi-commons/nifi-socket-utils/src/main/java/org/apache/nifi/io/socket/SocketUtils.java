@@ -90,7 +90,15 @@ public final class SocketUtils {
         return socket;
     }
 
-    // TODO: Change method signature to throw TlsException
+    /**
+     * Returns a {@link ServerSocket} for the given port and configuration.
+     *
+     * @param port the port for the socket
+     * @param config the {@link ServerSocketConfiguration}
+     * @return the server socket (can be configured for SSL)
+     * @throws IOException if there is a problem creating the socket
+     * @throws TlsException if there is a problem creating the socket
+     */
     public static ServerSocket createServerSocket(final int port, final ServerSocketConfiguration config)
             throws IOException, TlsException {
         if (config == null) {
