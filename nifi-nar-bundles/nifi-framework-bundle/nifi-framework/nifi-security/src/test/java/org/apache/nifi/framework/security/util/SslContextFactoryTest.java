@@ -70,6 +70,7 @@ public class SslContextFactoryTest {
 
     @Test(expected = SslContextCreationException.class)
     public void testCreateSslContextWithNoMutualAuth() {
+        // Should throw an exception because keystore properties are present and truststore properties are absent
         SslContextFactory.createSslContext(authProps);
     }
 

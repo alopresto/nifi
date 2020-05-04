@@ -1,3 +1,19 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.nifi.security.util
 
 
@@ -39,7 +55,7 @@ class TlsConfigurationTest extends GroovyTestCase {
             (NiFiProperties.SECURITY_TRUSTSTORE_TYPE)  : TRUSTSTORE_TYPE.getType(),
     ]
 
-    private NiFiProperties mockNiFiProperties = NiFiProperties.createBasicNiFiProperties(null, DEFAULT_PROPS)
+    private NiFiProperties mockNiFiProperties = NiFiProperties.createBasicNiFiProperties("", DEFAULT_PROPS)
 
     private TlsConfiguration tlsConfiguration
 
@@ -71,6 +87,23 @@ class TlsConfigurationTest extends GroovyTestCase {
 
         // Assert
         assert fromProperties == tlsConfiguration
+    }
+
+    @Test
+    void testCreateFromNiFiPropertiesShouldHandleNullKeystoreTypes() {
+        // Arrange
+        def noKeystoreTypesProps = NiFiProperties.createBasicNiFiProperties("", DEFAULT_PROPS +
+                [(NiFiProperties.SECURITY_KEYSTORE_TYPE)  : "",
+                 (NiFiProperties.SECURITY_TRUSTSTORE_TYPE): ""
+                ])
+
+        // Act
+        TlsConfiguration fromProperties = TlsConfiguration.fromNiFiProperties(noKeystoreTypesProps)
+        logger.info("Created TlsConfiguration: ${fromProperties}")
+
+        // Assert
+        assert fromProperties.keystoreType == null
+        assert fromProperties.truststoreType == null
     }
 
     @Test
@@ -109,28 +142,34 @@ class TlsConfigurationTest extends GroovyTestCase {
     void testShouldCheckKeystorePopulation() {
         // Arrange
         TlsConfiguration empty = new TlsConfiguration()
+        TlsConfiguration noKeystorePassword = new TlsConfiguration(KEYSTORE_PATH, "", KEY_PASSWORD, KEYSTORE_TYPE, TRUSTSTORE_PATH, TRUSTSTORE_PASSWORD, TRUSTSTORE_TYPE)
 
         // Act
         boolean normalIsPopulated = tlsConfiguration.isKeystorePopulated()
         boolean emptyIsPopulated = empty.isKeystorePopulated()
+        boolean noPasswordIsPopulated = noKeystorePassword.isKeystorePopulated()
 
         // Assert
         assert normalIsPopulated
         assert !emptyIsPopulated
+        assert !noPasswordIsPopulated
     }
 
     @Test
     void testShouldCheckTruststorePopulation() {
         // Arrange
         TlsConfiguration empty = new TlsConfiguration()
+        TlsConfiguration noTruststorePassword = new TlsConfiguration(KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_PASSWORD, KEYSTORE_TYPE, TRUSTSTORE_PATH, "", TRUSTSTORE_TYPE)
 
         // Act
         boolean normalIsPopulated = tlsConfiguration.isTruststorePopulated()
         boolean emptyIsPopulated = empty.isTruststorePopulated()
+        boolean noPasswordIsPopulated = noTruststorePassword.isTruststorePopulated()
 
         // Assert
         assert normalIsPopulated
         assert !emptyIsPopulated
+        assert noPasswordIsPopulated
     }
 
     @Test

@@ -16,89 +16,91 @@
  */
 package org.apache.nifi.framework.security.util;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.security.KeyManagementException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.security.util.CertificateUtils;
-import org.apache.nifi.security.util.KeyStoreUtils;
+import org.apache.nifi.security.util.TlsConfiguration;
+import org.apache.nifi.security.util.TlsException;
 import org.apache.nifi.util.NiFiProperties;
 
 /**
  * A factory for creating SSL contexts using the application's security
  * properties.
- *
  */
 public final class SslContextFactory {
 
     public static SSLContext createSslContext(final NiFiProperties props)
             throws SslContextCreationException {
 
-        if (hasKeystoreProperties(props) == false) {
-            return null;
-        } else if (hasTruststoreProperties(props) == false) {
-            throw new SslContextCreationException("SSL context cannot be created because truststore properties have not been configured.");
-        }
-
         try {
-            // prepare the trust store
-            final KeyStore trustStore;
-            if (hasTruststoreProperties(props)) {
-                trustStore = KeyStoreUtils.getTrustStore(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE));
-                try (final InputStream trustStoreStream = new FileInputStream(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))) {
-                    trustStore.load(trustStoreStream, props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD).toCharArray());
-                }
-            } else {
-                trustStore = null;
-            }
-            final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init(trustStore);
+            final TlsConfiguration tlsConfiguration = TlsConfiguration.fromNiFiProperties(props);
 
-            // prepare the key store
-            final KeyStore keyStore = KeyStoreUtils.getKeyStore(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE));
-            try (final InputStream keyStoreStream = new FileInputStream(props.getProperty(NiFiProperties.SECURITY_KEYSTORE))) {
-                keyStore.load(keyStoreStream, props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
-            }
-            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-
-            // if the key password is provided, try to use that - otherwise default to the keystore password
-            if (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEY_PASSWD))) {
-                keyManagerFactory.init(keyStore, props.getProperty(NiFiProperties.SECURITY_KEY_PASSWD).toCharArray());
-            } else {
-                keyManagerFactory.init(keyStore, props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
+            // Legacy expectation that missing truststore props (when keystore present) throws exception
+            if (tlsConfiguration.isKeystorePopulated() && !tlsConfiguration.isTruststorePopulated()) {
+                throw new SslContextCreationException("Exception expected by legacy code");
             }
 
-            // initialize the ssl context
-            final SSLContext sslContext = SSLContext.getInstance(CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
-            sslContext.init(keyManagerFactory.getKeyManagers(),
-                    trustManagerFactory.getTrustManagers(), null);
-            sslContext.getDefaultSSLParameters().setNeedClientAuth(true);
-
-            return sslContext;
-
-        } catch (final KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | UnrecoverableKeyException | KeyManagementException e) {
+            // Need client auth is hardcoded to true below, so use REQUIRED
+            return org.apache.nifi.security.util.SslContextFactory.createSslContext(tlsConfiguration, org.apache.nifi.security.util.SslContextFactory.ClientAuth.REQUIRED);
+        } catch (TlsException e) {
+            // TODO: Only wrap in legacy exception during refactoring
             throw new SslContextCreationException(e);
         }
+
+        // if (hasKeystoreProperties(props) == false) {
+        //     return null;
+        // } else if (hasTruststoreProperties(props) == false) {
+        //     throw new SslContextCreationException("SSL context cannot be created because truststore properties have not been configured.");
+        // }
+        //
+        // try {
+        //     // prepare the trust store
+        //     final KeyStore trustStore;
+        //     if (hasTruststoreProperties(props)) {
+        //         trustStore = KeyStoreUtils.getTrustStore(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE));
+        //         try (final InputStream trustStoreStream = new FileInputStream(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))) {
+        //             trustStore.load(trustStoreStream, props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD).toCharArray());
+        //         }
+        //     } else {
+        //         trustStore = null;
+        //     }
+        //     final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        //     trustManagerFactory.init(trustStore);
+        //
+        //     // prepare the key store
+        //     final KeyStore keyStore = KeyStoreUtils.getKeyStore(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE));
+        //     try (final InputStream keyStoreStream = new FileInputStream(props.getProperty(NiFiProperties.SECURITY_KEYSTORE))) {
+        //         keyStore.load(keyStoreStream, props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
+        //     }
+        //     KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        //
+        //     // if the key password is provided, try to use that - otherwise default to the keystore password
+        //     if (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEY_PASSWD))) {
+        //         keyManagerFactory.init(keyStore, props.getProperty(NiFiProperties.SECURITY_KEY_PASSWD).toCharArray());
+        //     } else {
+        //         keyManagerFactory.init(keyStore, props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD).toCharArray());
+        //     }
+        //
+        //     // initialize the ssl context
+        //     final SSLContext sslContext = SSLContext.getInstance(CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
+        //     sslContext.init(keyManagerFactory.getKeyManagers(),
+        //             trustManagerFactory.getTrustManagers(), null);
+        //     sslContext.getDefaultSSLParameters().setNeedClientAuth(true);
+        //
+        //     return sslContext;
+        //
+        // } catch (final KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | UnrecoverableKeyException | KeyManagementException e) {
+        //     throw new SslContextCreationException(e);
+        // }
     }
 
-    private static boolean hasKeystoreProperties(final NiFiProperties props) {
-        return (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE))
-                && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD))
-                && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE)));
-    }
-
-    private static boolean hasTruststoreProperties(final NiFiProperties props) {
-        return (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))
-                && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE)));
-    }
+    // private static boolean hasKeystoreProperties(final NiFiProperties props) {
+    //     return (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE))
+    //             && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD))
+    //             && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE)));
+    // }
+    //
+    // private static boolean hasTruststoreProperties(final NiFiProperties props) {
+    //     return (StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE))
+    //             && StringUtils.isNotBlank(props.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE)));
+    // }
 
 }

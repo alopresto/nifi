@@ -152,7 +152,8 @@ public class KeyStoreUtils {
      * @throws TlsException if there is a problem initializing or reading from the keystore
      */
     public static KeyManagerFactory loadKeyManagerFactory(TlsConfiguration tlsConfiguration) throws TlsException {
-        return loadKeyManagerFactory(tlsConfiguration.getKeystorePath(), tlsConfiguration.getKeystorePassword(), tlsConfiguration.getFunctionalKeyPassword(), tlsConfiguration.getKeystoreType().getType());
+        return loadKeyManagerFactory(tlsConfiguration.getKeystorePath(), tlsConfiguration.getKeystorePassword(),
+                tlsConfiguration.getFunctionalKeyPassword(), tlsConfiguration.getKeystoreType().getType());
     }
 
     /**
@@ -202,7 +203,7 @@ public class KeyStoreUtils {
     /**
      * Returns the {@link TrustManagerFactory} from the provided {@link KeyStore} object, initialized.
      *
-     * @param trustStore         the loaded truststore
+     * @param trustStore the loaded truststore
      * @return the trust manager factory
      * @throws TlsException if there is a problem initializing or reading from the truststore
      */
@@ -238,10 +239,8 @@ public class KeyStoreUtils {
      * @throws TlsException if there is a problem initializing or reading from the truststore
      */
     public static TrustManagerFactory loadTrustManagerFactory(String truststorePath, String truststorePassword, String truststoreType) throws TlsException {
-        if (StringUtils.isEmpty(truststorePassword)) {
-            throw new IllegalArgumentException("The truststore password cannot be null or empty");
-        }
-        final char[] truststorePasswordChars = truststorePassword.toCharArray();
+        // Legacy truststore passwords can be empty
+        final char[] truststorePasswordChars = StringUtils.isNotBlank(truststorePassword) ? truststorePassword.toCharArray() : null;
         KeyStore trustStore = loadTrustStore(truststorePath, truststorePasswordChars, truststoreType);
         return getTrustManagerFactoryFromTrustStore(trustStore);
     }

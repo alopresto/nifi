@@ -1669,8 +1669,8 @@ public abstract class NiFiProperties {
         final Map<String, String> addProps = (additionalProperties == null) ? Collections.EMPTY_MAP : additionalProperties;
         final Properties properties = new Properties();
 
-        // If the provided file path is provided but empty, skip the attempt to load from file
-        if (propertiesFilePath != null && !propertiesFilePath.equals("")) {
+        // If the provided file path is null or provided, load from file. If it is "", skip this
+        if (propertiesFilePath == null || StringUtils.isNotBlank(propertiesFilePath)) {
             readFromPropertiesFile(propertiesFilePath, properties);
         }
 
