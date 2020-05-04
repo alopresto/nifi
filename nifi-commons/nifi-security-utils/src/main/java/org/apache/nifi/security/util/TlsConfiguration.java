@@ -30,7 +30,10 @@ import org.slf4j.LoggerFactory;
  */
 public class TlsConfiguration {
     private static final Logger logger = LoggerFactory.getLogger(TlsConfiguration.class);
+
     private static final String TLS_PROTOCOL_VERSION = CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION;
+    private static final String MASKED_PASSWORD_LOG = "********";
+    private static final String NULL_LOG = "<null>";
 
     private final String keystorePath;
     private final String keystorePassword;
@@ -142,21 +145,20 @@ public class TlsConfiguration {
         String tt = niFiProperties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE);
         String protocol = TLS_PROTOCOL_VERSION;
 
-        if (logger.isDebugEnabled()) {
-            String logKeystorePassword = StringUtils.isNotBlank(keystorePassword) ? "********" : "null";
-            String logKeyPassword = StringUtils.isNotBlank(keyPassword) ? "********" : "null";
-            String logTruststorePassword = StringUtils.isNotBlank(truststorePassword) ? "********" : "null";
-            logger.debug("Instantiating TlsConfiguration from NiFi properties: {}, {}, {}, {}, {}, {}, {}, {}",
-                    keystorePath, logKeystorePassword, logKeyPassword, kt, truststorePath, logTruststorePassword, tt, protocol);
-        }
-
         // Handle KeystoreTypes which might be null or empty
         KeystoreType keystoreType = KeystoreType.isValidKeystoreType(kt) ? KeystoreType.valueOf(kt) : null;
         KeystoreType truststoreType = KeystoreType.isValidKeystoreType(tt) ? KeystoreType.valueOf(tt) : null;
 
-        return new TlsConfiguration(keystorePath, keystorePassword, keyPassword,
+        final TlsConfiguration tlsConfiguration = new TlsConfiguration(keystorePath, keystorePassword, keyPassword,
                 keystoreType, truststorePath, truststorePassword,
                 truststoreType, protocol);
+        if (logger.isDebugEnabled()) {
+            logger.debug("Instantiating TlsConfiguration from NiFi properties: {}, {}, {}, {}, {}, {}, {}, {}",
+                    keystorePath, tlsConfiguration.getKeystorePasswordForLogging(), tlsConfiguration.getKeyPasswordForLogging(), kt,
+                    truststorePath, tlsConfiguration.getTruststorePasswordForLogging(), tt, protocol);
+        }
+
+        return tlsConfiguration;
     }
 
     // Getters & setters
@@ -170,12 +172,12 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the keystore password is populated, {@code "null"} if not.
+     * Returns {@code "********"} if the keystore password is populated, {@code "<null>"} if not.
      *
      * @return a loggable String representation of the keystore password
      */
     public String getKeystorePasswordForLogging() {
-        return StringUtils.isNotBlank(keystorePassword) ? "********" : "null";
+        return maskPasswordForLog(keystorePassword);
     }
 
     public String getKeyPassword() {
@@ -183,12 +185,12 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the key password is populated, {@code "null"} if not.
+     * Returns {@code "********"} if the key password is populated, {@code "<null>"} if not.
      *
      * @return a loggable String representation of the key password
      */
     public String getKeyPasswordForLogging() {
-        return StringUtils.isNotBlank(keyPassword) ? "********" : "null";
+        return maskPasswordForLog(keyPassword);
     }
 
     /**
@@ -201,12 +203,12 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the functional key password is populated, {@code "null"} if not.
+     * Returns {@code "********"} if the functional key password is populated, {@code "<null>"} if not.
      *
      * @return a loggable String representation of the functional key password
      */
     public String getFunctionalKeyPasswordForLogging() {
-        return StringUtils.isNotBlank(getFunctionalKeyPassword()) ? "********" : "null";
+        return maskPasswordForLog(getFunctionalKeyPassword());
     }
 
     public KeystoreType getKeystoreType() {
@@ -222,12 +224,12 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the truststore password is populated, {@code "null"} if not.
+     * Returns {@code "********"} if the truststore password is populated, {@code "<null>"} if not.
      *
      * @return a loggable String representation of the truststore password
      */
     public String getTruststorePasswordForLogging() {
-        return StringUtils.isNotBlank(truststorePassword) ? "********" : "null";
+        return maskPasswordForLog(truststorePassword);
     }
 
     public KeystoreType getTruststoreType() {
@@ -294,23 +296,23 @@ public class TlsConfiguration {
     /**
      * Returns a {@code String[]} containing the keystore properties for logging. The order is
      * {@link #getKeystorePath()}, {@link #getKeystorePasswordForLogging()},
-     * {@link #getFunctionalKeyPasswordForLogging()}, {@link #getKeystoreType()} (using the type or "null").
+     * {@link #getFunctionalKeyPasswordForLogging()}, {@link #getKeystoreType()} (using the type or "<null>").
      *
      * @return a loggable String[]
      */
     public String[] getKeystorePropertiesForLogging() {
-        return new String[]{getKeystorePath(), getKeystorePasswordForLogging(), getFunctionalKeyPasswordForLogging(), getKeystoreType() != null ? getKeystoreType().getType() : "null"};
+        return new String[]{getKeystorePath(), getKeystorePasswordForLogging(), getFunctionalKeyPasswordForLogging(), getKeystoreType() != null ? getKeystoreType().getType() : NULL_LOG};
     }
 
     /**
      * Returns a {@code String[]} containing the truststore properties for logging. The order is
      * {@link #getTruststorePath()}, {@link #getTruststorePasswordForLogging()},
-     * {@link #getTruststoreType()} (using the type or "null").
+     * {@link #getTruststoreType()} (using the type or "<null>").
      *
      * @return a loggable String[]
      */
     public String[] getTruststorePropertiesForLogging() {
-        return new String[]{getTruststorePath(), getTruststorePasswordForLogging(), getKeystoreType() != null ? getTruststoreType().getType() : "null"};
+        return new String[]{getTruststorePath(), getTruststorePasswordForLogging(), getKeystoreType() != null ? getTruststoreType().getType() : NULL_LOG};
     }
 
     @Override
@@ -345,6 +347,10 @@ public class TlsConfiguration {
     @Override
     public int hashCode() {
         return Objects.hash(keystorePath, keystorePassword, keyPassword, keystoreType, truststorePath, truststorePassword, truststoreType, protocol);
+    }
+
+    private static String maskPasswordForLog(String password) {
+        return StringUtils.isNotBlank(password) ? MASKED_PASSWORD_LOG : NULL_LOG;
     }
 
     private boolean isStorePopulated(String path, String password, KeystoreType type, String label) {
