@@ -32,6 +32,7 @@ import java.security.cert.CertificateException;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.TrustManagerFactory;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -355,6 +356,16 @@ public class KeyStoreUtils {
                 // .append("algorithmConstraints", sslParameters.getAlgorithmConstraints())
                 // .append("sniNames", sslParameters.getServerNames())
                 // .append("sniMatchers", sslParameters.getSNIMatchers())
+                .toString();
+    }
+
+    public static String sslServerSocketToString(SSLServerSocket sslServerSocket) {
+        return new ToStringBuilder(sslServerSocket)
+                .append("enabledProtocols", sslServerSocket.getEnabledProtocols())
+                // .append("enabledCipherSuites", sslServerSocket.getEnabledCipherSuites())
+                .append("needClientAuth", sslServerSocket.getNeedClientAuth())
+                .append("wantClientAuth", sslServerSocket.getWantClientAuth())
+                .append("useClientMode", sslServerSocket.getUseClientMode())
                 .toString();
     }
 }

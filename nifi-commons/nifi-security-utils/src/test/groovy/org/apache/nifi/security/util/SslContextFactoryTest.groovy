@@ -269,5 +269,4 @@ class SslContextFactoryTest extends GroovyTestCase {
         customSslSocket.setSSLParameters(customParameters)
         assert customSslSocket.enabledProtocols == ["TLSv1.2"] as String[]
     }
-
 }

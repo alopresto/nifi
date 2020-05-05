@@ -17,13 +17,6 @@
 
 package org.apache.nifi.controller.queue.clustered.server;
 
-import org.apache.nifi.events.EventReporter;
-import org.apache.nifi.reporting.Severity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -38,6 +31,13 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLServerSocket;
+import org.apache.nifi.events.EventReporter;
+import org.apache.nifi.reporting.Severity;
+import org.apache.nifi.security.util.CertificateUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ConnectionLoadBalanceServer {
     private static final Logger logger = LoggerFactory.getLogger(ConnectionLoadBalanceServer.class);
@@ -113,8 +113,11 @@ public class ConnectionLoadBalanceServer {
         if (sslContext == null) {
             return new ServerSocket(port, 50, InetAddress.getByName(hostname));
         } else {
-            final ServerSocket serverSocket = sslContext.getServerSocketFactory().createServerSocket(port, 50, inetAddress);
-            ((SSLServerSocket) serverSocket).setNeedClientAuth(true);
+
+            final SSLServerSocket serverSocket = (SSLServerSocket) sslContext.getServerSocketFactory().createServerSocket(port, 50, inetAddress);
+            serverSocket.setNeedClientAuth(true);
+            // Enforce custom protocols on socket
+            serverSocket.setEnabledProtocols(CertificateUtils.CURRENT_SUPPORTED_TLS_PROTOCOL_VERSIONS);
             return serverSocket;
         }
     }
