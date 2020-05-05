@@ -113,7 +113,6 @@ public class ConnectionLoadBalanceServer {
         if (sslContext == null) {
             return new ServerSocket(port, 50, InetAddress.getByName(hostname));
         } else {
-
             final SSLServerSocket serverSocket = (SSLServerSocket) sslContext.getServerSocketFactory().createServerSocket(port, 50, inetAddress);
             serverSocket.setNeedClientAuth(true);
             // Enforce custom protocols on socket

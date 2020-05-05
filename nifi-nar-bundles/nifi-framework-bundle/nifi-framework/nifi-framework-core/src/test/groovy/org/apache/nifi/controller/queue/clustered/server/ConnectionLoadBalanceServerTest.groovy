@@ -31,7 +31,6 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
 import javax.net.ssl.SSLSocketFactory
@@ -75,12 +74,14 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
 
     @Before
     void setUp() {
-        defaultGroovySocketFactory = HttpsURLConnection.defaultSSLSocketFactory
+        // Save default settings for other connections
+//        defaultGroovySocketFactory = HttpsURLConnection.defaultSSLSocketFactory
     }
 
     @After
     void tearDown() {
-        HttpsURLConnection.defaultSSLSocketFactory = defaultGroovySocketFactory
+        // Restore connection settings after test
+//        HttpsURLConnection.defaultSSLSocketFactory = defaultGroovySocketFactory
 
         if (lbServer) {
             lbServer.stop()
@@ -88,7 +89,7 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
     }
 
     @Test
-    void testShouldCreateSecureServer() {
+    void testRequestPeerListShouldUseTLS() {
         // Arrange
         logger.info("Creating SSL Context from TLS Configuration: ${tlsConfiguration}")
         SSLContext sslContext = SslContextFactory.createSslContext(tlsConfiguration, SslContextFactory.ClientAuth.NONE)
