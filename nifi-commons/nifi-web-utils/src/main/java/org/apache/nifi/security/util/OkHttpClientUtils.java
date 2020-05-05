@@ -14,16 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.nifi.framework.security.util;
+package org.apache.nifi.security.util;
 
 import java.security.UnrecoverableKeyException;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.OkHttpClient;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.security.util.SslContextFactory;
-import org.apache.nifi.security.util.TlsConfiguration;
-import org.apache.nifi.security.util.TlsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
