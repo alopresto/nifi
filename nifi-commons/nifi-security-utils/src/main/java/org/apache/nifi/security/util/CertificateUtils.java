@@ -314,6 +314,7 @@ public final class CertificateUtils {
      * @return a new {@code java.security.cert.X509Certificate}
      * @throws CertificateException if there is an error generating the new certificate
      */
+    @SuppressWarnings("deprecation")
     public static X509Certificate convertLegacyX509Certificate(javax.security.cert.X509Certificate legacyCertificate) throws CertificateException {
         if (legacyCertificate == null) {
             throw new IllegalArgumentException("The X.509 certificate cannot be null");

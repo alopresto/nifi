@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
-import java.security.UnrecoverableKeyException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +37,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
 import javax.ws.rs.HttpMethod;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
@@ -55,10 +52,9 @@ import okhttp3.RequestBody;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.cluster.coordination.http.replication.HttpReplicationClient;
 import org.apache.nifi.cluster.coordination.http.replication.PreparedRequest;
+import org.apache.nifi.framework.security.util.OkHttpClientUtils;
 import org.apache.nifi.remote.protocol.http.HttpHeaders;
-import org.apache.nifi.security.util.SslContextFactory;
 import org.apache.nifi.security.util.TlsConfiguration;
-import org.apache.nifi.security.util.TlsException;
 import org.apache.nifi.stream.io.GZIPOutputStream;
 import org.apache.nifi.util.FormatUtils;
 import org.apache.nifi.util.NiFiProperties;
@@ -320,30 +316,16 @@ public class OkHttpReplicationClient implements HttpReplicationClient {
         final int connectionPoolSize = properties.getClusterNodeMaxConcurrentRequests();
         okHttpClientBuilder.connectionPool(new ConnectionPool(connectionPoolSize, 5, TimeUnit.MINUTES));
 
-        applyTlsToOkHttpClientBuilder(okHttpClientBuilder, properties);
+        // Apply the TLS configuration, if present
+        try {
+            TlsConfiguration tlsConfiguration = TlsConfiguration.fromNiFiProperties(properties);
+            tlsConfigured = OkHttpClientUtils.applyTlsToOkHttpClientBuilder(tlsConfiguration, okHttpClientBuilder);
+        } catch (Exception e) {
+            // Legacy expectations around this client are that it does not throw an exception on invalid TLS configuration
+            // TODO: The only current use of this class is ThreadPoolRequestReplicatorFactoryBean#getObject() which should be evaluated to see if that can change
+            tlsConfigured = false;
+        }
 
         return okHttpClientBuilder.build();
-    }
-
-    private void applyTlsToOkHttpClientBuilder(OkHttpClient.Builder builder, final NiFiProperties properties) {
-        TlsConfiguration tlsConfiguration = TlsConfiguration.fromNiFiProperties(properties);
-
-        try {
-            SSLSocketFactory sslSocketFactory = SslContextFactory.createSSLSocketFactory(tlsConfiguration);
-            X509TrustManager x509TrustManager = SslContextFactory.getX509TrustManager(tlsConfiguration);
-
-            // If either component is null, HTTPS is not available
-            if (sslSocketFactory == null || x509TrustManager == null) {
-                return;
-            }
-            builder.sslSocketFactory(sslSocketFactory, x509TrustManager);
-            tlsConfigured = true;
-        } catch (TlsException e) {
-            if (e.getCause() instanceof UnrecoverableKeyException) {
-                logger.error("Key password may be incorrect or not set. Check your keystore passwords." + e.getMessage());
-            } else {
-                logger.error("Encountered an error creating the SSL socket factory: {}", e.getLocalizedMessage());
-            }
-        }
     }
 }

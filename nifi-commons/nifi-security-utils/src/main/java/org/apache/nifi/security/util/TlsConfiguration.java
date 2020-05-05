@@ -50,7 +50,7 @@ public class TlsConfiguration {
      * Default constructor present for testing and completeness.
      */
     public TlsConfiguration() {
-        this(null, null, null, null, null, null, null, null);
+        this(null, null, null, "", null, null, "", null);
     }
 
     /**
@@ -81,6 +81,47 @@ public class TlsConfiguration {
     public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
                             KeystoreType keystoreType, String truststorePath, String truststorePassword, KeystoreType truststoreType) {
         this(keystorePath, keystorePassword, keyPassword, keystoreType, truststorePath, truststorePassword, truststoreType, TLS_PROTOCOL_VERSION);
+    }
+
+    /**
+     * Instantiates a container object with the given configuration values.
+     *
+     * @param keystorePath       the keystore path
+     * @param keystorePassword   the keystore password
+     * @param keyPassword        the key password
+     * @param keystoreType       the keystore type as a String
+     * @param truststorePath     the truststore path
+     * @param truststorePassword the truststore password
+     * @param truststoreType     the truststore type as a String
+     */
+    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
+                            String keystoreType, String truststorePath, String truststorePassword, String truststoreType) {
+        this(keystorePath, keystorePassword, keyPassword,
+                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType) : null),
+                truststorePath, truststorePassword,
+                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType) : null),
+                TLS_PROTOCOL_VERSION);
+    }
+
+    /**
+     * Instantiates a container object with the given configuration values.
+     *
+     * @param keystorePath       the keystore path
+     * @param keystorePassword   the keystore password
+     * @param keyPassword        the (optional) key password -- if {@code null}, the keystore password is assumed the same for the individual key
+     * @param keystoreType       the keystore type as a String
+     * @param truststorePath     the truststore path
+     * @param truststorePassword the truststore password
+     * @param truststoreType     the truststore type as a String
+     * @param protocol           the TLS protocol version string
+     */
+    public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
+                            String keystoreType, String truststorePath, String truststorePassword, String truststoreType, String protocol) {
+        this(keystorePath, keystorePassword, keyPassword,
+                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType) : null),
+                truststorePath, truststorePassword,
+                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType) : null),
+                protocol);
     }
 
     /**
@@ -139,23 +180,19 @@ public class TlsConfiguration {
         String keystorePath = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE);
         String keystorePassword = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE_PASSWD);
         String keyPassword = niFiProperties.getProperty(NiFiProperties.SECURITY_KEY_PASSWD);
-        String kt = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE);
+        String keystoreType = niFiProperties.getProperty(NiFiProperties.SECURITY_KEYSTORE_TYPE);
         String truststorePath = niFiProperties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE);
         String truststorePassword = niFiProperties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD);
-        String tt = niFiProperties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE);
+        String truststoreType = niFiProperties.getProperty(NiFiProperties.SECURITY_TRUSTSTORE_TYPE);
         String protocol = TLS_PROTOCOL_VERSION;
-
-        // Handle KeystoreTypes which might be null or empty
-        KeystoreType keystoreType = KeystoreType.isValidKeystoreType(kt) ? KeystoreType.valueOf(kt) : null;
-        KeystoreType truststoreType = KeystoreType.isValidKeystoreType(tt) ? KeystoreType.valueOf(tt) : null;
 
         final TlsConfiguration tlsConfiguration = new TlsConfiguration(keystorePath, keystorePassword, keyPassword,
                 keystoreType, truststorePath, truststorePassword,
                 truststoreType, protocol);
         if (logger.isDebugEnabled()) {
             logger.debug("Instantiating TlsConfiguration from NiFi properties: {}, {}, {}, {}, {}, {}, {}, {}",
-                    keystorePath, tlsConfiguration.getKeystorePasswordForLogging(), tlsConfiguration.getKeyPasswordForLogging(), kt,
-                    truststorePath, tlsConfiguration.getTruststorePasswordForLogging(), tt, protocol);
+                    keystorePath, tlsConfiguration.getKeystorePasswordForLogging(), tlsConfiguration.getKeyPasswordForLogging(), keystoreType,
+                    truststorePath, tlsConfiguration.getTruststorePasswordForLogging(), truststoreType, protocol);
         }
 
         return tlsConfiguration;

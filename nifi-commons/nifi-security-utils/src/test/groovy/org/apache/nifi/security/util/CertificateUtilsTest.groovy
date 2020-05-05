@@ -51,7 +51,6 @@ import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-import static org.junit.Assert.assertEquals
 import static org.junit.Assert.assertTrue
 
 @RunWith(JUnit4.class)
@@ -147,6 +146,7 @@ class CertificateUtilsTest extends GroovyTestCase {
         [certificate, issuerCertificate] as X509Certificate[]
     }
 
+    @SuppressWarnings("deprecation")
     private static javax.security.cert.X509Certificate generateLegacyCertificate(X509Certificate x509Certificate) {
         return javax.security.cert.X509Certificate.getInstance(x509Certificate.getEncoded())
     }
@@ -436,7 +436,7 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testShouldGenerateSelfSignedCert() throws Exception {
+    void testShouldGenerateSelfSignedCert() throws Exception {
         String dn = "CN=testDN,O=testOrg"
 
         int days = 365
@@ -458,8 +458,8 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testIssueCert() throws Exception {
-        int days = 365;
+    void testIssueCert() throws Exception {
+        int days = 365
         KeyPair issuerKeyPair = generateKeyPair()
         X509Certificate issuer = CertificateUtils.generateSelfSignedX509Certificate(issuerKeyPair, "CN=testCa,O=testOrg", SIGNATURE_ALGORITHM, days)
 
@@ -486,7 +486,7 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void reorderShouldPutElementsInCorrectOrder() {
+    void reorderShouldPutElementsInCorrectOrder() {
         String cn = "CN=testcn"
         String l = "L=testl"
         String st = "ST=testst"
@@ -504,8 +504,8 @@ class CertificateUtilsTest extends GroovyTestCase {
     }
 
     @Test
-    public void testUniqueSerialNumbers() {
-        def running = new AtomicBoolean(true);
+    void testUniqueSerialNumbers() {
+        def running = new AtomicBoolean(true)
         def executorService = Executors.newCachedThreadPool()
         def serialNumbers = Collections.newSetFromMap(new ConcurrentHashMap())
         try {
@@ -514,7 +514,7 @@ class CertificateUtilsTest extends GroovyTestCase {
                 futures.add(executorService.submit(new Callable<Integer>() {
                     @Override
                     Integer call() throws Exception {
-                        int count = 0;
+                        int count = 0
                         while (running.get()) {
                             def before = System.currentTimeMillis()
                             def serialNumber = CertificateUtils.getUniqueSerialNumber()
@@ -523,23 +523,23 @@ class CertificateUtilsTest extends GroovyTestCase {
                             assertTrue(serialNumberMillis >= before)
                             assertTrue(serialNumberMillis <= after)
                             assertTrue(serialNumbers.add(serialNumber))
-                            count++;
+                            count++
                         }
-                        return count;
+                        return count
                     }
-                }));
+                }))
             }
 
             Thread.sleep(1000)
 
             running.set(false)
 
-            def totalRuns = 0;
+            def totalRuns = 0
             for (int i = 0; i < futures.size(); i++) {
                 try {
                     def numTimes = futures.get(i).get()
                     logger.info("future $i executed $numTimes times")
-                    totalRuns += numTimes;
+                    totalRuns += numTimes
                 } catch (ExecutionException e) {
                     throw e.getCause()
                 }

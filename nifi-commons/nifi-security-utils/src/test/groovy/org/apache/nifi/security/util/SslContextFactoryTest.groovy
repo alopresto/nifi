@@ -111,7 +111,7 @@ class SslContextFactoryTest extends GroovyTestCase {
                 (NiFiProperties.SECURITY_KEYSTORE)  : "src/test/resources/samepassword.jks",
                 (NiFiProperties.SECURITY_KEY_PASSWD): "",
         ]
-        NiFiProperties propertiesWithoutKeyPassword = NiFiProperties.createBasicNiFiProperties(null, missingKeyPasswordProps)
+        NiFiProperties propertiesWithoutKeyPassword = NiFiProperties.createBasicNiFiProperties("", missingKeyPasswordProps)
         TlsConfiguration configWithoutKeyPassword = TlsConfiguration.fromNiFiProperties(propertiesWithoutKeyPassword)
         logger.info("Creating SSL Context from TLS Configuration: ${configWithoutKeyPassword}")
 
@@ -188,7 +188,7 @@ class SslContextFactoryTest extends GroovyTestCase {
                 (NiFiProperties.SECURITY_TRUSTSTORE)       : "src/test/resources/no-password-truststore.jks",
                 (NiFiProperties.SECURITY_TRUSTSTORE_PASSWD): "",
         ]
-        NiFiProperties propertiesNoTruststorePassword = NiFiProperties.createBasicNiFiProperties(null, truststoreNoPasswordProps)
+        NiFiProperties propertiesNoTruststorePassword = NiFiProperties.createBasicNiFiProperties("", truststoreNoPasswordProps)
         TlsConfiguration configNoTruststorePassword = TlsConfiguration.fromNiFiProperties(propertiesNoTruststorePassword)
         logger.info("Creating SSL Context from TLS Configuration: ${configNoTruststorePassword}")
 
@@ -220,7 +220,7 @@ class SslContextFactoryTest extends GroovyTestCase {
 
         // Change the keystore to one with the same keystore and key password, but don't provide the key password
         Map keystoreOnlyProps = DEFAULT_PROPS.findAll { k, v -> k.contains("keystore") }
-        NiFiProperties keystoreNiFiProperties = NiFiProperties.createBasicNiFiProperties(null, keystoreOnlyProps)
+        NiFiProperties keystoreNiFiProperties = NiFiProperties.createBasicNiFiProperties("", keystoreOnlyProps)
         TlsConfiguration keystoreOnlyConfig = TlsConfiguration.fromNiFiProperties(keystoreNiFiProperties)
         logger.info("Creating SSL Context from TLS Configuration: ${keystoreOnlyConfig}")
 

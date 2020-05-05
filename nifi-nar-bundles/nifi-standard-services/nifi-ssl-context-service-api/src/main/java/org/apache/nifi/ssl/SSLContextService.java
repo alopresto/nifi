@@ -23,14 +23,13 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-
 import javax.net.ssl.SSLContext;
-
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.security.util.TlsConfiguration;
 
 /**
  * Definition for SSLContextService.
@@ -41,32 +40,36 @@ import org.apache.nifi.processor.exception.ProcessException;
         + "that configuration throughout the application")
 public interface SSLContextService extends ControllerService {
 
-    public static enum ClientAuth {
+    // TODO: Refactor to use SslContextFactory.ClientAuth
+    enum ClientAuth {
 
         WANT,
         REQUIRED,
         NONE
     }
 
-    public SSLContext createSSLContext(final ClientAuth clientAuth) throws ProcessException;
+    // May need to back out if NAR-specific API can't be modified in minor release
+    TlsConfiguration createTlsConfiguration();
 
-    public String getTrustStoreFile();
+    SSLContext createSSLContext(final ClientAuth clientAuth) throws ProcessException;
 
-    public String getTrustStoreType();
+    String getTrustStoreFile();
 
-    public String getTrustStorePassword();
+    String getTrustStoreType();
 
-    public boolean isTrustStoreConfigured();
+    String getTrustStorePassword();
 
-    public String getKeyStoreFile();
+    boolean isTrustStoreConfigured();
 
-    public String getKeyStoreType();
+    String getKeyStoreFile();
 
-    public String getKeyStorePassword();
+    String getKeyStoreType();
 
-    public String getKeyPassword();
+    String getKeyStorePassword();
 
-    public boolean isKeyStoreConfigured();
+    String getKeyPassword();
+
+    boolean isKeyStoreConfigured();
 
     String getSslAlgorithm();
 
