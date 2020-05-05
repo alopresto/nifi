@@ -26,11 +26,15 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.util.Arrays;
+import java.util.Optional;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.nifi.util.Tuple;
@@ -84,6 +88,19 @@ public final class SslContextFactory {
     // TODO: Underlying methods should allow List<String> protocols as parameter [X]
 
     /**
+     * Returns a configured {@link SSLContext} from the provided TLS configuration. Hardcodes the
+     * client auth setting to {@link ClientAuth#REQUIRED} because this method is usually used when
+     * creating a context for a client, which ignores the setting anyway.
+     *
+     * @param tlsConfiguration the TLS configuration container object
+     * @return the configured SSLContext
+     * @throws TlsException if there is a problem configuring the SSLContext
+     */
+    public static SSLContext createSslContext(TlsConfiguration tlsConfiguration) throws TlsException {
+        return createSslContext(tlsConfiguration, ClientAuth.REQUIRED);
+    }
+
+    /**
      * Returns a configured {@link SSLContext} from the provided TLS configuration.
      *
      * @param tlsConfiguration the TLS configuration container object
@@ -92,9 +109,19 @@ public final class SslContextFactory {
      * @throws TlsException if there is a problem configuring the SSLContext
      */
     public static SSLContext createSslContext(TlsConfiguration tlsConfiguration, ClientAuth clientAuth) throws TlsException {
-        if (tlsConfiguration == null) {
-            logger.debug("Cannot create SSLContext from null TLS configuration");
+        // If the object is null or neither keystore nor truststore properties are present, return null
+        if (TlsConfiguration.isEmpty(tlsConfiguration)) {
+            logger.debug("Cannot create SSLContext from empty TLS configuration; returning null");
             return null;
+        }
+
+        // If the keystore properties are present, truststore properties are required to be present as well
+        if (tlsConfiguration.isKeystorePopulated() && !tlsConfiguration.isTruststorePopulated()) {
+            logger.error("The TLS config keystore properties were populated but the truststore properties were not");
+            if (logger.isDebugEnabled()) {
+                logger.debug("Provided TLS config: {}", tlsConfiguration);
+            }
+            throw new TlsException("Truststore properties are required if keystore properties are present");
         }
 
         if (clientAuth == null) {
@@ -112,6 +139,37 @@ public final class SslContextFactory {
         return initializeSSLContext(tlsConfiguration, clientAuth, keyManagers, trustManagers);
     }
 
+    /**
+     * Returns a configured {@link X509TrustManager} for the provided configuration. Useful for
+     * constructing HTTP clients which require their own trust management rather than an
+     * {@link SSLContext}. Filters and removes any trust managers that are not
+     * {@link javax.net.ssl.X509TrustManager} implementations, and returns the <em>first</em>
+     * X.509 trust manager.
+     *
+     * @param tlsConfiguration the TLS configuration container object
+     * @return an X.509 TrustManager (can be {@code null})
+     * @throws TlsException if there is a problem reading the truststore to create the trust managers
+     */
+    public static X509TrustManager getX509TrustManager(TlsConfiguration tlsConfiguration) throws TlsException {
+        TrustManager[] trustManagers = getTrustManagers(tlsConfiguration);
+        if (trustManagers == null) {
+            return null;
+        }
+        Optional<X509TrustManager> x509TrustManager = Arrays.stream(trustManagers)
+                .filter(tm -> tm instanceof X509TrustManager)
+                .map(tm -> (X509TrustManager) tm)
+                .findFirst();
+        return x509TrustManager.orElse(null);
+    }
+
+    /**
+     * Returns an array of {@link KeyManager}s for the provided configuration. Useful for constructing
+     * HTTP clients which require their own key management rather than an {@link SSLContext}.
+     *
+     * @param tlsConfiguration the TLS configuration container object
+     * @return an array of KeyManagers (can be {@code null})
+     * @throws TlsException if there is a problem reading the keystore to create the key managers
+     */
     @SuppressWarnings("RedundantCast")
     private static KeyManager[] getKeyManagers(TlsConfiguration tlsConfiguration) throws TlsException {
         KeyManager[] keyManagers = null;
@@ -119,9 +177,12 @@ public final class SslContextFactory {
             KeyManagerFactory keyManagerFactory = KeyStoreUtils.loadKeyManagerFactory(tlsConfiguration);
             keyManagers = keyManagerFactory.getKeyManagers();
         } else {
-            if (tlsConfiguration.isKeystorePopulated()) {
-                logger.warn("The keystore properties are populated ({}, {}, {}, {}) but not valid", (Object[]) tlsConfiguration.getKeystorePropertiesForLogging());
+            // If some keystore properties were populated but the key managers are empty, throw an exception to inform the caller
+            if (tlsConfiguration.isAnyKeystorePopulated()) {
+                logger.warn("Some keystore properties are populated ({}, {}, {}, {}) but not valid", (Object[]) tlsConfiguration.getKeystorePropertiesForLogging());
+                throw new TlsException("The keystore properties are not valid");
             } else {
+                // If they are empty, the caller was not expecting a valid response
                 logger.debug("The keystore properties are not populated");
             }
         }
@@ -135,9 +196,12 @@ public final class SslContextFactory {
             TrustManagerFactory trustManagerFactory = KeyStoreUtils.loadTrustManagerFactory(tlsConfiguration);
             trustManagers = trustManagerFactory.getTrustManagers();
         } else {
-            if (tlsConfiguration.isTruststorePopulated()) {
-                logger.warn("The truststore properties are populated ({}, {}, {}) but not valid", (Object[]) tlsConfiguration.getTruststorePropertiesForLogging());
+            // If some truststore properties were populated but the trust managers are empty, throw an exception to inform the caller
+            if (tlsConfiguration.isAnyTruststorePopulated()) {
+                logger.warn("Some truststore properties are populated ({}, {}, {}) but not valid", (Object[]) tlsConfiguration.getTruststorePropertiesForLogging());
+                throw new TlsException("The truststore properties are not valid");
             } else {
+                // If they are empty, the caller was not expecting a valid response
                 logger.debug("The truststore properties are not populated");
             }
         }
@@ -170,6 +234,27 @@ public final class SslContextFactory {
             logger.error("Encountered an error creating SSLContext from TLS configuration ({}): {}", tlsConfiguration.toString(), e.getLocalizedMessage());
             throw new TlsException("Error creating SSL context", e);
         }
+    }
+
+    /**
+     * Convenience method to return the {@link SSLSocketFactory} from the created {@link SSLContext}
+     * because that is what most callers of {@link #createSslContext(TlsConfiguration, ClientAuth)}
+     * actually need and don't know what to provide for the {@link ClientAuth} parameter.
+     *
+     * @param tlsConfiguration the TLS configuration container object
+     * @return the configured SSLSocketFactory (can be {@code null})
+     * @throws TlsException if there is a problem creating the SSLContext or SSLSocketFactory
+     */
+    public static SSLSocketFactory createSSLSocketFactory(TlsConfiguration tlsConfiguration) throws TlsException {
+        SSLContext sslContext = createSslContext(tlsConfiguration, ClientAuth.REQUIRED);
+        if (sslContext == null) {
+            // Only display an error in the log if the provided config wasn't empty
+            if (!TlsConfiguration.isEmpty(tlsConfiguration)) {
+                logger.error("The SSLContext could not be formed from the provided TLS configuration. Check the provided keystore and truststore properties");
+            }
+            return null;
+        }
+        return sslContext.getSocketFactory();
     }
 
     /**

@@ -33,7 +33,7 @@ public class TlsConfiguration {
 
     private static final String TLS_PROTOCOL_VERSION = CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION;
     private static final String MASKED_PASSWORD_LOG = "********";
-    private static final String NULL_LOG = "<null>";
+    private static final String NULL_LOG = "null";
 
     private final String keystorePath;
     private final String keystorePassword;
@@ -161,6 +161,17 @@ public class TlsConfiguration {
         return tlsConfiguration;
     }
 
+    /**
+     * Returns {@code true} if the provided TlsConfiguration is {@code null} or <em>empty</em>
+     * (i.e. neither any of the keystore nor truststore properties are populated).
+     *
+     * @param tlsConfiguration the container object to check
+     * @return true if this container is empty or null
+     */
+    public static boolean isEmpty(TlsConfiguration tlsConfiguration) {
+        return tlsConfiguration == null || !(tlsConfiguration.isAnyKeystorePopulated() || tlsConfiguration.isAnyTruststorePopulated());
+    }
+
     // Getters & setters
 
     public String getKeystorePath() {
@@ -172,7 +183,7 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the keystore password is populated, {@code "<null>"} if not.
+     * Returns {@code "********"} if the keystore password is populated, {@code "null"} if not.
      *
      * @return a loggable String representation of the keystore password
      */
@@ -185,7 +196,7 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the key password is populated, {@code "<null>"} if not.
+     * Returns {@code "********"} if the key password is populated, {@code "null"} if not.
      *
      * @return a loggable String representation of the key password
      */
@@ -203,7 +214,7 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the functional key password is populated, {@code "<null>"} if not.
+     * Returns {@code "********"} if the functional key password is populated, {@code "null"} if not.
      *
      * @return a loggable String representation of the functional key password
      */
@@ -224,7 +235,7 @@ public class TlsConfiguration {
     }
 
     /**
-     * Returns {@code "********"} if the truststore password is populated, {@code "<null>"} if not.
+     * Returns {@code "********"} if the truststore password is populated, {@code "null"} if not.
      *
      * @return a loggable String representation of the truststore password
      */
@@ -252,15 +263,24 @@ public class TlsConfiguration {
     }
 
     /**
+     * Returns {@code true} if <em>any</em> of the keystore properties is populated, indicating that the caller expects a valid keystore to be generated.
+     *
+     * @return true if any keystore properties are present
+     */
+    public boolean isAnyKeystorePopulated() {
+        return isAnyPopulated(keystorePath, keystorePassword, keystoreType);
+    }
+
+    /**
      * Returns {@code true} if the necessary properties are populated and the keystore can be successfully instantiated (i.e. the path is valid and the password(s) are correct).
      *
      * @return true if the keystore properties are valid
      */
     public boolean isKeystoreValid() {
-        boolean simpleCheck = isStoreValid(keystorePath, getFunctionalKeyPassword(), keystoreType, "keystore");
+        boolean simpleCheck = isStoreValid(keystorePath, keystorePassword, keystoreType, "keystore");
         if (simpleCheck) {
             return true;
-        } else if (StringUtils.isNotBlank(keystorePassword) && !keystorePassword.equals(keyPassword)) {
+        } else if (StringUtils.isNotBlank(keyPassword) && !keystorePassword.equals(keyPassword)) {
             logger.debug("Simple keystore validity check failed; trying with separate key password");
             try {
                 return isKeystorePopulated()
@@ -285,6 +305,15 @@ public class TlsConfiguration {
     }
 
     /**
+     * Returns {@code true} if <em>any</em> of the truststore properties is populated, indicating that the caller expects a valid truststore to be generated.
+     *
+     * @return true if any truststore properties are present
+     */
+    public boolean isAnyTruststorePopulated() {
+        return isAnyPopulated(truststorePath, truststorePassword, truststoreType);
+    }
+
+    /**
      * Returns {@code true} if the necessary properties are populated and the truststore can be successfully instantiated (i.e. the path is valid and the password is correct).
      *
      * @return true if the truststore properties are valid
@@ -296,7 +325,7 @@ public class TlsConfiguration {
     /**
      * Returns a {@code String[]} containing the keystore properties for logging. The order is
      * {@link #getKeystorePath()}, {@link #getKeystorePasswordForLogging()},
-     * {@link #getFunctionalKeyPasswordForLogging()}, {@link #getKeystoreType()} (using the type or "<null>").
+     * {@link #getFunctionalKeyPasswordForLogging()}, {@link #getKeystoreType()} (using the type or "null").
      *
      * @return a loggable String[]
      */
@@ -307,7 +336,7 @@ public class TlsConfiguration {
     /**
      * Returns a {@code String[]} containing the truststore properties for logging. The order is
      * {@link #getTruststorePath()}, {@link #getTruststorePasswordForLogging()},
-     * {@link #getTruststoreType()} (using the type or "<null>").
+     * {@link #getTruststoreType()} (using the type or "null").
      *
      * @return a loggable String[]
      */
@@ -353,20 +382,21 @@ public class TlsConfiguration {
         return StringUtils.isNotBlank(password) ? MASKED_PASSWORD_LOG : NULL_LOG;
     }
 
+    private boolean isAnyPopulated(String path, String password, KeystoreType type) {
+        return StringUtils.isNotBlank(path) || StringUtils.isNotBlank(password) || type != null;
+    }
+
     private boolean isStorePopulated(String path, String password, KeystoreType type, String label) {
         boolean isPopulated;
         String passwordForLogging;
 
-        // Legacy truststores can be populated without a password
+        // Legacy truststores can be populated without a password; only check the path and type
+        isPopulated = StringUtils.isNotBlank(path) && type != null;
         if ("truststore".equalsIgnoreCase(label)) {
-            isPopulated = StringUtils.isNotBlank(path)
-                    && type != null;
             passwordForLogging = getTruststorePasswordForLogging();
         } else {
             // Keystores require a password
-            isPopulated = StringUtils.isNotBlank(path)
-                    && StringUtils.isNotBlank(password)
-                    && type != null;
+            isPopulated = isPopulated && StringUtils.isNotBlank(password);
             passwordForLogging = getKeystorePasswordForLogging();
         }
 

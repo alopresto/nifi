@@ -33,6 +33,14 @@ public final class SocketUtils {
 
     private static final Logger logger = new NiFiLog(LoggerFactory.getLogger(SocketUtils.class));
 
+    /**
+     * Returns a {@link Socket} (effectively used as a client socket) for the given address and configuration.
+     *
+     * @param address   the {@link InetSocketAddress} for the socket (used for hostname and port)
+     * @param config the {@link SocketConfiguration}
+     * @return the socket (can be configured for SSL)
+     * @throws IOException  if there is a problem creating the socket
+     */
     public static Socket createSocket(final InetSocketAddress address, final SocketConfiguration config) throws IOException {
         if (address == null) {
             throw new IllegalArgumentException("Socket address may not be null.");
@@ -52,7 +60,14 @@ public final class SocketUtils {
         if (sslContext == null) {
             socket = new Socket(address.getHostName(), address.getPort());
         } else {
-            socket = sslContext.getSocketFactory().createSocket(address.getHostName(), address.getPort());
+            /* This would ideally be refactored to a shared create method but Socket and ServerSocket
+             * do not share a common interface; Socket is effectively "client socket" in this context
+             */
+            Socket tempSocket = sslContext.getSocketFactory().createSocket(address.getHostName(), address.getPort());
+            final SSLSocket sslSocket = (SSLSocket) tempSocket;
+            // Enforce custom protocols on socket
+            sslSocket.setEnabledProtocols(CertificateUtils.CURRENT_SUPPORTED_TLS_PROTOCOL_VERSIONS);
+            socket = sslSocket;
         }
 
         if (config.getSocketTimeout() != null) {
@@ -93,10 +108,10 @@ public final class SocketUtils {
     /**
      * Returns a {@link ServerSocket} for the given port and configuration.
      *
-     * @param port the port for the socket
+     * @param port   the port for the socket
      * @param config the {@link ServerSocketConfiguration}
      * @return the server socket (can be configured for SSL)
-     * @throws IOException if there is a problem creating the socket
+     * @throws IOException  if there is a problem creating the socket
      * @throws TlsException if there is a problem creating the socket
      */
     public static ServerSocket createServerSocket(final int port, final ServerSocketConfiguration config)
@@ -135,7 +150,7 @@ public final class SocketUtils {
     /**
      * Returns a {@link SSLServerSocket} for the given port and configuration.
      *
-     * @param port the port for the socket
+     * @param port                      the port for the socket
      * @param serverSocketConfiguration the {@link ServerSocketConfiguration}
      * @return the SSL server socket
      * @throws TlsException if there was a problem creating the socket
