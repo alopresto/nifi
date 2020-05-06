@@ -128,36 +128,6 @@ public class TlsToolkitGetStatusCommandLine extends BaseCommandLine {
             } else {
                 printUsageAndThrow("No truststore was provided", ExitCode.INVALID_ARGS);
             }
-
-            // Legacy code
-            // final boolean keystoreProvided = !StringUtils.isBlank(keystoreFilename);
-            // final boolean truststoreProvided = !StringUtils.isBlank(truststoreFilename);
-            //
-            // final char[] keystorePass = keystorePassword == null ? null : keystorePassword.toCharArray();
-            // final char[] keyPass = keyPassword == null ? null : keyPassword.toCharArray();
-            // final char[] trustPass = truststorePassword == null ? null : truststorePassword.toCharArray();
-            //
-            // if (keystoreProvided && truststoreProvided) {
-            //     this.sslContext = SslContextFactory.createSslContext(
-            //             keystoreFilename,
-            //             keystorePass,
-            //             keyPass,
-            //             keystoreTypeStr,
-            //             truststoreFilename,
-            //             trustPass,
-            //             truststoreTypeStr,
-            //             SslContextFactory.ClientAuth.NONE, protocol);
-            //
-            // } else if (truststoreProvided) {
-            //     this.sslContext = SslContextFactory.createTrustSslContext(
-            //             truststoreFilename,
-            //             trustPass,
-            //             truststoreTypeStr,
-            //             protocol);
-            //
-            // } else {
-            //     printUsageAndThrow("No keystore or truststore was provided", ExitCode.INVALID_ARGS);
-            // }
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
             printUsageAndThrow("Failed to create SSL Context: " + e.getMessage(), ExitCode.INVALID_ARGS);

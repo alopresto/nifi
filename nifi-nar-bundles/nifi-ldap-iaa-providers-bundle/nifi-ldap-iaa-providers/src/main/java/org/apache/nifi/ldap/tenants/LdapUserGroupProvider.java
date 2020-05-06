@@ -831,46 +831,6 @@ public class LdapUserGroupProvider implements UserGroupProvider {
             logger.error("Encountered an error configuring TLS for LDAP user group provider: {}", e.getLocalizedMessage());
             throw new ProviderCreationException("Error configuring TLS for LDAP user group provider", e);
         }
-
-        // Legacy code
-        // // create the ssl context
-        // final SSLContext sslContext;
-        // try {
-        //     if (StringUtils.isBlank(rawKeystore) && StringUtils.isBlank(rawTruststore)) {
-        //         sslContext = null;
-        //     } else {
-        //         // ensure the protocol is specified
-        //         if (StringUtils.isBlank(rawProtocol)) {
-        //             throw new AuthorizerCreationException("TLS - Protocol must be specified.");
-        //         }
-        //
-        //         if (StringUtils.isBlank(rawKeystore)) {
-        //             sslContext = SslContextFactory.createTrustSslContext(rawTruststore, rawTruststorePassword.toCharArray(), rawTruststoreType, rawProtocol);
-        //         } else if (StringUtils.isBlank(rawTruststore)) {
-        //             sslContext = SslContextFactory.createSslContext(rawKeystore, rawKeystorePassword.toCharArray(), rawKeystoreType, rawProtocol);
-        //         } else {
-        //             // determine the client auth if specified
-        //             final ClientAuth clientAuth;
-        //             if (StringUtils.isBlank(rawClientAuth)) {
-        //                 clientAuth = ClientAuth.NONE;
-        //             } else {
-        //                 try {
-        //                     clientAuth = ClientAuth.valueOf(rawClientAuth);
-        //                 } catch (final IllegalArgumentException iae) {
-        //                     throw new AuthorizerCreationException(String.format("Unrecognized client auth '%s'. Possible values are [%s]",
-        //                             rawClientAuth, StringUtils.join(ClientAuth.values(), ", ")));
-        //                 }
-        //             }
-        //
-        //             sslContext = SslContextFactory.createSslContext(rawKeystore, rawKeystorePassword.toCharArray(), rawKeystoreType,
-        //                     rawTruststore, rawTruststorePassword.toCharArray(), rawTruststoreType, clientAuth, rawProtocol);
-        //         }
-        //     }
-        // } catch (final KeyStoreException | NoSuchAlgorithmException | CertificateException | UnrecoverableKeyException | KeyManagementException | IOException e) {
-        //     throw new AuthorizerCreationException(e.getMessage(), e);
-        // }
-        //
-        // return sslContext;
     }
 
 }

@@ -224,8 +224,6 @@ public class StandardStateManagerProvider implements StateManagerProvider{
             throw new IllegalStateException("Error configuring TLS for state manager", e);
         }
 
-        // Legacy code
-        // final SSLContext sslContext = SslContextFactory.createSslContext(properties);
         final ComponentLog logger = new SimpleProcessLogger(providerId, provider);
         final StateProviderInitializationContext initContext = new StandardStateProviderInitializationContext(providerId, propertyMap, sslContext, logger);
 

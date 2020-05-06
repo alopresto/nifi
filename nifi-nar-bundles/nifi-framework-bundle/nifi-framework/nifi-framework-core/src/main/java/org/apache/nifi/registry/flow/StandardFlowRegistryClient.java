@@ -79,8 +79,6 @@ public class StandardFlowRegistryClient implements FlowRegistryClient {
             try {
                 final SSLContext sslContext = SslContextFactory.createSslContext(TlsConfiguration.fromNiFiProperties(nifiProperties));
 
-                // Legacy code
-                // final SSLContext sslContext = SslContextFactory.createSslContext(nifiProperties);
                 if (sslContext == null && uriScheme.equalsIgnoreCase("https")) {
                     throw new IllegalStateException("Failed to create Flow Registry for URI " + registryUrl
                             + " because this NiFi is not configured with a Keystore/Truststore, so it is not capable of communicating with a secure Registry. "

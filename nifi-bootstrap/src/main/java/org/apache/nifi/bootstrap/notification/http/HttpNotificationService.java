@@ -199,27 +199,6 @@ public class HttpNotificationService extends AbstractNotificationService {
                     // If the TLS config couldn't be parsed, throw an exception
                     throw new IllegalStateException("The HTTP notification service URL indicates HTTPS but the TLS properties are not valid");
                 }
-
-                // Legacy code
-                // Tuple<SSLContext, TrustManager[]> sslContextTuple = SslContextFactory.createTrustSslContextWithTrustManagers(
-                //         context.getProperty(HttpNotificationService.PROP_KEYSTORE).getValue(),
-                //         context.getProperty(HttpNotificationService.PROP_KEYSTORE_PASSWORD).isSet()
-                //                 ? context.getProperty(HttpNotificationService.PROP_KEYSTORE_PASSWORD).getValue().toCharArray() : null,
-                //         context.getProperty(HttpNotificationService.PROP_KEY_PASSWORD).isSet()
-                //                 ? context.getProperty(HttpNotificationService.PROP_KEY_PASSWORD).getValue().toCharArray() : null,
-                //         context.getProperty(HttpNotificationService.PROP_KEYSTORE_TYPE).getValue(),
-                //         context.getProperty(HttpNotificationService.PROP_TRUSTSTORE).getValue(),
-                //         context.getProperty(HttpNotificationService.PROP_TRUSTSTORE_PASSWORD).isSet()
-                //                 ? context.getProperty(HttpNotificationService.PROP_TRUSTSTORE_PASSWORD).getValue().toCharArray() : null,
-                //         context.getProperty(HttpNotificationService.PROP_TRUSTSTORE_TYPE).getValue(),
-                //         SslContextFactory.ClientAuth.REQUIRED,
-                //         context.getProperty(HttpNotificationService.SSL_ALGORITHM).getValue()
-                // );
-                // // Find the first X509TrustManager
-                // List<X509TrustManager> x509TrustManagers = Arrays.stream(sslContextTuple.getValue())
-                //         .filter(trustManager -> trustManager instanceof X509TrustManager)
-                //         .map(trustManager -> (X509TrustManager) trustManager).collect(Collectors.toList());
-                // okHttpClientBuilder.sslSocketFactory(sslContextTuple.getKey().getSocketFactory(), x509TrustManagers.get(0));
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
