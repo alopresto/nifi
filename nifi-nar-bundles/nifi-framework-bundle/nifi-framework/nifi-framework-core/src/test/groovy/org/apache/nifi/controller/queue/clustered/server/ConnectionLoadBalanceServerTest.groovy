@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory
 
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
-import javax.net.ssl.SSLSocketFactory
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -56,8 +55,6 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
     private static TlsConfiguration tlsConfiguration
     private static SSLContext sslContext
 
-    private static SSLSocketFactory defaultGroovySocketFactory
-
     private ConnectionLoadBalanceServer lbServer
 
     @BeforeClass
@@ -74,15 +71,10 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
 
     @Before
     void setUp() {
-        // Save default settings for other connections
-//        defaultGroovySocketFactory = HttpsURLConnection.defaultSSLSocketFactory
     }
 
     @After
     void tearDown() {
-        // Restore connection settings after test
-//        HttpsURLConnection.defaultSSLSocketFactory = defaultGroovySocketFactory
-
         if (lbServer) {
             lbServer.stop()
         }
@@ -94,12 +86,6 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
         logger.info("Creating SSL Context from TLS Configuration: ${tlsConfiguration}")
         SSLContext sslContext = SslContextFactory.createSslContext(tlsConfiguration, SslContextFactory.ClientAuth.NONE)
         logger.info("Created SSL Context: ${KeyStoreUtils.sslContextToString(sslContext)}")
-
-//        def keyManagers = SslContextFactory.getKeyManagers(tlsConfiguration)
-//        X509KeyManager x509km = keyManagers.first() as X509KeyManager
-//        def aliases = x509km.getServerAliases("RSA", null)
-//        def serverCertChain = x509km.getCertificateChain(aliases.first())
-//        def serverCert = serverCertChain.first()
 
         def mockLBP = [
                 receiveFlowFiles: { Socket s, InputStream i, OutputStream o -> null }
@@ -113,8 +99,6 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
 
         // Assert
 
-        // Assertion 1 (direct examination of server socket & context)
-
         // Assert that the default parameters (which can't be modified) still have legacy protocols and no client auth
         def defaultSSLParameters = sslContext.defaultSSLParameters
         logger.info("Default SSL Parameters: ${KeyStoreUtils.sslParametersToString(defaultSSLParameters)}" as String)
@@ -126,41 +110,6 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
         logger.info("Created SSL server socket: ${KeyStoreUtils.sslServerSocketToString(socket)}" as String)
         assert socket.enabledProtocols == ["TLSv1.2", "TLSv1.3"] as String[]
         assert socket.needClientAuth
-
-        // Assertion 2 (make external connection to socket)
-
-//        // Custom truststore necessary (only support TLSv1.2 for connection)
-//        def clientSslContext = SSLContext.getInstance(CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION)
-//        X509TrustManager x509tm = SslContextFactory.getX509TrustManager(tlsConfiguration)
-//        clientSslContext.init(null, [x509tm] as TrustManager[], new SecureRandom())
-//        HttpsURLConnection.defaultSSLSocketFactory = clientSslContext.socketFactory
-//
-//        def connection = new URL("https://${HOSTNAME}:${PORT}").openConnection() as HttpURLConnection
-//
-//        // Set some headers
-//        connection.setRequestProperty('User-Agent', 'groovy-2.4.4')
-//        connection.setRequestProperty('Accept', 'application/json')
-//
-//        // Attempt to connect
-//        connection.requestMethod = "POST"
-//        connection.doOutput = true
-//        def text
-//        connection.with {
-//            outputStream.withWriter { outputStreamWriter ->
-//                outputStreamWriter << "Example flowfile content"
-//            }
-//            text = content.text
-//        }
-//        logger.info("Connection response code: ${connection.responseCode}")
-//
-//        assert connection
-//        HttpsURLConnection httpsConnection = connection as HttpsURLConnection
-//        def serverCertificates = httpsConnection.serverCertificates
-//        def cipherSuite = httpsConnection.cipherSuite
-//        def certificate = serverCertificates.first() as X509Certificate
-//        logger.info("Connected to ${certificate.subjectX500Principal.name} with ${cipherSuite}")
-//        assert serverCertificates.contains(serverCert)
-//        assert cipherSuite.startsWith("TLS_")
 
         // Clean up
         lbServer.stop()

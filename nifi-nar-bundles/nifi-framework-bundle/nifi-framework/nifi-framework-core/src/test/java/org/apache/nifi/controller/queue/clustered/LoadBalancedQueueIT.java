@@ -93,7 +93,10 @@ import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager;
 import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.provenance.ProvenanceRepository;
 import org.apache.nifi.security.util.CertificateUtils;
+import org.apache.nifi.security.util.KeystoreType;
 import org.apache.nifi.security.util.SslContextFactory;
+import org.apache.nifi.security.util.TlsConfiguration;
+import org.apache.nifi.security.util.TlsException;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -137,7 +140,7 @@ public class LoadBalancedQueueIT {
     private final AtomicReference<LoadBalanceCompression> compressionReference = new AtomicReference<>();
 
     @Before
-    public void setup() throws IOException, UnrecoverableKeyException, CertificateException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    public void setup() throws IOException, UnrecoverableKeyException, CertificateException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException, TlsException {
         compressionReference.set(LoadBalanceCompression.DO_NOT_COMPRESS);
 
         nodeIdentifiers = new HashSet<>();
@@ -189,9 +192,9 @@ public class LoadBalancedQueueIT {
         final String keyPass = keystorePass;
         final String truststore = "src/test/resources/localhost-ts.jks";
         final String truststorePass = "wAOR0nQJ2EXvOP0JZ2EaqA/n7W69ILS4sWAHghmIWCc";
-        sslContext = SslContextFactory.createSslContext(keystore, keystorePass.toCharArray(), keyPass.toCharArray(), "JKS",
-                truststore, truststorePass.toCharArray(), "JKS",
-                SslContextFactory.ClientAuth.REQUIRED, CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
+        TlsConfiguration tlsConfiguration = new TlsConfiguration(keystore, keystorePass, keyPass, KeystoreType.JKS,
+                truststore, truststorePass, KeystoreType.JKS, CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
+        sslContext = SslContextFactory.createSslContext(tlsConfiguration, SslContextFactory.ClientAuth.REQUIRED);
     }
 
 
@@ -262,7 +265,7 @@ public class LoadBalancedQueueIT {
 
                 clusterEventListeners.forEach(listener -> listener.onNodeAdded(nodeId));
 
-                for (int j=0; j < 2; j++) {
+                for (int j = 0; j < 2; j++) {
                     final Map<String, String> attributes = new HashMap<>();
                     attributes.put("greeting", "hello");
 
@@ -531,7 +534,7 @@ public class LoadBalancedQueueIT {
             clientThread.start();
 
             final SocketLoadBalancedFlowFileQueue flowFileQueue = new SocketLoadBalancedFlowFileQueue(queueId, new NopConnectionEventListener(), processScheduler, clientFlowFileRepo, clientProvRepo,
-                clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
+                    clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
             flowFileQueue.setFlowFilePartitioner(new RoundRobinPartitioner());
 
             try {
@@ -602,7 +605,7 @@ public class LoadBalancedQueueIT {
             clientThread.start();
 
             final SocketLoadBalancedFlowFileQueue flowFileQueue = new SocketLoadBalancedFlowFileQueue(queueId, new NopConnectionEventListener(), processScheduler, clientFlowFileRepo, clientProvRepo,
-                clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
+                    clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
             flowFileQueue.setFlowFilePartitioner(new RoundRobinPartitioner());
             flowFileQueue.setLoadBalanceCompression(LoadBalanceCompression.COMPRESS_ATTRIBUTES_ONLY);
 
@@ -692,7 +695,7 @@ public class LoadBalancedQueueIT {
             clientThread.start();
 
             final SocketLoadBalancedFlowFileQueue flowFileQueue = new SocketLoadBalancedFlowFileQueue(queueId, new NopConnectionEventListener(), processScheduler, clientFlowFileRepo, clientProvRepo,
-                clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
+                    clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
             flowFileQueue.setFlowFilePartitioner(new RoundRobinPartitioner());
             flowFileQueue.setLoadBalanceCompression(LoadBalanceCompression.COMPRESS_ATTRIBUTES_AND_CONTENT);
 
@@ -1087,6 +1090,7 @@ public class LoadBalancedQueueIT {
                 public boolean isRebalanceOnClusterResize() {
                     return true;
                 }
+
                 @Override
                 public boolean isRebalanceOnFailure() {
                     return true;
@@ -1242,7 +1246,7 @@ public class LoadBalancedQueueIT {
             clientThread.start();
 
             final SocketLoadBalancedFlowFileQueue flowFileQueue = new SocketLoadBalancedFlowFileQueue(queueId, new NopConnectionEventListener(), processScheduler, clientFlowFileRepo, clientProvRepo,
-                clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
+                    clientContentRepo, resourceClaimManager, clusterCoordinator, clientRegistry, flowFileSwapManager, swapThreshold, eventReporter);
             flowFileQueue.setFlowFilePartitioner(new RoundRobinPartitioner());
 
             try {

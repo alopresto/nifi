@@ -56,6 +56,7 @@ import org.apache.nifi.registry.flow.VersionedRemoteProcessGroup;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.security.util.CertificateUtils;
 import org.apache.nifi.security.util.SslContextFactory;
+import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.stateless.bootstrap.ExtensionDiscovery;
 import org.apache.nifi.stateless.bootstrap.InMemoryFlowFile;
 import org.apache.nifi.stateless.bootstrap.RunnableFlow;
@@ -371,8 +372,9 @@ public class StatelessFlow implements RunnableFlow {
             final String truststoreType = sslObject.get(TRUSTSTORE_TYPE).getAsString();
 
             try {
-                return SslContextFactory.createSslContext(keystore, keystorePass.toCharArray(), keyPass.toCharArray(), keystoreType,
-                    truststore, truststorePass.toCharArray(), truststoreType, SslContextFactory.ClientAuth.REQUIRED, CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
+                TlsConfiguration tlsConfiguration = new TlsConfiguration(keystore, keystorePass, keyPass, keystoreType,
+                        truststore, truststorePass, truststoreType, CertificateUtils.CURRENT_TLS_PROTOCOL_VERSION);
+                return SslContextFactory.createSslContext(tlsConfiguration, SslContextFactory.ClientAuth.REQUIRED);
             } catch (final Exception e) {
                 throw new RuntimeException("Failed to create Keystore", e);
             }

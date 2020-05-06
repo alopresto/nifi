@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.remote
 
-
 import org.apache.nifi.security.util.KeyStoreUtils
 import org.apache.nifi.security.util.KeystoreType
 import org.apache.nifi.security.util.SslContextFactory
@@ -32,10 +31,8 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
-import javax.net.ssl.SSLSocketFactory
 import java.security.Security
 
 @RunWith(JUnit4.class)
@@ -71,8 +68,6 @@ class SocketRemoteSiteListenerTest extends GroovyTestCase {
     private static TlsConfiguration tlsConfiguration
     private static SSLContext sslContext
 
-    private static SSLSocketFactory defaultGroovySocketFactory
-
     private SocketRemoteSiteListener srsListener
 
     @BeforeClass
@@ -89,13 +84,10 @@ class SocketRemoteSiteListenerTest extends GroovyTestCase {
 
     @Before
     void setUp() {
-        defaultGroovySocketFactory = HttpsURLConnection.defaultSSLSocketFactory
     }
 
     @After
     void tearDown() {
-        HttpsURLConnection.defaultSSLSocketFactory = defaultGroovySocketFactory
-
         if (srsListener) {
             srsListener.stop()
         }

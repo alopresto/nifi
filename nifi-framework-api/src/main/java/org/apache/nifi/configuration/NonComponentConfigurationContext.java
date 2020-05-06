@@ -14,26 +14,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.nifi.authentication;
+package org.apache.nifi.configuration;
 
 import java.util.Map;
-import org.apache.nifi.configuration.NonComponentConfigurationContext;
+import org.apache.nifi.controller.ConfigurationContext;
 
 /**
- *
+ * Shared interface for various feature-specific configuration contexts which allows common code to
+ * handle property retrieval without awareness of the specific implementation.
+ * <p>
+ * Note: This interface is <em>not</em> used as the basis for component-specific configuration contexts (see {@link ConfigurationContext}).
  */
-public interface LoginIdentityProviderConfigurationContext extends NonComponentConfigurationContext {
-
+public interface NonComponentConfigurationContext {
     /**
-     * @return identifier for the authority provider
+     * @return identifier for the caller entity
      */
     String getIdentifier();
 
     /**
-     * Retrieves all properties the component currently understands regardless
+     * Returns all properties the configuration context contains regardless
      * of whether a value has been set for them or not. If no value is present
-     * then its value is null and thus any registered default for the property
-     * descriptor applies.
+     * then its value is {@code null}.
      *
      * @return Map of all properties
      */

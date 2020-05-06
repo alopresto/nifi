@@ -82,7 +82,7 @@ public class TestWriteAheadFlowFileRepository {
 
     @Before
     public void setUp() throws Exception {
-        niFiProperties = NiFiProperties.createBasicNiFiProperties(TestWriteAheadFlowFileRepository.class.getResource("/conf/nifi.properties").getFile(), null);
+        niFiProperties = NiFiProperties.createBasicNiFiProperties(TestWriteAheadFlowFileRepository.class.getResource("/conf/nifi.properties").getFile());
         clearRepo();
     }
 

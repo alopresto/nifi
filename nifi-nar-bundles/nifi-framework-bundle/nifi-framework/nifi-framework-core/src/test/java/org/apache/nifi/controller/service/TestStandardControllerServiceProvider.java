@@ -110,7 +110,7 @@ public class TestStandardControllerServiceProvider {
 
     @BeforeClass
     public static void setNiFiProps() {
-        niFiProperties = NiFiProperties.createBasicNiFiProperties(TestStandardControllerServiceProvider.class.getResource("/conf/nifi.properties").getFile(), null);
+        niFiProperties = NiFiProperties.createBasicNiFiProperties(TestStandardControllerServiceProvider.class.getResource("/conf/nifi.properties").getFile());
 
         // load the system bundle
         systemBundle = SystemBundle.create(niFiProperties);

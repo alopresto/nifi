@@ -97,9 +97,9 @@ public class TlsConfiguration {
     public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
                             String keystoreType, String truststorePath, String truststorePassword, String truststoreType) {
         this(keystorePath, keystorePassword, keyPassword,
-                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType) : null),
+                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType.toUpperCase()) : null),
                 truststorePath, truststorePassword,
-                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType) : null),
+                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType.toUpperCase()) : null),
                 TLS_PROTOCOL_VERSION);
     }
 
@@ -118,9 +118,9 @@ public class TlsConfiguration {
     public TlsConfiguration(String keystorePath, String keystorePassword, String keyPassword,
                             String keystoreType, String truststorePath, String truststorePassword, String truststoreType, String protocol) {
         this(keystorePath, keystorePassword, keyPassword,
-                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType) : null),
+                (KeystoreType.isValidKeystoreType(keystoreType) ? KeystoreType.valueOf(keystoreType.toUpperCase()) : null),
                 truststorePath, truststorePassword,
-                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType) : null),
+                (KeystoreType.isValidKeystoreType(truststoreType) ? KeystoreType.valueOf(truststoreType.toUpperCase()) : null),
                 protocol);
     }
 
