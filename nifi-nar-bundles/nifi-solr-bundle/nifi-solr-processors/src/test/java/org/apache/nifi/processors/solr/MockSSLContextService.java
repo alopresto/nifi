@@ -19,6 +19,7 @@ package org.apache.nifi.processors.solr;
 import javax.net.ssl.SSLContext;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.security.util.SslContextFactory;
 import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.ssl.SSLContextService;
 
@@ -34,7 +35,7 @@ public class MockSSLContextService extends AbstractControllerService implements 
     }
 
     @Override
-    public SSLContext createSSLContext(SSLContextService.ClientAuth clientAuth) throws ProcessException {
+    public SSLContext createSSLContext(SslContextFactory.ClientAuth clientAuth) throws ProcessException {
         return null;
     }
 

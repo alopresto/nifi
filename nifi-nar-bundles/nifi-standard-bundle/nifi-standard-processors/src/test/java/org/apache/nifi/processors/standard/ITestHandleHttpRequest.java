@@ -105,7 +105,7 @@ public class ITestHandleHttpRequest {
         return properties;
     }
 
-    private static SSLContext useSSLContextService(final TestRunner controller, final Map<String, String> sslProperties, SSLContextService.ClientAuth clientAuth) {
+    private static SSLContext useSSLContextService(final TestRunner controller, final Map<String, String> sslProperties, SslContextFactory.ClientAuth clientAuth) {
         final SSLContextService service = new StandardRestrictedSSLContextService();
         try {
             controller.addControllerService("ssl-service", service, sslProperties);
@@ -581,7 +581,7 @@ public class ITestHandleHttpRequest {
         final Map<String, String> sslProperties = getServerKeystoreProperties();
         sslProperties.putAll(getTruststoreProperties());
         sslProperties.put(StandardSSLContextService.SSL_ALGORITHM.getName(), "TLSv1.2");
-        useSSLContextService(runner, sslProperties, twoWaySsl ? SSLContextService.ClientAuth.REQUIRED : SSLContextService.ClientAuth.NONE);
+        useSSLContextService(runner, sslProperties, twoWaySsl ? SslContextFactory.ClientAuth.REQUIRED : SslContextFactory.ClientAuth.NONE);
 
         final Thread httpThread = new Thread(new Runnable() {
             @Override

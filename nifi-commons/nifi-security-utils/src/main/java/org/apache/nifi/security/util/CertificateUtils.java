@@ -116,24 +116,24 @@ public final class CertificateUtils {
         return Collections.unmodifiableMap(orderMap);
     }
 
-    public enum ClientAuth {
-        NONE(0, "none"),
-        WANT(1, "want"),
-        NEED(2, "need");
-
-        private int value;
-        private String description;
-
-        ClientAuth(int value, String description) {
-            this.value = value;
-            this.description = description;
-        }
-
-        @Override
-        public String toString() {
-            return "Client Auth: " + this.description + " (" + this.value + ")";
-        }
-    }
+    // public enum ClientAuth {
+    //     NONE(0, "none"),
+    //     WANT(1, "want"),
+    //     NEED(2, "need");
+    //
+    //     private int value;
+    //     private String description;
+    //
+    //     ClientAuth(int value, String description) {
+    //         this.value = value;
+    //         this.description = description;
+    //     }
+    //
+    //     @Override
+    //     public String toString() {
+    //         return "Client Auth: " + this.description + " (" + this.value + ")";
+    //     }
+    // }
 
     /**
      * Extracts the username from the specified DN. If the username cannot be extracted because the CN is in an unrecognized format, the entire CN is returned. If the CN cannot be extracted because
@@ -214,7 +214,7 @@ public final class CertificateUtils {
 
             boolean clientMode = sslSocket.getUseClientMode();
             logger.debug("SSL Socket in {} mode", clientMode ? "client" : "server");
-            ClientAuth clientAuth = getClientAuthStatus(sslSocket);
+            SslContextFactory.ClientAuth clientAuth = getClientAuthStatus(sslSocket);
             logger.debug("SSL Socket client auth status: {}", clientAuth);
 
             if (clientMode) {
@@ -247,10 +247,10 @@ public final class CertificateUtils {
          * This method should throw an exception if none are provided for need, return null if none are provided for want, and return null (without checking) for none.
          */
 
-        ClientAuth clientAuth = getClientAuthStatus(sslSocket);
+        SslContextFactory.ClientAuth clientAuth = getClientAuthStatus(sslSocket);
         logger.debug("SSL Socket client auth status: {}", clientAuth);
 
-        if (clientAuth != ClientAuth.NONE) {
+        if (clientAuth != SslContextFactory.ClientAuth.NONE) {
             try {
                 final Certificate[] certChains = sslSocket.getSession().getPeerCertificates();
                 if (certChains != null && certChains.length > 0) {
@@ -263,7 +263,7 @@ public final class CertificateUtils {
                     logger.error("The incoming request did not contain client certificates and thus the DN cannot" +
                             " be extracted. Check that the other endpoint is providing a complete client certificate chain");
                 }
-                if (clientAuth == ClientAuth.WANT) {
+                if (clientAuth == SslContextFactory.ClientAuth.WANT) {
                     logger.warn("Suppressing missing client certificate exception because client auth is set to 'want'");
                     return dn;
                 }
@@ -302,8 +302,8 @@ public final class CertificateUtils {
         return dn;
     }
 
-    private static ClientAuth getClientAuthStatus(SSLSocket sslSocket) {
-        return sslSocket.getNeedClientAuth() ? ClientAuth.NEED : sslSocket.getWantClientAuth() ? ClientAuth.WANT : ClientAuth.NONE;
+    private static SslContextFactory.ClientAuth getClientAuthStatus(SSLSocket sslSocket) {
+        return sslSocket.getNeedClientAuth() ? SslContextFactory.ClientAuth.REQUIRED : sslSocket.getWantClientAuth() ? SslContextFactory.ClientAuth.WANT : SslContextFactory.ClientAuth.NONE;
     }
 
     /**

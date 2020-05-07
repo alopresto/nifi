@@ -29,6 +29,7 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.security.util.SslContextFactory;
 import org.apache.nifi.security.util.TlsConfiguration;
 
 /**
@@ -40,18 +41,10 @@ import org.apache.nifi.security.util.TlsConfiguration;
         + "that configuration throughout the application")
 public interface SSLContextService extends ControllerService {
 
-    // TODO: Refactor to use SslContextFactory.ClientAuth
-    enum ClientAuth {
-
-        WANT,
-        REQUIRED,
-        NONE
-    }
-
     // May need to back out if NAR-specific API can't be modified in minor release
     TlsConfiguration createTlsConfiguration();
 
-    SSLContext createSSLContext(final ClientAuth clientAuth) throws ProcessException;
+    SSLContext createSSLContext(final SslContextFactory.ClientAuth clientAuth) throws ProcessException;
 
     String getTrustStoreFile();
 
@@ -86,6 +79,8 @@ public interface SSLContextService extends ControllerService {
          * see: http://docs.oracle.com/javase/7/docs/technotes/guides/security/StandardNames.html#SSLContext
          */
         supportedProtocols.add("TLS");
+
+        // This is still available for outgoing connections to legacy services, but can be disabled with jdk.tls.disabledAlgorithms
         supportedProtocols.add("SSL");
 
         // Determine those provided by the JVM on the system

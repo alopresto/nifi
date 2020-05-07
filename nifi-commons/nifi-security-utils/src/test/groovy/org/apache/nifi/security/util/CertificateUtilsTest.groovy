@@ -205,19 +205,18 @@ class CertificateUtilsTest extends GroovyTestCase {
         SSLSocket noneSocket = [getNeedClientAuth: { -> false }, getWantClientAuth: { -> false }] as SSLSocket
 
         // Act
-        CertificateUtils.ClientAuth needClientAuthStatus = CertificateUtils.getClientAuthStatus(needSocket)
+        SslContextFactory.ClientAuth needClientAuthStatus = CertificateUtils.getClientAuthStatus(needSocket)
         logger.info("Client auth (needSocket): ${needClientAuthStatus}")
-        CertificateUtils.ClientAuth wantClientAuthStatus = CertificateUtils.getClientAuthStatus(wantSocket)
+        SslContextFactory.ClientAuth wantClientAuthStatus = CertificateUtils.getClientAuthStatus(wantSocket)
         logger.info("Client auth (wantSocket): ${wantClientAuthStatus}")
-        CertificateUtils.ClientAuth noneClientAuthStatus = CertificateUtils.getClientAuthStatus(noneSocket)
+        SslContextFactory.ClientAuth noneClientAuthStatus = CertificateUtils.getClientAuthStatus(noneSocket)
         logger.info("Client auth (noneSocket): ${noneClientAuthStatus}")
 
         // Assert
-        assert needClientAuthStatus == CertificateUtils.ClientAuth.NEED
-        assert wantClientAuthStatus == CertificateUtils.ClientAuth.WANT
-        assert noneClientAuthStatus == CertificateUtils.ClientAuth.NONE
+        assert needClientAuthStatus == SslContextFactory.ClientAuth.REQUIRED
+        assert wantClientAuthStatus == SslContextFactory.ClientAuth.WANT
+        assert noneClientAuthStatus == SslContextFactory.ClientAuth.NONE
     }
-
 
     @Test
     void testShouldExtractClientCertificatesFromSSLServerSocketWithAnyClientAuth() {

@@ -125,7 +125,7 @@ public class TestListenTCP {
     public void testTLSClientAuthRequiredAndClientCertProvided() throws InitializationException, IOException, InterruptedException,
             TlsException {
 
-        runner.setProperty(ListenTCP.CLIENT_AUTH, SSLContextService.ClientAuth.REQUIRED.name());
+        runner.setProperty(ListenTCP.CLIENT_AUTH, SslContextFactory.ClientAuth.REQUIRED.name());
         configureProcessorSslContextService();
 
         final List<String> messages = new ArrayList<>();
@@ -149,7 +149,7 @@ public class TestListenTCP {
     @Test
     public void testTLSClientAuthRequiredAndClientCertNotProvided() throws InitializationException, TlsException {
 
-        runner.setProperty(ListenTCP.CLIENT_AUTH, SSLContextService.ClientAuth.REQUIRED.name());
+        runner.setProperty(ListenTCP.CLIENT_AUTH, SslContextFactory.ClientAuth.REQUIRED.name());
         configureProcessorSslContextService();
 
         final List<String> messages = new ArrayList<>();
@@ -173,7 +173,7 @@ public class TestListenTCP {
     @Test
     public void testTLSClientAuthNoneAndClientCertNotProvided() throws InitializationException, IOException, InterruptedException, TlsException {
 
-        runner.setProperty(ListenTCP.CLIENT_AUTH, SSLContextService.ClientAuth.NONE.name());
+        runner.setProperty(ListenTCP.CLIENT_AUTH, SslContextFactory.ClientAuth.NONE.name());
         configureProcessorSslContextService();
 
         final List<String> messages = new ArrayList<>();

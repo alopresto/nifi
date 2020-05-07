@@ -169,7 +169,7 @@ public class TestListenTCPRecord {
     @Test
     public void testTLSClientAuthRequiredAndClientCertProvided() throws InitializationException, IOException, InterruptedException, TlsException {
 
-        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SSLContextService.ClientAuth.REQUIRED.name());
+        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SslContextFactory.ClientAuth.REQUIRED.name());
         configureProcessorSslContextService();
 
         // Make an SSLContext with a key and trust store to send the test messages
@@ -190,7 +190,7 @@ public class TestListenTCPRecord {
     @Test
     public void testTLSClientAuthRequiredAndClientCertNotProvided() throws InitializationException, IOException, InterruptedException, TlsException {
 
-        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SSLContextService.ClientAuth.REQUIRED.name());
+        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SslContextFactory.ClientAuth.REQUIRED.name());
         runner.setProperty(ListenTCPRecord.READ_TIMEOUT, "5 seconds");
         configureProcessorSslContextService();
 
@@ -203,7 +203,7 @@ public class TestListenTCPRecord {
     @Test
     public void testTLSClientAuthNoneAndClientCertNotProvided() throws InitializationException, IOException, InterruptedException, TlsException {
 
-        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SSLContextService.ClientAuth.NONE.name());
+        runner.setProperty(ListenTCPRecord.CLIENT_AUTH, SslContextFactory.ClientAuth.NONE.name());
         configureProcessorSslContextService();
 
         // Make an SSLContext that only has the trust store, this should work since the processor has client auth NONE

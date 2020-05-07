@@ -226,11 +226,9 @@ public class StandardSSLContextService extends AbstractControllerService impleme
     }
 
     @Override
-    public SSLContext createSSLContext(final ClientAuth clientAuth) throws ProcessException {
+    public SSLContext createSSLContext(final SslContextFactory.ClientAuth clientAuth) throws ProcessException {
         try {
-            // TODO: Can be removed when duplicate enum is refactored
-            SslContextFactory.ClientAuth translatedClientAuth = SslContextFactory.ClientAuth.valueOf(clientAuth.name());
-            return SslContextFactory.createSslContext(createTlsConfiguration(), translatedClientAuth);
+            return SslContextFactory.createSslContext(createTlsConfiguration(), clientAuth);
         } catch (TlsException e) {
             getLogger().error("Encountered an error creating the SSL context from the SSL context service: {}", new String[]{e.getLocalizedMessage()});
             throw new ProcessException("Error creating SSL context", e);
