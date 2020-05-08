@@ -31,6 +31,7 @@ import org.junit.runners.JUnit4
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLSocket
@@ -103,13 +104,7 @@ class CertificateUtilsTest extends GroovyTestCase {
      *
      * @param dn the DN
      * @return the certificate
-     * @throws IOException
-     * @throws NoSuchAlgorithmException
-     * @throws java.security.cert.CertificateException
-     * @throws java.security.NoSuchProviderException
-     * @throws java.security.SignatureException
-     * @throws java.security.InvalidKeyException
-     * @throws OperatorCreationException
+     * @throws IOException* @throws NoSuchAlgorithmException* @throws java.security.cert.CertificateException* @throws java.security.NoSuchProviderException* @throws java.security.SignatureException* @throws java.security.InvalidKeyException* @throws OperatorCreationException
      */
     private
     static X509Certificate generateCertificate(String dn) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
@@ -124,13 +119,7 @@ class CertificateUtilsTest extends GroovyTestCase {
      * @param issuerDn the issuer DN
      * @param issuerKey the issuer private key
      * @return the certificate
-     * @throws IOException
-     * @throws NoSuchAlgorithmException
-     * @throws CertificateException
-     * @throws NoSuchProviderException
-     * @throws SignatureException
-     * @throws InvalidKeyException
-     * @throws OperatorCreationException
+     * @throws IOException* @throws NoSuchAlgorithmException* @throws CertificateException* @throws NoSuchProviderException* @throws SignatureException* @throws InvalidKeyException* @throws OperatorCreationException
      */
     private
     static X509Certificate generateIssuedCertificate(String dn, X509Certificate issuer, KeyPair issuerKey) throws IOException, NoSuchAlgorithmException, CertificateException, NoSuchProviderException, SignatureException, InvalidKeyException, OperatorCreationException {
@@ -584,5 +573,34 @@ class CertificateUtilsTest extends GroovyTestCase {
         assert certificate.getSubjectDN().name == SUBJECT_DN
         assert certificate.getSubjectAlternativeNames().size() == SANS.size()
         assert certificate.getSubjectAlternativeNames()*.last().containsAll(SANS)
+    }
+
+    @Test
+    void testShouldDetectTlsErrors() {
+        // Arrange
+        final String msg = "Test exception"
+
+        // SSLPeerUnverifiedException isn't specifically defined in the method, but is a subclass of SSLException so it should be caught
+        List<Throwable> directErrors = [new TlsException(msg), new SSLPeerUnverifiedException(msg), new CertificateException(msg), new SSLException(msg)]
+        List<Throwable> causedErrors = directErrors.collect { Throwable cause -> new Exception(msg, cause) } + [
+                new Exception(msg,
+                        new Exception("Nested $msg",
+                                new Exception("Double nested $msg",
+                                        new TlsException("Triple nested $msg"))))]
+        List<Throwable> unrelatedErrors = [new Exception(msg), new IllegalArgumentException(msg), new NullPointerException(msg)]
+
+        // Act
+        def directResults = directErrors.collect { Throwable e -> CertificateUtils.isTlsError(e) }
+        def causedResults = causedErrors.collect { Throwable e -> CertificateUtils.isTlsError(e) }
+        def unrelatedResults = unrelatedErrors.collect { Throwable e -> CertificateUtils.isTlsError(e) }
+
+        logger.info("Direct results: ${directResults}")
+        logger.info("Caused results: ${causedResults}")
+        logger.info("Unrelated results: ${unrelatedResults}")
+
+        // Assert
+        assert directResults.every()
+        assert causedResults.every()
+        assert !unrelatedResults.any()
     }
 }

@@ -60,6 +60,9 @@ public class SocketRemoteSiteListener implements RemoteSiteListener {
     private final NiFiProperties nifiProperties;
     private final PeerDescriptionModifier peerDescriptionModifier;
 
+    private static int EXCEPTION_THRESHOLD_MILLIS = 10_000;
+    private volatile long tlsErrorLastSeen = -1;
+
     private final AtomicBoolean stopped = new AtomicBoolean(false);
 
     private static final Logger LOG = LoggerFactory.getLogger(SocketRemoteSiteListener.class);
@@ -167,9 +170,22 @@ public class SocketRemoteSiteListener implements RemoteSiteListener {
                                 dn = null;
                             }
                         } catch (final Exception e) {
-                            LOG.error("RemoteSiteListener Unable to accept connection from {} due to {}", socket, e.toString());
-                            if (LOG.isDebugEnabled()) {
-                                LOG.error("", e);
+                            // TODO: Add SocketProtocolListener#handleTlsError logic here
+                            String msg = String.format("RemoteSiteListener Unable to accept connection from {} due to {}", socket, e.getLocalizedMessage());
+                            // Suppress repeated TLS errors
+                            if (CertificateUtils.isTlsError(e)) {
+                                boolean printedAsWarning = handleTlsError(msg);
+
+                                // TODO: Move into handleTlsError and refactor shared behavior
+                                // If the error was printed as a warning, reset the last seen timer
+                                if (printedAsWarning) {
+                                    tlsErrorLastSeen = System.currentTimeMillis();
+                                }
+                            } else {
+                                LOG.error(msg);
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.error("", e);
+                                }
                             }
                             return;
                         }
@@ -301,6 +317,28 @@ public class SocketRemoteSiteListener implements RemoteSiteListener {
 
         listenerThread.setName("Site-to-Site Listener");
         listenerThread.start();
+    }
+
+    private boolean handleTlsError(String msg) {
+        if (tlsErrorRecentlySeen()) {
+            LOG.debug(msg);
+            return false;
+        } else {
+            LOG.error(msg);
+            return true;
+        }
+    }
+
+    /**
+     * Returns {@code true} if any related exception (determined by {@link CertificateUtils#isTlsError(Throwable)}) has occurred within the last
+     * {@link #EXCEPTION_THRESHOLD_MILLIS} milliseconds. Does not evaluate the error locally,
+     * simply checks the last time the timestamp was updated.
+     *
+     * @return true if the time since the last similar exception occurred is below the threshold
+     */
+    private boolean tlsErrorRecentlySeen() {
+        long now = System.currentTimeMillis();
+        return now - tlsErrorLastSeen < EXCEPTION_THRESHOLD_MILLIS;
     }
 
     private ServerSocket createServerSocket() throws IOException {

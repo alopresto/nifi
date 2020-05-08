@@ -17,6 +17,7 @@
 package org.apache.nifi.controller.queue.clustered.server
 
 import org.apache.nifi.events.EventReporter
+import org.apache.nifi.reporting.Severity
 import org.apache.nifi.security.util.KeyStoreUtils
 import org.apache.nifi.security.util.KeystoreType
 import org.apache.nifi.security.util.SslContextFactory
@@ -32,6 +33,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLServerSocket
 import java.security.Security
 
@@ -114,4 +116,113 @@ class ConnectionLoadBalanceServerTest extends GroovyTestCase {
         // Clean up
         lbServer.stop()
     }
+
+    @Test
+    void testShouldHandleSSLPeerUnverifiedException() {
+        // Arrange
+        final int CONNECTION_ATTEMPTS = 100
+        final String peerDescription = "Test peer"
+        final SSLPeerUnverifiedException e = new SSLPeerUnverifiedException("Test exception")
+
+        InputStream socketInputStream = new ByteArrayInputStream("This is the socket input stream".bytes)
+        OutputStream socketOutputStream = new ByteArrayOutputStream()
+
+        Socket mockSocket = [
+                getInputStream: { -> socketInputStream},
+                getOutputStream: { -> socketOutputStream},
+        ] as Socket
+        LoadBalanceProtocol mockLBProtocol = [
+                receiveFlowFiles: { Socket s, InputStream i, OutputStream o -> null }
+        ] as LoadBalanceProtocol
+        EventReporter mockER = [
+                reportEvent: { Severity s, String c, String m -> logger.mock("${s}: ${c} | ${m}") }
+        ] as EventReporter
+
+        def output = [debug: 0, error: 0]
+
+        ConnectionLoadBalanceServer.CommunicateAction communicateAction = new ConnectionLoadBalanceServer.CommunicateAction(mockLBProtocol, mockSocket, mockER)
+
+        // Override the threshold to 100 ms
+        communicateAction.EXCEPTION_THRESHOLD_MILLIS = 100
+
+        long listenerStart = System.currentTimeMillis()
+
+        // Act
+        CONNECTION_ATTEMPTS.times { int i ->
+            long now = System.currentTimeMillis()
+            logger.debug("Attempting connection ${i + 1} at ${now} [${now - listenerStart}]")
+            boolean printedError = communicateAction.handleTlsError(peerDescription, e)
+            if (printedError) {
+                output.error++
+            } else {
+                output.debug++
+            }
+            sleep(10)
+        }
+        logger.info("After ${CONNECTION_ATTEMPTS} attempts, debug: ${output.debug}, error: ${output.error}")
+
+        // Assert
+        assert output.debug > output.error
+
+        // Clean up
+        communicateAction.stop()
+    }
+//
+//    @Test
+//    void testCommunicateActionShouldSuppressRepeatedExceptions() {
+//        // Arrange
+//        final int CONNECTION_ATTEMPTS = 100
+//        final int CONNECTION_THREADS = 3
+//
+//        Socket mockSocket = [:] as Socket
+//        LoadBalanceProtocol mockLBProtocol = [:] as LoadBalanceProtocol
+//        EventReporter mockER = [:] as EventReporter
+//
+//        ConnectionLoadBalanceServer clbServer = new ConnectionLoadBalanceServer(HOSTNAME, PORT, sslContext, NUM_THREADS, mockLBProtocol, mockER, TIMEOUT_MS)
+//
+//        ConnectionLoadBalanceServer.CommunicateAction communicateAction = new ConnectionLoadBalanceServer.CommunicateAction(mockLBProtocol, mockSocket)
+//
+//        // Run the "connection attempt" N times from separate threads
+//        CountDownLatch lock = new CountDownLatch(CONNECTION_ATTEMPTS);
+//
+//        ScheduledExecutorService executor = Executors.newScheduledThreadPool(CONNECTION_THREADS);
+//        ScheduledFuture<?> future = executor.scheduleAtFixedRate({ ->
+//            // TODO: Send connection attempt
+//            lock.countDown();
+//        }, 500, 100, TimeUnit.MILLISECONDS)
+//
+//        lock.await((CONNECTION_ATTEMPTS.intdiv(CONNECTION_THREADS)), TimeUnit.SECONDS);
+//        future.cancel(true);
+//
+//        final long listenerStart = System.currentTimeMillis()
+////        def listener = Thread.start {
+//        communicateAction.run()
+////        }
+////        listener.name = "listener-thread"
+//        logger.info("Listener started at ${listenerStart}")
+//
+//        // Act
+//        CONNECTION_ATTEMPTS.times { int i ->
+//            long now = System.currentTimeMillis()
+//            logger.info("Attempting connection ${i + 1} at ${now} [${now - listenerStart}]")
+//
+//        }
+//
+//        // Assert
+//
+//        // Clean up
+//        communicateAction.stop()
+//
+//        // TODO: Mock socket with IO streams that throw SSLPUE
+//
+//
+//        // TODO: Start accept thread
+//
+//
+//        // TODO: Assert that log output was suppressed
+//
+//        // TODO: Assert that event reporter was suppressed
+//
+//        // TODO: Stop accept thread
+//    }
 }
