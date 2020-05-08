@@ -85,40 +85,6 @@ public class SiteToSiteReportingRecordSink extends AbstractControllerService imp
         try {
             final ComponentLog logger = getLogger();
             siteToSiteClient = SiteToSiteUtils.getClient(context, logger, stateManager);
-            // Legacy code
-            // final SSLContextService sslContextService = context.getProperty(SiteToSiteUtils.SSL_CONTEXT).asControllerService(SSLContextService.class);
-            // final SSLContext sslContext = sslContextService == null ? null : sslContextService.createSSLContext(SslContextFactory.ClientAuth.REQUIRED);
-            // final EventReporter eventReporter = (EventReporter) (severity, category, message) -> {
-            //     switch (severity) {
-            //         case WARNING:
-            //             logger.warn(message);
-            //             break;
-            //         case ERROR:
-            //             logger.error(message);
-            //             break;
-            //         default:
-            //             break;
-            //     }
-            // };
-            //
-            // final String destinationUrl = context.getProperty(SiteToSiteUtils.DESTINATION_URL).evaluateAttributeExpressions().getValue();
-            //
-            // final SiteToSiteTransportProtocol mode = SiteToSiteTransportProtocol.valueOf(context.getProperty(SiteToSiteUtils.TRANSPORT_PROTOCOL).getValue());
-            // final HttpProxy httpProxy = mode.equals(SiteToSiteTransportProtocol.RAW) || StringUtils.isEmpty(context.getProperty(SiteToSiteUtils.HTTP_PROXY_HOSTNAME).getValue()) ? null
-            //         : new HttpProxy(context.getProperty(SiteToSiteUtils.HTTP_PROXY_HOSTNAME).getValue(), context.getProperty(SiteToSiteUtils.HTTP_PROXY_PORT).asInteger(),
-            //         context.getProperty(SiteToSiteUtils.HTTP_PROXY_USERNAME).getValue(), context.getProperty(SiteToSiteUtils.HTTP_PROXY_PASSWORD).getValue());
-            //
-            // siteToSiteClient = new SiteToSiteClient.Builder()
-            //         .urls(SiteToSiteRestApiClient.parseClusterUrls(destinationUrl))
-            //         .portName(context.getProperty(SiteToSiteUtils.PORT_NAME).getValue())
-            //         .useCompression(context.getProperty(SiteToSiteUtils.COMPRESS).asBoolean())
-            //         .eventReporter(eventReporter)
-            //         .sslContext(sslContext)
-            //         .stateManager(stateManager)
-            //         .timeout(context.getProperty(SiteToSiteUtils.TIMEOUT).asTimePeriod(TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
-            //         .transportProtocol(mode)
-            //         .httpProxy(httpProxy)
-            //         .build();
 
             writerFactory = context.getProperty(RECORD_WRITER_FACTORY).asControllerService(RecordSetWriterFactory.class);
         } catch(Exception e) {

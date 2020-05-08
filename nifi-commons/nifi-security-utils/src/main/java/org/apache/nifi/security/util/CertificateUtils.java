@@ -117,25 +117,6 @@ public final class CertificateUtils {
         return Collections.unmodifiableMap(orderMap);
     }
 
-    // public enum ClientAuth {
-    //     NONE(0, "none"),
-    //     WANT(1, "want"),
-    //     NEED(2, "need");
-    //
-    //     private int value;
-    //     private String description;
-    //
-    //     ClientAuth(int value, String description) {
-    //         this.value = value;
-    //         this.description = description;
-    //     }
-    //
-    //     @Override
-    //     public String toString() {
-    //         return "Client Auth: " + this.description + " (" + this.value + ")";
-    //     }
-    // }
-
     /**
      * Extracts the username from the specified DN. If the username cannot be extracted because the CN is in an unrecognized format, the entire CN is returned. If the CN cannot be extracted because
      * the DN is in an unrecognized format, the entire DN is returned.
