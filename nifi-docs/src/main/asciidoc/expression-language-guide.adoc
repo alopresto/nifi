@@ -1441,7 +1441,7 @@ Each of the following functions will encode a string according the rules of the 
 [.function]
 === UUID3
 
-*Description*: [.description]#Returns a type 3 (MD5 hashed) namespace name-based UUID.#
+*Description*: [.description]#Returns a type 3 (MD5 hashed) namespace name-based UUID. The argument must be a valid UUID.#
 
 *Subject Type*: [.subject]#String#
 
@@ -1455,12 +1455,14 @@ Each of the following functions will encode a string according the rules of the 
 
 An empty argument or an argument value with an invalid UUID results in an exception bulletin.
 
+*See Also*: [.seeAlso]#<<uuid,UUID()>>#
+
 
 
 [.function]
 === UUID5
 
-*Description*: [.description]#Returns a type 5 (SHA-1 hashed) namespace name-based UUID.#
+*Description*: [.description]#Returns a type 5 (SHA-1 hashed) namespace name-based UUID. The argument must be a valid UUID.#
 
 *Subject Type*: [.subject]#String#
 
@@ -1473,6 +1475,8 @@ An empty argument or an argument value with an invalid UUID results in an except
 *Examples*: If we have an attribute named "attr" with a value of "string value", then the Expression `${attr:UUID5('245b55a8-397d-4480-a41e-16603c8cf9ad')}` will return "4d111477-5100-5f2d-ae79-b38bbe15aa78".
 
 An empty argument or an argument value with an invalid UUID results in an exception bulletin.
+
+*See Also*: [.seeAlso]#<<uuid,UUID()>>#
 
 
 
@@ -1491,8 +1495,8 @@ An empty argument or an argument value with an invalid UUID results in an except
 *Return Type*: [.returnType]#String#
 
 *Examples*: We can hash an attribute named "payload" by using the Expression
-		   `${payload:hash('MD5')}` If the attribute payload had a value of "string value"
-		    then the Expression `${payload:hash('MD5')}` will return "64e58419496c7248b4ef25731f88b8c3".
+		   `${payload:hash('SHA-256')}` If the attribute payload had a value of "string value"
+		    then the Expression `${payload:hash('SHA-256')}` will return "9b6a1a9167a5caf3f5948413faa89e0ec0de89e12bef55327442e60dcc0e8c9b".
 
 
 
@@ -2408,9 +2412,9 @@ an error when validating the function.
 
 *Return Type*: [.returnType]#String#
 
-*Examples*: ${UUID()} returns a value similar to de305d54-75b4-431b-adb2-eb6b9e546013
+*Examples*: `${UUID()}` returns a value similar to "de305d54-75b4-431b-adb2-eb6b9e546013"
 
-
+*See Also*: [.seeAlso]#<<uuid3,UUID3()>>, <<uuid5,UUID5()>>#
 
 
 
